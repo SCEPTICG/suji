@@ -15,6 +15,11 @@ T.near(bar.x_to_time(bar.time_to_x(37.5, 120, 1920), 120, 1920), 37.5, "round tr
 T.eq(bar.progress_px(7200 * 4 / 1920 - 0.01, 7200, 1920), 3, "whole pixels only")
 T.eq(bar.progress_px(7200 * 4 / 1920, 7200, 1920), 4, "next pixel")
 
+T.eq(bar.seek_target(1000, 100, 1000), 99.5, "seek target stops short of the end")
+T.eq(bar.seek_target(500, 100, 1000), 50, "seek target elsewhere is unchanged")
+T.eq(bar.seek_target(1000, 0.2, 1000), 0, "very short file: never below 0")
+T.eq(bar.time_to_x(5, 1 / 0, 1000), 0, "infinite duration")
+
 -- Layout follows visibility
 local g0 = bar.layout(1280, 720, 1, 0)
 T.eq(g0.y1 - g0.y0, 2, "2 px at rest")

@@ -34,7 +34,43 @@ function T.fake_mp(props)
     function mp.get_time() return mp.now end
     function mp.get_property(name, def) return mp.props[name] or def end
     function mp.get_property_number(name, def) return tonumber(mp.props[name]) or def end
+    function mp.get_property_bool(name, def)
+        local v = mp.props[name]
+        if v == nil then return def end
+        return v
+    end
     function mp.set_property_bool(name, v) mp.props[name] = v; mp.fire(name, v) end
+    if mp.props["input-builtin-dragging"] == nil then mp.props["input-builtin-dragging"] = true end
+
+    mp.events = {}
+    function mp.register_event(name, fn)
+        mp.events[name] = mp.events[name] or {}
+        table.insert(mp.events[name], fn)
+    end
+    function mp.emit(name)
+        for _, fn in ipairs(mp.events[name] or {}) do fn({ event = name }) end
+    end
+
+    -- Mouse with mpv's built-in window dragging: moving more than 3 px with
+    -- the button held cancels the button (event up, canceled) unless
+    -- input-builtin-dragging is off.
+    local held
+    function mp.mouse(x, y, hover)
+        if hover == nil then hover = true end
+        mp.fire("mouse-pos", { x = x, y = y, hover = hover })
+        if held and mp.props["input-builtin-dragging"] ~= false and
+            (math.abs(x - held.x) > 3 or math.abs(y - held.y) > 3) then
+            held = nil
+            local b = mp.bindings["suji-bar"]
+            if b then b.fn({ event = "up", canceled = true }) end
+        end
+        mp.last_mouse = { x = x, y = y }
+    end
+    function mp.button(event, canceled)
+        if event == "down" then held = mp.last_mouse else held = nil end
+        local b = mp.bindings["suji-bar"]
+        if b then b.fn({ event = event, canceled = canceled }) end
+    end
     function mp.commandv(...) mp.commands[#mp.commands + 1] = { ... } end
 
     function mp.observe_property(name, _, fn)
