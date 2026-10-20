@@ -2,8 +2,9 @@
 -- display (see tests/run.sh). It drives the mouse with input commands and
 -- checks that dragging the bar seeks, that window dragging is only
 -- switched off while the cursor is on the bar, and that real clicks reach
--- the pause button, the time (run.sh checks suji's debug line) and the
--- volume slider. mpv's OSC is left on in the command line: suji has to
+-- the pause button, the time (run.sh checks suji's debug line), the
+-- volume slider and a command button added to the controls option at run
+-- time. mpv's OSC is left on in the command line: suji has to
 -- turn it off, so it must be gone when the mouse moves.
 --
 -- Window: 640x480, so suji's zone is y 456..479 and the row of controls is
@@ -82,7 +83,16 @@ after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
 after(0.4, function()
     local v = mp.get_property_number("volume", -1)
     if v ~= 51 then finish(false, ("volume %s after a click on the slider"):format(v)) end
-    finish(true, ("time-pos %.2f, pause, time and volume clicks"):format(mp.get_property_number("time-pos", -1)))
+    -- A command button first in the row, set at run time: it takes the
+    -- place of the pause button. (-append keeps the commas in the value.)
+    mp.commandv("change-list", "script-opts", "append",
+        "suji-controls=command:x:set pause yes,pause,time,space,volume,fullscreen")
+end)
+after(0.4, function() mp.commandv("mouse", "43", "436") end)
+after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
+after(0.4, function()
+    if mp.get_property_bool("pause") ~= true then finish(false, "the command button did not pause") end
+    finish(true, ("time-pos %.2f, pause, time, volume and command clicks"):format(mp.get_property_number("time-pos", -1)))
 end)
 
 mp.observe_property("osd-dimensions", "native", function(_, d)

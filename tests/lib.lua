@@ -74,12 +74,15 @@ function T.fake_mp(props)
         if b then b.fn({ event = event, canceled = canceled }) end
     end
     function mp.commandv(...) mp.commands[#mp.commands + 1] = { ... } end
+    function mp.command(s) mp.commands[#mp.commands + 1] = { s } end
     mp.messages = {}
     function mp.register_script_message(name, fn) mp.messages[name] = fn end
 
+    mp.observed = {} -- number of observe_property calls per property
     function mp.observe_property(name, _, fn)
         mp.observers[name] = mp.observers[name] or {}
         table.insert(mp.observers[name], fn)
+        mp.observed[name] = (mp.observed[name] or 0) + 1
     end
     function mp.fire(name, value)
         for _, fn in ipairs(mp.observers[name] or {}) do fn(name, value) end
@@ -154,11 +157,10 @@ function T.fake_mp(props)
     return mp
 end
 
--- Forget suji's modules so each scenario starts from a clean state.
+-- Forget suji's files so each scenario starts from a clean state.
 function T.unload()
-    for _, name in ipairs({ "options", "state", "draw", "animation", "painter", "mouse",
-                            "visibility", "icons", "elements.bar", "elements.controls", "main" }) do
-        package.loaded[name] = nil
+    for name in pairs(package.loaded) do
+        if name == "main" or name:find("^core%.") or name:find("^modules%.") then package.loaded[name] = nil end
     end
 end
 

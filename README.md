@@ -67,6 +67,27 @@ change-list script-opts append suji-scale=1.5
 
 That works from the console, from a key in `input.conf` (`F9 change-list script-opts append suji-enabled=no`) or from another script, and lasts until mpv is closed. On the command line, `--script-opts=suji-scale=1.5` sets an option for that session.
 
+## Customising the controls
+
+The `controls` option chooses which elements the row shows and in which order. The default is the row described above:
+
+```
+controls=pause,time,space,volume,fullscreen
+```
+
+- The elements are `pause`, `time`, `volume` and `fullscreen`.
+- `space` pushes what follows it to the right; `gap` leaves a small hole.
+- `command:icon:command` adds a button that runs an mpv command, for example `command:x:playlist-next`.
+- A condition in `<...>` before an element shows it only when it holds, for example `<has_playlist>command:x:playlist-next`. A hidden element leaves no gap.
+
+The timeline and the title are always there. All the elements, conditions and limits are explained in [`docs/suji.conf`](docs/suji.conf). The option can be changed while mpv runs, and the row changes at once; use `append` so the commas stay in the value:
+
+```
+change-list script-opts append suji-controls=pause,space,fullscreen
+```
+
+On the command line, the same goes for `--script-opts-append=suji-controls=pause,space,fullscreen`.
+
 ## For other scripts: the title
 
 ```

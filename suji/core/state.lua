@@ -1,4 +1,5 @@
--- Everything suji knows about the player: observers write, drawing reads.
+-- What the core knows about the player: observers write, drawing reads.
+-- Modules keep what only they need (volume, chapters...) to themselves.
 
 local M = {
     w = 0, h = 0,     -- window size in OSD pixels (osd-dimensions)
@@ -7,19 +8,11 @@ local M = {
     time = nil,       -- time-pos in seconds, nil when unknown
     duration = nil,   -- duration in seconds, nil when unknown
     paused = false,
-    volume = 100, mute = false, fullscreen = false,
-    title = nil,      -- media-title (see controls.file_title), cut; nil when empty
+    title = nil,      -- media-title (see text.file_title), cut; nil when empty
     series = nil,     -- two-line title sent with set-title, nil when unset
     episode = nil,
     font = "sans-serif", -- osd-font
     remaining = false,   -- show the remaining time instead of the duration
-    chapters = {},       -- chapter-list
-    cache_ranges = nil,  -- seekable-ranges of demuxer-cache-state
-    -- Last values seen, to repaint only when what is shown changes:
-    progress_px = -1, -- progress line end in whole pixels
-    cache_px = -1,    -- end of the cached range in whole pixels
-    time_text = "",   -- the time as shown
-    time_w = 0,       -- measured width of the time, for its click zone
 }
 
 -- Set a field. Returns true when the value changed.

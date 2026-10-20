@@ -2,7 +2,7 @@
 -- by one timer, capped at the display frame rate, and only sent when the
 -- ASS text or the size changed. No timer runs while nothing animates.
 
-local state = require "state"
+local state = require "core.state"
 
 local M = {}
 

@@ -1,15 +1,20 @@
 -- suji: a minimal on-screen controller for mpv.
--- Entry point: version check, property observers and the frame renderer.
+-- Entry point: version check, the core's property observers, the modules,
+-- the controls option and the frame renderer. The core is in core/, the
+-- elements it draws in modules/ (see core/modules.lua).
 
 local msg = require "mp.msg"
-local opts = require "options"
-local state = require "state"
-local draw = require "draw"
-local animation = require "animation"
-local painter = require "painter"
-local mouse = require "mouse"
-local bar = require "elements.bar"
-local controls = require "elements.controls"
+local opts = require "core.options"
+local state = require "core.state"
+local draw = require "core.draw"
+local text = require "core.text"
+local animation = require "core.animation"
+local painter = require "core.painter"
+local modules = require "core.modules"
+local layout = require "core.layout"
+local mouse = require "core.mouse"
+
+local watch, ctx, timeline = modules.watch, modules.ctx, modules.timeline
 
 local MIN_MAJOR, MIN_MINOR = 0, 39
 local MAX_TITLE = 200 -- characters kept from a title (at most 4 bytes each)
@@ -39,32 +44,14 @@ local function grown()
     local now = mp.get_time()
     return animation.value(tween, now) > 0 or animation.running(tween, now)
 end
+ctx.visible = grown
 
--- Something is on screen: the rest line, or a bar that has not faded out.
-local function bar_shown()
-    return (opts.enabled and opts.idle_line) or grown()
-end
-
--- Repaint when the shown line's end moves a whole pixel, or when the time
--- shown or the end of the cached range changes with the controls up.
-local function update_progress()
-    local px = bar.progress_px(state.time, state.duration, state.w)
-    if px ~= state.progress_px then
-        state.progress_px = px
-        if bar_shown() then painter.request() end
+-- On the timeline, or dragging it, the row shows the time under the cursor.
+function ctx.hover_time()
+    local p = mouse.pos()
+    if p and state.has_timeline() and (mouse.on_bar() or mouse.captured() == timeline) then
+        return timeline.drag_time() or timeline.x_to_time(p.x, state.duration, state.w)
     end
-    if not grown() then return end
-    local cached = bar.cached_until(state.cache_ranges, state.time)
-    local cache_px = cached and bar.progress_px(cached, state.duration, state.w) or -1
-    local left, right = controls.time_text(state.time, state.duration, state.remaining)
-    if cache_px ~= state.cache_px or left .. right ~= state.time_text then
-        state.cache_px, state.time_text = cache_px, left .. right
-        painter.request()
-    end
-end
-
-local function request_if_grown()
-    if grown() then painter.request() end
 end
 
 painter.set_renderer(function()
@@ -72,61 +59,54 @@ painter.set_renderer(function()
     local now = mp.get_time()
     animation.set_target(tween, mouse.target(now), now)
     local v = animation.value(tween, now)
-    local out = bar.render(state, v, opts, bar.drag_time())
+    local out = {}
+    local function add(ass) if ass and ass ~= "" then out[#out + 1] = ass end end
+    add(modules.call(timeline, "render", ctx, layout.bar_zone(), v))
     if v > 0 then
-        -- On the timeline, the row shows the time under the cursor.
-        local p, hover = mouse.pos(), nil
-        if p and state.has_timeline() and (mouse.zone() == "bar" or bar.dragging()) then
-            hover = bar.drag_time() or bar.x_to_time(p.x, state.duration, state.w)
-        end
-        local ass, time_w = controls.render(state, v, painter.measure, hover)
-        state.time_w = time_w
-        out = out == "" and ass or out .. "\n" .. ass
+        local placed = layout.current()
+        for _, box in ipairs(placed.boxes) do add(modules.call(box.mod, "render", ctx, box, v)) end
+        local row_top = state.h - (layout.ROW_LIFT + layout.HEIGHT / 2) * state.scale
+        add(modules.call(modules.title, "render", ctx, { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = row_top }, v))
     end
-    return out, animation.running(tween, now)
+    return table.concat(out, "\n"), animation.running(tween, now)
 end)
 
 check_version()
 
-mp.observe_property("osd-dimensions", "native", function(_, dim)
+watch("osd-dimensions", "native", function(dim)
     local w, h = 0, 0
     if type(dim) == "table" then w, h = tonumber(dim.w) or 0, tonumber(dim.h) or 0 end
     local changed = state.set("w", w)
     changed = state.set("h", h) or changed
     if not changed then return end
     mouse.release() -- the grid changed under a drag in progress
-    update_progress()
     debug_sizes("resize")
-    mouse.on_resize()
+    mouse.on_layout()
 end)
 
 -- The size factor changed (HiDPI or the scale option): zones move too.
 local function rescale(reason)
     state.scale = draw.scale(state.hidpi, opts.scale)
     debug_sizes(reason)
-    mouse.on_resize()
+    mouse.on_layout()
 end
 
-mp.observe_property("display-hidpi-scale", "number", function(_, scale)
+watch("display-hidpi-scale", "number", function(scale)
     state.hidpi = scale or 1
     rescale("hidpi")
 end)
 
-mp.observe_property("time-pos", "number", function(_, t)
-    state.time = t
-    update_progress()
-end)
+watch("time-pos", "number", function(t) state.time = t end)
 
-mp.observe_property("duration", "number", function(_, d)
-    if state.set("duration", d) then
-        -- A growing duration (streams) keeps a drag; an unusable one ends it.
-        if not state.has_timeline() then bar.release(false) end
-        update_progress()
+watch("duration", "number", function(d)
+    -- A growing duration (streams) keeps a drag; an unusable one ends it.
+    if state.set("duration", d) and not state.has_timeline() and mouse.captured() == timeline then
+        mouse.release(false)
     end
     mouse.refresh()
 end)
 
-mp.observe_property("pause", "bool", function(_, paused)
+watch("pause", "bool", function(paused)
     state.set("paused", paused == true)
     mouse.refresh()
 end)
@@ -134,39 +114,25 @@ end)
 -- Outside text, cut to a sane size (metadata can hold megabytes).
 local function clean(s)
     if type(s) ~= "string" then return nil end
-    s = controls.prefix(s, MAX_TITLE)
+    s = text.prefix(s, MAX_TITLE)
     return s ~= "" and s or nil
 end
 
--- Property, type, field in state.
-for _, p in ipairs({ { "volume", "number", "volume" }, { "mute", "bool", "mute" },
-                     { "fullscreen", "bool", "fullscreen" }, { "chapter-list", "native", "chapters" } }) do
-    mp.observe_property(p[1], p[2], function(_, value)
-        state[p[3]] = value
-        request_if_grown()
-    end)
-end
-
--- The title comes from three properties, see controls.file_title.
+-- The title comes from three properties, see text.file_title.
 local names = {}
 for _, p in ipairs({ "media-title", "filename", "filename/no-ext" }) do
-    mp.observe_property(p, "string", function(_, value)
+    watch(p, "string", function(value)
         names[p] = value
-        state.title = clean(controls.file_title(names["media-title"], names.filename, names["filename/no-ext"]))
-        request_if_grown()
+        state.title = clean(text.file_title(names["media-title"], names.filename, names["filename/no-ext"]))
+        return true
     end)
 end
 
-mp.observe_property("osd-font", "string", function(_, font)
+watch("osd-font", "string", function(font)
     -- Braces and backslashes would break the override block.
     state.font = (font or ""):gsub("[{}\\]", "")
     if state.font == "" then state.font = "sans-serif" end
-    request_if_grown()
-end)
-
-mp.observe_property("demuxer-cache-state", "native", function(_, c)
-    state.cache_ranges = type(c) == "table" and c["seekable-ranges"] or nil
-    update_progress()
+    return true
 end)
 
 -- set-title <series> <episode>: two lines until the file ends, one with
@@ -174,12 +140,18 @@ end)
 mp.register_script_message("set-title", function(series, episode)
     state.series, state.episode = clean(series), clean(episode)
     if opts.debug then msg.info(("set-title: %s / %s"):format(draw.printable(state.series), draw.printable(state.episode))) end
-    request_if_grown()
+    if grown() then painter.request() end
 end)
 
-mp.observe_property("display-fps", "number", function(_, fps) painter.set_fps(fps) end)
+watch("display-fps", "number", function(fps) painter.set_fps(fps) end)
 
-mp.observe_property("mouse-pos", "native", mouse.on_mouse_pos)
+watch("mouse-pos", "native", mouse.on_mouse_pos)
+
+-- The modules' own observers come after the core's, so they see the state
+-- already updated. Then the row, which may watch more for its conditions.
+modules.init()
+modules.set_controls(opts.controls)
+modules.on_layout(mouse.on_layout)
 
 -- A drag never survives a change of file.
 local function drop_drag()
@@ -208,7 +180,7 @@ local function set_enabled(on)
     end
     if opts.debug then msg.info(on and "enabled" or "disabled") end
     -- Bindings and a paint (empty when disabled); a still cursor is read now.
-    if on then mouse.on_mouse_pos(nil, mp.get_property_native("mouse-pos")) else mouse.refresh() end
+    if on then mouse.on_mouse_pos(mp.get_property_native("mouse-pos")) else mouse.refresh() end
 end
 
 -- Options changed at run time; the rest is read where it is used.
@@ -216,7 +188,8 @@ opts.on_update(function(changed)
     if changed.remaining_time then state.remaining = opts.remaining_time end
     if changed.enabled then set_enabled(opts.enabled) end
     if changed.hide_delay then mouse.rearm() end
-    rescale(changed.scale and "options" or nil) -- and a paint
+    if changed.controls then modules.set_controls(opts.controls) end
+    rescale(changed.scale and "options" or nil) -- lays out and paints
 end)
 
 state.remaining = opts.remaining_time

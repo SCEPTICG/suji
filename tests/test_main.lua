@@ -31,7 +31,7 @@ local function seeks()
     return n
 end
 
-local bar = function() return package.loaded["elements.bar"] end
+local bar = function() return package.loaded["modules.timeline"] end
 
 -- At rest ---------------------------------------------------------------
 start()
@@ -155,7 +155,7 @@ T.eq(mp.active_timers(), 0, "idle timer off after leaving")
 -- Idle: compute is asked again after hide_delay -------------------------
 start({ hide_delay = 2 })
 local calls = {}
-package.loaded["visibility"].compute = function(input)
+package.loaded["core.visibility"].compute = function(input)
     calls[#calls + 1] = input.idle_time
     return input.idle_time >= input.hide_delay and 0 or 1
 end
@@ -211,7 +211,7 @@ T.eq(mp.bindings["suji-bar"], nil, "no duration: bar is not clickable")
 
 -- A broken visibility function must not break the player ----------------
 start()
-package.loaded["visibility"].compute = function() error("oops") end
+package.loaded["core.visibility"].compute = function() error("oops") end
 mp.mouse(640, 710)
 mp.advance(1)
 T.eq(mp.bindings["suji-bar"], nil, "error counts as hidden")
@@ -219,7 +219,7 @@ T.eq(mp.logs[#mp.logs][1], "error", "error is reported")
 
 -- Options are kept in range ---------------------------------------------
 start({ hide_delay = 1e9, proximity = 1e9, scale = 0 / 0 })
-local o = package.loaded["options"]
+local o = package.loaded["core.options"]
 T.eq(o.hide_delay, 3600, "hide_delay capped")
 T.eq(o.proximity, 10000, "proximity capped")
 T.eq(o.scale, 1, "NaN scale falls back")
@@ -252,7 +252,7 @@ start()
 mp.fire("media-title", "Movie")
 mp.fire("volume", 100)
 local seen
-package.loaded["visibility"].compute = function(input) seen = input.on_controls; return 1 end
+package.loaded["core.visibility"].compute = function(input) seen = input.on_controls; return 1 end
 mp.mouse(42, 680)
 T.eq(seen, true, "visibility knows the cursor is on a control")
 T.check(mp.bindings["suji-bar"] ~= nil, "bindings on over the pause button")
@@ -293,7 +293,7 @@ T.eq(mp.props["input-builtin-dragging"], true, "built-in dragging back")
 
 -- Hidden controls take no clicks
 start()
-package.loaded["visibility"].compute = function() return 0 end
+package.loaded["core.visibility"].compute = function() return 0 end
 mp.mouse(42, 680)
 T.eq(mp.bindings["suji-bar"], nil, "hidden: the pause button is not clickable")
 
@@ -312,12 +312,12 @@ mp.messages["set-title"]("", "")
 mp.advance(1)
 T.check(painted():find("}Movie", 1, true) ~= nil, "empty set-title goes back to media-title")
 mp.messages["set-title"](string.rep("\195\169", 300), nil)
-T.eq(package.loaded["state"].series, string.rep("\195\169", 200), "long titles are cut by characters")
-T.eq(package.loaded["state"].episode, nil, "missing argument")
+T.eq(package.loaded["core.state"].series, string.rep("\195\169", 200), "long titles are cut by characters")
+T.eq(package.loaded["core.state"].episode, nil, "missing argument")
 mp.advance(1)
 T.check(painted():find("}\195\169", 1, true) ~= nil, "a single part shows on one line")
 mp.emit("end-file")
-T.eq(package.loaded["state"].series, nil, "end-file clears the title")
+T.eq(package.loaded["core.state"].series, nil, "end-file clears the title")
 
 -- Someone else turns window dragging back on while suji has it off
 start()
@@ -342,13 +342,13 @@ T.eq(#mp.updates, n, "hidden: cache, chapters and title do not repaint")
 -- Huge or broken titles are cut
 start()
 mp.fire("media-title", string.rep("a", 1000000))
-T.eq(#package.loaded["state"].title, 200, "media-title is cut too")
+T.eq(#package.loaded["core.state"].title, 200, "media-title is cut too")
 mp.messages["set-title"](string.rep("\128", 5000), "x")
-T.eq(#package.loaded["state"].series, 200, "stray UTF-8 bytes do not skip the cut")
+T.eq(#package.loaded["core.state"].series, 200, "stray UTF-8 bytes do not skip the cut")
 
 -- Measuring: real results are cached, guesses are not
 start()
-local measure = package.loaded["painter"].measure
+local measure = package.loaded["core.painter"].measure
 mp.probes = 0
 T.eq(measure("a", 7), 7, "no bounds: the guess")
 measure("a", 7)
@@ -381,8 +381,8 @@ T.eq(#mp.commands, 0, "no volume change after the resize")
 
 -- Options changed at run time ---------------------------------------------
 start({ debug = true })
-o = package.loaded["options"]
-local st = package.loaded["state"]
+o = package.loaded["core.options"]
+local st = package.loaded["core.state"]
 mp.set_opts({ scale = 1.5 })
 T.eq(st.scale, 1.5, "scale applied at run time")
 T.check(mp.logs[#mp.logs][2]:find("^options: .*scale 1%.500") ~= nil, "new scale logged")
@@ -435,13 +435,13 @@ mp.advance(1)
 T.check(mp.active_timers() > 0, "longer hide_delay: idle timer still pending")
 mp.advance(2)
 T.eq(mp.active_timers(), 0, "longer hide_delay: idle timer fired")
-T.eq(package.loaded["mouse"].target(mp.now), 0, "hidden after the new hide_delay")
+T.eq(package.loaded["core.mouse"].target(mp.now), 0, "hidden after the new hide_delay")
 start({ hide_delay = 3 })
 mp.mouse(640, 400)
 mp.advance(0.5)
 mp.set_opts({ hide_delay = 1 })
 mp.advance(0.6)
-T.eq(package.loaded["mouse"].target(mp.now), 0, "shorter hide_delay hides on time")
+T.eq(package.loaded["core.mouse"].target(mp.now), 0, "shorter hide_delay hides on time")
 T.eq(mp.active_timers(), 0, "shorter hide_delay: no timer left")
 
 -- enabled and mpv's OSC -------------------------------------------------
@@ -499,20 +499,20 @@ mp.fire("media-title", "Bills Must Be Paid part 1.mp4")
 mp.advance(1)
 T.check(painted():find("}Bills Must Be Paid part 1$") ~= nil, "file name shown without extension")
 mp.fire("media-title", string.rep("b", 1000))
-T.eq(package.loaded["state"].title, string.rep("b", 200), "a title tag is cut, never raw")
+T.eq(package.loaded["core.state"].title, string.rep("b", 200), "a title tag is cut, never raw")
 
 -- set-title: one part, and a clean debug log -------------------------------
 start({ debug = true })
 mp.messages["set-title"]("Episode 5")
-T.eq(package.loaded["state"].series, "Episode 5", "a single argument")
-T.eq(package.loaded["state"].episode, nil, "no second argument")
+T.eq(package.loaded["core.state"].series, "Episode 5", "a single argument")
+T.eq(package.loaded["core.state"].episode, nil, "no second argument")
 mp.fire("pause", true)
 mp.advance(1)
 T.check(painted():find("}Episode 5", 1, true) ~= nil and painted():find("}EPISODE 5", 1, true) == nil,
     "a single argument: one line")
 mp.messages["set-title"]("", "Episode 5")
-T.eq(package.loaded["state"].episode, "Episode 5", "episode alone")
-T.eq(package.loaded["state"].series, nil, "no series")
+T.eq(package.loaded["core.state"].episode, "Episode 5", "episode alone")
+T.eq(package.loaded["core.state"].series, nil, "no series")
 mp.messages["set-title"]("a\27[31mb\194\155c", "\7")
 local line = mp.logs[#mp.logs][2]
 T.check(not line:find("%c") and not line:find("\194[\128-\159]"), "no control characters in the log")

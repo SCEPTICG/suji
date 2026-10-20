@@ -2,7 +2,7 @@
 -- at run time). Defaults decide each type, so none of them may be nil.
 
 local msg = require "mp.msg"
-local draw = require "draw"
+local draw = require "core.draw"
 
 local DEFAULTS = {
     enabled = true,        -- no = suji draws nothing and leaves the player alone
@@ -14,6 +14,22 @@ local DEFAULTS = {
     proximity = 120,       -- distance in px (at scale 1) where the bar reacts
     scale = 1,             -- size factor, multiplied by the system HiDPI scale
     debug = false,         -- log sizes and scale to the mpv console
+    -- TODO(SCEPTICG): this line decides what everyone who installs suji and
+    -- touches nothing sees in the row, and in which order. The value below
+    -- only reproduces v0.1.0 so that everything works and the tests pass;
+    -- the final one is yours to choose (keep docs/suji.conf in step).
+    -- Elements, left to right, separated by commas (see core/controls.lua):
+    --   pause, time, volume, fullscreen      the controls of v0.1.0
+    --   space        takes the free width: what follows goes to the right
+    --   gap          a small fixed hole
+    --   command:icon:command?text            a button that runs an mpv command
+    --   subtitles, audio, playlist, more     buttons with menus (part 2)
+    --   button:name  a button another script defines (part 3)
+    -- Conditions go before an element, in <...>: video, audio, stream,
+    -- has_chapter, has_playlist, idle, or any mpv property or user-data/...
+    -- (true when it exists and is not false, no, 0 or empty). "," is OR,
+    -- "+" is AND, "!" negates: <video,audio>, <has_playlist+!stream>.
+    controls = "pause,time,space,volume,fullscreen",
 }
 
 -- Numbers are kept in these ranges; NaN falls back to the default.

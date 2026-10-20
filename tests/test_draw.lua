@@ -1,6 +1,6 @@
 local T = require "lib"
-local draw = require "draw"
-local animation = require "animation"
+local draw = require "core.draw"
+local animation = require "core.animation"
 
 -- Colours and alpha
 T.eq(draw.color("ffffff"), "&HFFFFFF&", "white")

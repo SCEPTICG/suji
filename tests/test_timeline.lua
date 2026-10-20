@@ -1,5 +1,5 @@
 local T = require "lib"
-local bar = require "elements.bar"
+local bar = require "modules.timeline"
 
 -- Position <-> time
 T.eq(bar.time_to_x(50, 100, 1000), 500, "middle")
@@ -47,14 +47,14 @@ local st = { w = 1280, h = 720, scale = 1, time = 50, duration = 100 }
 local on = { idle_line = true, accent = "ff0000" }
 local off = { idle_line = false, accent = "ff0000" }
 local function events(s) local _, n = s:gsub("\n", ""); return s == "" and 0 or n + 1 end
-T.eq(events(bar.render(st, 0, on)), 3, "rest: halo, rail, progress")
-T.eq(events(bar.render(st, 1, on)), 5, "grown: plus knob and its halo")
-T.eq(bar.render(st, 0, off), "", "idle_line=no draws nothing at rest")
-T.eq(events(bar.render(st, 0.5, off)), 5, "idle_line=no still grows")
-T.check(bar.render(st, 1, on):find("\\1c&H0000FF&", 1, true) ~= nil, "accent colour used")
-T.eq(bar.render({ w = 1280, h = 720, scale = 1, time = 5 }, 1, on), "", "no duration, no bar")
-T.eq(bar.render({ w = 0, h = 0, scale = 1, time = 5, duration = 10 }, 1, on), "", "no window")
-T.check(bar.render(st, 1, on, 25) ~= bar.render(st, 1, on), "drag time moves the progress")
+T.eq(events(bar.ass(st, 0, on)), 3, "rest: halo, rail, progress")
+T.eq(events(bar.ass(st, 1, on)), 5, "grown: plus knob and its halo")
+T.eq(bar.ass(st, 0, off), "", "idle_line=no draws nothing at rest")
+T.eq(events(bar.ass(st, 0.5, off)), 5, "idle_line=no still grows")
+T.check(bar.ass(st, 1, on):find("\\1c&H0000FF&", 1, true) ~= nil, "accent colour used")
+T.eq(bar.ass({ w = 1280, h = 720, scale = 1, time = 5 }, 1, on), "", "no duration, no bar")
+T.eq(bar.ass({ w = 0, h = 0, scale = 1, time = 5, duration = 10 }, 1, on), "", "no window")
+T.check(bar.ass(st, 1, on, 25) ~= bar.ass(st, 1, on), "drag time moves the progress")
 
 
 -- Cached range
@@ -79,8 +79,8 @@ T.eq(#bar.chapter_xs({ { time = 5 } }, nil, 1000), 0, "no duration")
 
 local full = { w = 1280, h = 720, scale = 1, time = 50, duration = 100,
                cache_ranges = { { start = 40, ["end"] = 80 } }, chapters = { { time = 0 }, { time = 30 } } }
-T.eq(events(bar.render(full, 1, on)), 7, "grown: plus cache and chapter marks")
-T.eq(events(bar.render(full, 0, on)), 3, "at rest: no cache and no marks")
-T.check(bar.render(full, 1, on):find("\\1a&HD1&", 1, true) ~= nil, "cache at 18 %")
+T.eq(events(bar.ass(full, 1, on, nil, full.cache_ranges, full.chapters)), 7, "grown: plus cache and chapter marks")
+T.eq(events(bar.ass(full, 0, on, nil, full.cache_ranges, full.chapters)), 3, "at rest: no cache and no marks")
+T.check(bar.ass(full, 1, on, nil, full.cache_ranges, full.chapters):find("\\1a&HD1&", 1, true) ~= nil, "cache at 18 %")
 
-T.done("test_bar")
+T.done("test_timeline")

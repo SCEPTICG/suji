@@ -18,11 +18,11 @@
 --                              `hide_delay` seconds have passed, so a rule
 --                              like "idle_time >= hide_delay" just works.
 --   on_bar         boolean     The cursor is inside the bar's active zone.
---   on_controls    boolean     The cursor is on a button, the time or the
---                              volume slider.
+--   on_controls    boolean     The cursor is on the zone of any element of
+--                              the row (a button, the time, the volume...).
 --   paused         boolean     Playback is paused.
---   dragging       boolean     The user is dragging the timeline or the volume
---                              slider.
+--   dragging       boolean     The user is dragging the timeline or something
+--                              in the row (the volume slider).
 --
 -- Questions this function answers:
 --   * Does closeness grow linearly, or along a curve (slow at first, then

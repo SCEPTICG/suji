@@ -1,9 +1,13 @@
 -- The timeline: a thin line along the bottom edge that grows into a seek
--- bar with a knob. Geometry and rendering are pure; seeking uses the global
+-- bar with a knob. Geometry and drawing are pure; seeking uses the global
 -- `mp` only when called, so tests can load this file.
+--
+-- A module of suji that is always there: it is not part of the controls
+-- option, its zone is the bottom edge (layout.bar_zone) and it holds the
+-- mouse while dragging. See core/modules.lua for the contract.
 
-local draw = require "draw"
-local valid = require("state").valid_duration
+local draw = require "core.draw"
+local valid = require("core.state").valid_duration
 
 local M = {}
 
@@ -104,7 +108,8 @@ end
 
 -- ASS text for the bar. st: suji's state. drag_time, when set, replaces the
 -- playback time (the knob follows the cursor before the seek lands).
-function M.render(st, v, opts, drag_time)
+-- cache_ranges and chapters: as in demuxer-cache-state and chapter-list.
+function M.ass(st, v, opts, drag_time, cache_ranges, chapters)
     if not valid(st.duration) or st.w <= 0 or st.h <= 0 then return "" end
     v = clamp(v, 0, 1)
     local fade = opts.idle_line and 1 or v
@@ -121,14 +126,14 @@ function M.render(st, v, opts, drag_time)
             { color = white, opacity = lerp(opts.idle_line and 0.15 or 0, 0.35, v) }),
     }
     -- Cached range and chapter marks only while the bar is grown.
-    local cached = v > 0 and M.cached_until(st.cache_ranges, st.time)
+    local cached = v > 0 and M.cached_until(cache_ranges, st.time)
     if cached and cached > st.time then
         out[#out + 1] = draw.rect(M.time_to_x(st.time, st.duration, st.w), g.y0,
             M.time_to_x(cached, st.duration, st.w), g.y1, { color = white, opacity = 0.18 * v })
     end
     out[#out + 1] = draw.rect(g.x0, g.y0, px, g.y1, { color = accent, opacity = fade * lerp(0.75, 1, v) })
     local marks, hw = {}, M.MARK_WIDTH * st.scale / 2
-    for _, x in ipairs(v > 0 and M.chapter_xs(st.chapters, st.duration, st.w) or {}) do
+    for _, x in ipairs(v > 0 and M.chapter_xs(chapters, st.duration, st.w) or {}) do
         marks[#marks + 1] = { x - hw, g.y0, x + hw, g.y0, x + hw, g.y1, x - hw, g.y1 }
     end
     if #marks > 0 then out[#out + 1] = draw.poly(marks, { color = BLACK, opacity = 0.55 * v }) end
@@ -174,25 +179,46 @@ end
 function M.dragging() return drag ~= nil end
 function M.drag_time() return drag and drag.target end
 
+-- End of the drag: one last exact seek, unless the last seek was already
+-- an exact one to the same place. commit = false drops the drag without
+-- seeking (for example when the file changed underneath).
+function M.release(_, commit)
+    if not drag then return end
+    local d = drag
+    drag = nil
+    d.timer:kill()
+    if commit ~= false and d.exact_target ~= d.target then
+        seek(d.target, "exact")
+    end
+    -- Resume only if the pause suji set is still there: the user may have
+    -- unpaused by hand during the drag.
+    if d.resume and mp.get_property_bool("pause") then
+        mp.set_property_bool("pause", false)
+    end
+end
+
 -- Mouse button down on the bar: exact seek to the cursor, start dragging.
 -- A drag still running means its button up was lost: drop it first.
-function M.press(x, st, opts)
+function M.press(ctx, _, x)
+    local st = ctx.state
     if not valid(st.duration) then return end
-    if drag then M.release(false) end
+    if drag then M.release(ctx, false) end
     local t = M.seek_target(x, st.duration, st.w)
     drag = { target = t, px = math.floor(x), resume = false,
              last_time = mp.get_time(), last_target = t }
     drag.timer = mp.add_timeout(DRAG_SEEK_INTERVAL, drag_seek, true)
-    if opts.pause_on_drag and not st.paused then
+    if ctx.opts.pause_on_drag and not st.paused then
         mp.set_property_bool("pause", true)
         drag.resume = true
     end
     seek(t, "exact")
+    return true
 end
 
 -- Cursor moved while dragging: seek at most DRAG_SEEK_INTERVAL apart, only
 -- when the target moved by at least one pixel.
-function M.move(x, st)
+function M.move(ctx, _, x)
+    local st = ctx.state
     if not drag then return end
     local px = math.floor(clamp(x, 0, st.w))
     if px == drag.px then return end
@@ -209,22 +235,48 @@ function M.move(x, st)
     end
 end
 
--- End of the drag: one last exact seek, unless the last seek was already
--- an exact one to the same place. final_seek = false drops the drag without
--- seeking (for example when the file changed underneath).
-function M.release(final_seek)
-    if not drag then return end
-    local d = drag
-    drag = nil
-    d.timer:kill()
-    if final_seek ~= false and d.exact_target ~= d.target then
-        seek(d.target, "exact")
+-- The module -----------------------------------------------------------------
+
+local cache_ranges, chapters -- seekable-ranges of demuxer-cache-state, chapter-list
+-- Last values drawn, to repaint only when what is shown changes:
+local progress_px = -1 -- progress line end in whole pixels
+local cache_px = -1    -- end of the cached range in whole pixels
+
+-- Repaint when the shown line's end moves a whole pixel, or when the end
+-- of the cached range moves with the controls up.
+local function update(ctx)
+    local st = ctx.state
+    local px = M.progress_px(st.time, st.duration, st.w)
+    if px ~= progress_px then
+        progress_px = px
+        if (ctx.opts.enabled and ctx.opts.idle_line) or ctx.visible() then ctx.request() end
     end
-    -- Resume only if the pause suji set is still there: the user may have
-    -- unpaused by hand during the drag.
-    if d.resume and mp.get_property_bool("pause") then
-        mp.set_property_bool("pause", false)
+    if not ctx.visible() then return end
+    local cached = M.cached_until(cache_ranges, st.time)
+    local c = cached and M.progress_px(cached, st.duration, st.w) or -1
+    if c ~= cache_px then
+        cache_px = c
+        ctx.request()
     end
+end
+
+function M.init(ctx)
+    local function on_change() update(ctx) end
+    ctx.watch("osd-dimensions", "native", on_change)
+    ctx.watch("time-pos", "number", on_change)
+    ctx.watch("duration", "number", on_change)
+    ctx.watch("demuxer-cache-state", "native", function(c)
+        cache_ranges = type(c) == "table" and c["seekable-ranges"] or nil
+        update(ctx)
+    end)
+    ctx.watch("chapter-list", "native", function(c)
+        chapters = c
+        return true
+    end)
+end
+
+function M.render(ctx, _, v)
+    return M.ass(ctx.state, v, ctx.opts, M.drag_time(), cache_ranges, chapters)
 end
 
 return M

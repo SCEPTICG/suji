@@ -1,25 +1,29 @@
--- Mouse position, distance to the bar, the active zone and the bindings.
--- MBTN_LEFT is only bound over a visible zone (bar, button, time, volume
--- slider) or while dragging, the wheel only over the volume; elsewhere input
--- goes through, so double click and window dragging keep working. Forced
+-- Mouse position, distance to the bar, the zone under the cursor and the
+-- bindings. Zones come from the layout: the timeline's along the bottom
+-- edge and one per module of the row. A module whose press returns true
+-- holds the mouse until the button goes up (dragging).
+-- MBTN_LEFT is only bound over a visible zone or while a module holds the
+-- mouse, the wheel only over a module that takes it; elsewhere input goes
+-- through, so double click and window dragging keep working. Forced
 -- bindings still let mpv start a window drag that cancels ours, so
 -- input-builtin-dragging is off while they are on (see restore_dragging).
 
 local msg = require "mp.msg"
-local opts = require "options"
-local state = require "state"
-local painter = require "painter"
-local visibility = require "visibility"
-local bar = require "elements.bar"
-local controls = require "elements.controls"
+local opts = require "core.options"
+local state = require "core.state"
+local painter = require "core.painter"
+local visibility = require "core.visibility"
+local layout = require "core.layout"
+local modules = require "core.modules"
 
 local M = {}
 
+local ctx = modules.ctx
 local pos           -- { x, y } in OSD pixels, nil when unknown or outside
 local seen_real = false
 local last_move = 0
-local zone          -- "bar", a control name (see controls.hit) or nil
-local volume_drag = false
+local hit           -- zone under the cursor (see layout.hit) or nil
+local captured      -- module holding the mouse, or nil
 local bound, wheel_bound = false, false
 local took_dragging = false -- suji set input-builtin-dragging=no
 local reported_error = false
@@ -29,16 +33,16 @@ local idle_timer = mp.add_timeout(1, function() M.refresh() end, true)
 
 function M.input(now)
     local distance
-    if pos then distance = math.max(0, bar.zone_top(state.h, state.scale) - pos.y) end
+    if pos then distance = math.max(0, layout.bar_zone().y0 - pos.y) end
     return {
         distance = distance,
         proximity = opts.proximity * state.scale,
         idle_time = now - last_move,
         hide_delay = opts.hide_delay,
-        on_bar = zone == "bar",
-        on_controls = zone ~= nil and zone ~= "bar",
+        on_bar = hit ~= nil and hit.bar == true,
+        on_controls = hit ~= nil and not hit.bar,
         paused = state.paused,
-        dragging = bar.dragging() or volume_drag,
+        dragging = captured ~= nil,
     }
 end
 
@@ -56,46 +60,46 @@ function M.target(now)
 end
 
 function M.pos() return pos end
-function M.zone() return zone end
+function M.on_bar() return hit ~= nil and hit.bar == true end
+function M.captured() return captured end
 
-local function set_volume(x)
-    local v = controls.x_to_volume(x, controls.layout(state.w, state.h, state.scale))
-    if v ~= state.volume then mp.commandv("set", "volume", tostring(v)) end
-end
-
-local function press(x)
-    if zone == "bar" then bar.press(x, state, opts)
-    elseif zone == "volume" then volume_drag = true; set_volume(x)
-    elseif zone == "pause" then mp.commandv("cycle", "pause")
-    elseif zone == "mute" then mp.commandv("cycle", "mute")
-    elseif zone == "fullscreen" then mp.commandv("cycle", "fullscreen")
-    elseif zone == "time" then
-        state.remaining = not state.remaining
-        if opts.debug then msg.info("remaining time " .. (state.remaining and "on" or "off")) end
-    end
-end
-
--- End any drag, of the timeline or of the volume. seek as in bar.release.
-function M.release(seek)
-    bar.release(seek)
-    volume_drag = false
+-- End what the module holding the mouse is doing. commit = false drops it
+-- (no final seek, for example); see the module contract.
+function M.release(commit)
+    local mod = captured
+    if not mod then return end
+    captured = nil
+    modules.call(mod, "release", ctx, commit)
 end
 local release = M.release
 
+local function press(x, y)
+    if captured then release(false) end -- its button up was lost
+    if hit and modules.call(hit.mod, "press", ctx, hit, x, y) == true then captured = hit.mod end
+end
+
+-- The cursor moved while a module holds the mouse. It gets its box of now;
+-- if it is no longer laid out, it lets go.
+local function drag(x, y)
+    local box = layout.find(layout.current(), captured)
+    if not box then return release(false) end
+    modules.call(captured, "move", ctx, box, x, y)
+end
+
 local function on_button(e)
     if e.event == "down" then
-        if pos then press(pos.x) end
+        if pos then press(pos.x, pos.y) end
     elseif e.event == "up" then
         release(not e.canceled)
     elseif e.event == "press" then
         -- Down and up could not be tracked separately: treat it as a click.
-        if pos then press(pos.x); release() end
+        if pos then press(pos.x, pos.y); release() end
     end
     M.refresh()
 end
 
-local function wheel(step)
-    return function() mp.commandv("add", "volume", step) end
+local function wheel(dir)
+    return function() if hit then modules.call(hit.mod, "wheel", ctx, dir) end end
 end
 
 -- Put window dragging back, unless someone changed it since suji turned
@@ -113,8 +117,8 @@ local function set_bindings(enable, wheel_too)
     if wheel_too ~= wheel_bound then
         wheel_bound = wheel_too
         if wheel_too then
-            mp.add_forced_key_binding("WHEEL_UP", "suji-wheel-up", wheel("5"))
-            mp.add_forced_key_binding("WHEEL_DOWN", "suji-wheel-down", wheel("-5"))
+            mp.add_forced_key_binding("WHEEL_UP", "suji-wheel-up", wheel(1))
+            mp.add_forced_key_binding("WHEEL_DOWN", "suji-wheel-down", wheel(-1))
         else
             mp.remove_key_binding("suji-wheel-up")
             mp.remove_key_binding("suji-wheel-down")
@@ -147,23 +151,19 @@ end
 -- soon as the cursor enters the zone, never on the click itself, because
 -- mpv applies them asynchronously and the first click would be lost.
 function M.refresh()
-    if not opts.enabled then pos, zone = nil, nil; idle_timer:kill() end
-    local usable = zone ~= nil and (zone ~= "bar" or state.has_timeline())
-    local want = bar.dragging() or volume_drag or (usable and M.target(mp.get_time()) > 0)
-    set_bindings(want, want and (zone == "mute" or zone == "volume"))
+    if not opts.enabled then pos, hit = nil, nil; idle_timer:kill() end
+    local usable = hit ~= nil and (not hit.bar or state.has_timeline())
+    local want = captured ~= nil or (usable and M.target(mp.get_time()) > 0)
+    set_bindings(want, want and hit ~= nil and modules.takes(hit.mod, "wheel"))
     painter.request()
 end
 
 local function update_zone()
-    if not pos then zone = nil
-    elseif bar.in_zone(pos.x, pos.y, state.w, state.h, state.scale) then zone = "bar"
-    else
-        zone = controls.hit(controls.layout(state.w, state.h, state.scale), pos.x, pos.y, state.time_w)
-    end
+    hit = pos and layout.hit(layout.current(), pos.x, pos.y) or nil
 end
 
 -- Observer for the mouse-pos property.
-function M.on_mouse_pos(_, p)
+function M.on_mouse_pos(p)
     if not opts.enabled then return end
     if type(p) ~= "table" or not p.hover then
         pos = nil
@@ -175,8 +175,7 @@ function M.on_mouse_pos(_, p)
         if not pos or pos.x ~= p.x or pos.y ~= p.y then
             pos = { x = p.x, y = p.y }
             last_move = mp.get_time()
-            bar.move(p.x, state)
-            if volume_drag then set_volume(p.x) end
+            if captured then drag(p.x, p.y) end
             M.rearm()
         end
     end
@@ -194,10 +193,19 @@ function M.rearm()
     end
 end
 
--- The window changed size: the zone moved with it.
-function M.on_resize()
+-- The zones moved: the window size, the scale or the row changed. A module
+-- that is no longer laid out lets go of the mouse.
+function M.on_layout()
+    if captured and not layout.find(layout.current(), captured) then release(false) end
     update_zone()
     M.refresh()
 end
+
+-- A module that failed loses the mouse and its zone.
+modules.on_failure(function(mod)
+    if captured == mod then captured = nil end
+    if hit and hit.mod == mod and not hit.bar then hit = nil end
+    M.refresh()
+end)
 
 return M
