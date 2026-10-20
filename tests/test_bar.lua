@@ -70,6 +70,10 @@ local xs = bar.chapter_xs({ { time = 0 }, { time = 25 }, { time = 150 }, { time 
 T.eq(#xs, 1, "only chapters inside the file, none at 0")
 T.eq(xs[1], 250, "chapter x")
 T.eq(#bar.chapter_xs({}, 100, 1000), 0, "empty list")
+local many = {}
+for i = 1, 30000 do many[i] = { time = i / 300 } end
+T.eq(#bar.chapter_xs(many, 100, 1000), 1000, "at most one mark per pixel column")
+T.check(bar.chapter_xs(many, 100, 1000) == bar.chapter_xs(many, 100, 1000), "same list: last result reused")
 T.eq(#bar.chapter_xs(nil, 100, 1000), 0, "no list")
 T.eq(#bar.chapter_xs({ { time = 5 } }, nil, 1000), 0, "no duration")
 

@@ -124,7 +124,10 @@ function T.fake_mp(props)
     function mp.create_osd_overlay(format)
         local ov = { format = format, data = "", res_x = 0, res_y = 720 }
         function ov.update(self)
-            if self.hidden then return nil end -- measuring: no bounds known
+            if self.hidden then -- measuring
+                mp.probes = (mp.probes or 0) + 1
+                return mp.probe_result
+            end
             mp.updates[#mp.updates + 1] = { data = self.data, w = self.res_x, h = self.res_y }
         end
         function ov.remove() end

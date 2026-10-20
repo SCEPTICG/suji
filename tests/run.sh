@@ -52,9 +52,16 @@ elif [ ! -s "$tmp/t.mkv" ]; then
 else
     out=$(timeout 60 xvfb-run -a mpv --no-config --osc=no --vo=x11 --ao=null \
         --geometry=640x480 --pause --keep-open=yes --script=./suji \
-        --script=tests/xvfb_drag.lua --msg-level=all=no,suji=warn,xvfb_drag=info \
+        --script=tests/xvfb_drag.lua --script-opts=suji-debug=yes \
+        --msg-level=all=no,suji=info,xvfb_drag=info \
         "$tmp/t.mkv" 2>&1)
-    if printf '%s\n' "$out" | grep -q 'xvfb-drag: ok'; then
+    if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-drag: FAIL\n%s\n' "$out"
+        status=1
+    elif ! printf '%s\n' "$out" | grep -q '^\[suji\] remaining time on'; then
+        printf 'xvfb-drag: FAIL (click on the time)\n%s\n' "$out"
+        status=1
+    elif printf '%s\n' "$out" | grep -q 'xvfb-drag: ok'; then
         printf '%s\n' "$out" | grep 'xvfb-drag:'
     else
         printf 'xvfb-drag: FAIL\n%s\n' "$out"

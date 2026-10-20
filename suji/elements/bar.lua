@@ -82,14 +82,25 @@ function M.cached_until(ranges, t)
     return best
 end
 
--- x of every chapter start inside the file, except one at the very start.
+-- x of every chapter start inside the file, except one at the very start,
+-- at most one per pixel column so a huge chapter list stays cheap. The
+-- last result is kept: the list is only walked again when something changed.
+local last_marks = {}
 function M.chapter_xs(chapters, duration, w)
-    local xs = {}
-    if type(chapters) ~= "table" or not valid(duration) then return xs end
-    for _, c in ipairs(chapters) do
-        local t = type(c) == "table" and tonumber(c.time)
-        if t and t > 0 and t < duration then xs[#xs + 1] = M.time_to_x(t, duration, w) end
+    local m = last_marks
+    if m.chapters == chapters and m.duration == duration and m.w == w then return m.xs end
+    local xs, seen = {}, {}
+    if type(chapters) == "table" and valid(duration) then
+        for _, c in ipairs(chapters) do
+            local t = type(c) == "table" and tonumber(c.time)
+            local x = t and t > 0 and t < duration and M.time_to_x(t, duration, w)
+            if x and not seen[math.floor(x)] then
+                seen[math.floor(x)] = true
+                xs[#xs + 1] = x
+            end
+        end
     end
+    last_marks = { chapters = chapters, duration = duration, w = w, xs = xs }
     return xs
 end
 

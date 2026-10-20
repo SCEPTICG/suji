@@ -21,7 +21,8 @@
 --   on_controls    boolean     The cursor is on a button, the time or the
 --                              volume slider.
 --   paused         boolean     Playback is paused.
---   dragging       boolean     The user is dragging the timeline.
+--   dragging       boolean     The user is dragging the timeline or the volume
+--                              slider.
 --
 -- Questions this function answers:
 --   * Does closeness grow linearly, or along a curve (slow at first, then

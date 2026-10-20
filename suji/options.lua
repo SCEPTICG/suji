@@ -13,6 +13,9 @@ local M = {
     hide_delay = 1.5,      -- seconds without mouse movement before hiding
     proximity = 120,       -- distance in px (at scale 1) where the bar reacts
     scale = 1,             -- size factor, multiplied by the system HiDPI scale
+    -- Temporary, to compare during the alpha: one style is removed before
+    -- v0.1.0. "line" (thin strokes) or "fill" (solid shapes).
+    icon_style = "line",
     debug = false,         -- log sizes and scale to the mpv console
 }
 
@@ -21,6 +24,10 @@ require("mp.options").read_options(M, "suji")
 if not draw.color(M.accent) then
     msg.warn(("invalid accent '%s', using ffffff"):format(M.accent))
     M.accent = "ffffff"
+end
+if M.icon_style ~= "line" and M.icon_style ~= "fill" then
+    msg.warn(("invalid icon_style '%s', using line"):format(M.icon_style))
+    M.icon_style = "line"
 end
 -- Keep numbers in a sane range; NaN falls back to the default.
 local function limit(key, lo, hi, default)

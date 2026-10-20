@@ -52,8 +52,8 @@ function M.request()
 end
 
 -- Width in px of one event of ASS text, measured by libass in a hidden
--- overlay. That is slow, so results are cached; guess is used when mpv
--- cannot tell.
+-- overlay. That is slow, so results are cached; guess is used (and not
+-- cached) when mpv cannot tell.
 local probe = mp.create_osd_overlay("ass-events")
 probe.hidden, probe.compute_bounds = true, true
 local widths, cached = {}, 0
@@ -63,7 +63,8 @@ function M.measure(ass, guess)
     probe.res_x, probe.res_y = state.w, state.h
     probe.data = ass
     local r = probe:update()
-    local w = type(r) == "table" and r.x0 and r.x1 and r.x1 - r.x0 or guess
+    if type(r) ~= "table" or not r.x0 or not r.x1 then return guess end
+    local w = r.x1 - r.x0
     if cached >= 256 then widths, cached = {}, 0 end
     widths[ass], cached = w, cached + 1
     return w

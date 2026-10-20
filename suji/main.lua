@@ -12,7 +12,7 @@ local bar = require "elements.bar"
 local controls = require "elements.controls"
 
 local MIN_MAJOR, MIN_MINOR = 0, 39
-local MAX_TITLE = 200 -- characters kept from a set-title argument
+local MAX_TITLE = 200 -- characters kept from a title (at most 4 bytes each)
 
 local function check_version()
     local v = mp.get_property("mpv-version", "")
@@ -33,16 +33,15 @@ end
 -- Visibility changes are smoothed by a short clock-based transition.
 local tween = animation.new(0.15)
 
--- Something is on screen: the rest line, or a bar that has not faded out.
-local function bar_shown()
-    local now = mp.get_time()
-    return opts.idle_line or animation.value(tween, now) > 0 or animation.running(tween, now)
-end
-
 -- The controls, title and grown bar are on screen (visibility above 0).
 local function grown()
     local now = mp.get_time()
     return animation.value(tween, now) > 0 or animation.running(tween, now)
+end
+
+-- Something is on screen: the rest line, or a bar that has not faded out.
+local function bar_shown()
+    return opts.idle_line or grown()
 end
 
 -- Repaint only when the end of the progress line moves by a whole pixel
@@ -50,13 +49,18 @@ end
 -- cached range changes while the controls are on screen.
 local function update_progress()
     local px = bar.progress_px(state.time, state.duration, state.w)
+    if px ~= state.progress_px then
+        state.progress_px = px
+        if bar_shown() then painter.request() end
+    end
+    if not grown() then return end
     local cached = bar.cached_until(state.cache_ranges, state.time)
     local cache_px = cached and bar.progress_px(cached, state.duration, state.w) or -1
-    local text = controls.time_text(state.time, state.duration, state.remaining)
-    local moved = px ~= state.progress_px
-    local changed = cache_px ~= state.cache_px or text ~= state.time_text
-    state.progress_px, state.cache_px, state.time_text = px, cache_px, text
-    if (moved and bar_shown()) or (changed and grown()) then painter.request() end
+    local left, right = controls.time_text(state.time, state.duration, state.remaining)
+    if cache_px ~= state.cache_px or left .. right ~= state.time_text then
+        state.cache_px, state.time_text = cache_px, left .. right
+        painter.request()
+    end
 end
 
 local function request_if_grown()
@@ -70,11 +74,12 @@ painter.set_renderer(function()
     local v = animation.value(tween, now)
     local out = bar.render(state, v, opts, bar.drag_time())
     if v > 0 then
-        local p, tip = mouse.pos(), nil
+        -- On the timeline, the row shows the time under the cursor.
+        local p, hover = mouse.pos(), nil
         if p and state.has_timeline() and (mouse.zone() == "bar" or bar.dragging()) then
-            tip = bar.drag_time() or bar.x_to_time(p.x, state.duration, state.w)
+            hover = bar.drag_time() or bar.x_to_time(p.x, state.duration, state.w)
         end
-        local ass, time_w = controls.render(state, v, painter.measure, p and p.x, tip)
+        local ass, time_w = controls.render(state, v, painter.measure, hover, opts.icon_style)
         state.time_w = time_w
         out = out == "" and ass or out .. "\n" .. ass
     end
@@ -89,7 +94,7 @@ mp.observe_property("osd-dimensions", "native", function(_, dim)
     local changed = state.set("w", w)
     changed = state.set("h", h) or changed
     if not changed then return end
-    bar.release() -- the grid changed under a drag in progress
+    mouse.release() -- the grid changed under a drag in progress
     update_progress()
     debug_sizes("resize")
     mouse.on_resize()
@@ -122,12 +127,20 @@ mp.observe_property("pause", "bool", function(_, paused)
     mouse.refresh()
 end)
 
+-- Outside text, kept to a sane size: a file's metadata can hold a title
+-- of megabytes.
+local function clean(s)
+    if type(s) ~= "string" then return nil end
+    s = controls.prefix(s, MAX_TITLE)
+    return s ~= "" and s or nil
+end
+
 -- Property, type, field in state.
 for _, p in ipairs({ { "volume", "number", "volume" }, { "mute", "bool", "mute" },
                      { "fullscreen", "bool", "fullscreen" }, { "media-title", "string", "title" },
                      { "chapter-list", "native", "chapters" } }) do
     mp.observe_property(p[1], p[2], function(_, value)
-        state[p[3]] = value
+        state[p[3]] = p[3] == "title" and clean(value) or value
         request_if_grown()
     end)
 end
@@ -146,11 +159,6 @@ end)
 
 -- set-title <series> <episode>: a two-line title until the file ends.
 -- Both empty (or missing) go back to media-title.
-local function clean(s)
-    if type(s) ~= "string" then return nil end
-    s = controls.prefix(s, MAX_TITLE)
-    return s ~= "" and s or nil
-end
 mp.register_script_message("set-title", function(series, episode)
     state.series, state.episode = clean(series), clean(episode)
     if opts.debug then msg.info(("set-title: %s / %s"):format(tostring(state.series), tostring(state.episode))) end
@@ -165,7 +173,7 @@ mp.observe_property("mouse-pos", "native", mouse.on_mouse_pos)
 
 -- A drag never survives a change of file.
 local function drop_drag()
-    bar.release(false)
+    mouse.release(false)
     mouse.refresh()
 end
 mp.register_event("end-file", function()

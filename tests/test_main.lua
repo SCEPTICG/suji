@@ -238,7 +238,7 @@ mp.advance(1)
 T.eq(#mp.updates, n, "at rest: a new second alone does not repaint")
 mp.fire("pause", true) -- paused: everything shows
 mp.advance(1)
-T.check(painted():find("00:51 / ", 1, true) ~= nil, "time shown while paused")
+T.check(painted():find("}0:00:51{", 1, true) ~= nil, "time shown while paused")
 n = #mp.updates
 mp.fire("time-pos", 52)
 mp.advance(0.1)
@@ -278,7 +278,7 @@ mp.bindings["suji-wheel-down"].fn()
 T.eq(last_cmd(), "add volume -5", "wheel down")
 mp.mouse(1176, 680)
 mp.button("down")
-T.eq(last_cmd(), "set volume 50", "click on the slider")
+T.eq(last_cmd(), "set volume 51", "click on the slider")
 mp.mouse(1100, 600) -- drag past the start and out of the zone
 T.eq(last_cmd(), "set volume 0", "drag on the slider")
 T.check(mp.bindings["suji-bar"] ~= nil, "bindings stay while dragging the volume")
@@ -322,10 +322,62 @@ T.eq(package.loaded["state"].series, nil, "end-file clears the title")
 -- Someone else turns window dragging back on while suji has it off
 start()
 mp.mouse(640, 710)
+local writes = 0
+local set = mp.set_property_bool
 mp.set_property_bool("input-builtin-dragging", true)
-mp.set_property_bool("input-builtin-dragging", false)
+mp.set_property_bool = function(...) writes = writes + 1; return set(...) end
 mp.mouse(640, 300)
-T.eq(mp.props["input-builtin-dragging"], false, "a change made meanwhile is not overwritten")
+T.eq(mp.props["input-builtin-dragging"], true, "a change made meanwhile is kept")
+T.eq(writes, 0, "and not written again")
+
+-- At rest, cache and chapter changes do not repaint
+start({ idle_line = false })
+n = #mp.updates
+mp.fire("demuxer-cache-state", { ["seekable-ranges"] = { { start = 0, ["end"] = 90 } } })
+mp.fire("chapter-list", { { time = 10 } })
+mp.fire("media-title", "x")
+mp.advance(1)
+T.eq(#mp.updates, n, "hidden: cache, chapters and title do not repaint")
+
+-- Huge or broken titles are cut
+start()
+mp.fire("media-title", string.rep("a", 1000000))
+T.eq(#package.loaded["state"].title, 200, "media-title is cut too")
+mp.messages["set-title"](string.rep("\128", 5000), "x")
+T.eq(#package.loaded["state"].series, 200, "stray UTF-8 bytes do not skip the cut")
+
+-- Measuring: real results are cached, guesses are not
+start()
+local measure = package.loaded["painter"].measure
+mp.probes = 0
+T.eq(measure("a", 7), 7, "no bounds: the guess")
+measure("a", 7)
+T.eq(mp.probes, 2, "a guess is not cached")
+mp.probe_result = { x0 = 0, x1 = 30, y0 = 0, y1 = 10 }
+T.eq(measure("b", 7), 30, "measured width")
+measure("b", 7)
+T.eq(mp.probes, 3, "a measured width is cached")
+
+-- On the timeline the row shows the time under the cursor
+start()
+mp.fire("pause", true)
+mp.mouse(320, 710)
+mp.advance(1)
+T.check(painted():find("\\1a&H66&\\3a&H94&\\4a&HC2&}00:25{", 1, true) ~= nil, "time under the cursor, dimmed")
+T.check(painted():find("} / 01:40", 1, true) ~= nil, "duration unchanged")
+mp.mouse(640, 300)
+mp.advance(1)
+T.check(painted():find("}00:50{", 1, true) ~= nil, "back to the real time off the bar")
+
+-- A resize ends a volume drag
+start()
+mp.fire("volume", 100)
+mp.mouse(1176, 680)
+mp.button("down")
+mp.fire("osd-dimensions", { w = 1000, h = 600 })
+mp.commands = {}
+mp.mouse(1100, 600)
+T.eq(#mp.commands, 0, "no volume change after the resize")
 
 -- Old mpv -----------------------------------------------------------------
 T.unload()

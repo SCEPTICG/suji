@@ -1,5 +1,5 @@
 -- The row of controls above the timeline (play/pause, time, volume,
--- fullscreen), the title above it and the time under the cursor.
+-- fullscreen) and the title above it.
 --
 -- Pure functions, tested outside mpv. Text widths come from the caller's
 -- measure(ass, guess) function, so libass does the measuring in mpv and the
@@ -7,7 +7,6 @@
 
 local draw = require "draw"
 local icons = require "icons"
-local bar = require "elements.bar"
 local valid = require("state").valid_duration
 
 local M = {}
@@ -37,9 +36,11 @@ function M.format_time(t, long)
     return ("%s%02d:%02d"):format(sign, math.floor(n / 60), n % 60)
 end
 
--- "09:48 / 23:40", or "09:48 / -13:52" with remaining. Both halves use the
--- long form when the file lasts an hour or more.
-function M.time_text(time, duration, remaining)
+-- The time in two parts: "09:48" and " / 23:40" (or " / -13:52" with
+-- remaining). Both use the long form when the file lasts an hour or more.
+-- shown, when set, replaces the position in the first part only (the time
+-- under the cursor).
+function M.time_text(time, duration, remaining, shown)
     local known = type(time) == "number" and time == time
     local long = math.max(known and time or 0, valid(duration) and duration or 0) >= 3600
     local right
@@ -48,28 +49,51 @@ function M.time_text(time, duration, remaining)
     else
         right = M.format_time(valid(duration) and duration or nil, long)
     end
-    return M.format_time(time, long) .. " / " .. right
+    return M.format_time(shown or time, long), " / " .. right
 end
 
--- UTF-8 aware length and prefix, so a cut never splits a character.
+-- Byte after the character that starts at byte i. A lead byte takes up to
+-- three continuation bytes; any other byte, stray ones included, is a
+-- character by itself. So a character is never split, and n characters
+-- are never more than 4n bytes.
+local function next_char(s, i)
+    local j = i + 1
+    if s:byte(i) >= 192 then
+        while j <= i + 3 and (s:byte(j) or 0) >= 128 and s:byte(j) < 192 do j = j + 1 end
+    end
+    return j
+end
+
 function M.len(s)
-    local _, n = s:gsub("[^\128-\191]", "")
+    local i, n = 1, 0
+    while i <= #s do i, n = next_char(s, i), n + 1 end
     return n
 end
 
 function M.prefix(s, n)
-    local count = 0
-    for i = 1, #s do
-        local b = s:byte(i)
-        if b < 128 or b >= 192 then
-            count = count + 1
-            if count > n then return s:sub(1, i - 1) end
-        end
+    local i = 1
+    for _ = 1, n do
+        if i > #s then break end
+        i = next_char(s, i)
     end
-    return s
+    return s:sub(1, i - 1)
 end
 
--- text, or its longest prefix plus "…" that is at most max_w wide.
+-- Capitals without depending on the locale: ASCII, Latin-1 letters and the
+-- long vowels of romanised Japanese (ā ē ī ō ū).
+local MACRONS = { ["\196\129"] = "\196\128", ["\196\147"] = "\196\146", ["\196\171"] = "\196\170",
+                  ["\197\141"] = "\197\140", ["\197\171"] = "\197\170" }
+function M.upper(s)
+    s = s:gsub("[a-z]", function(c) return string.char(c:byte() - 32) end)
+    s = s:gsub("\195([\160-\190])", function(c)
+        if c == "\183" then return nil end -- division sign
+        return "\195" .. string.char(c:byte() - 32)
+    end)
+    return (s:gsub("[\196\197][\128-\191]", MACRONS))
+end
+
+-- text, or its longest prefix plus "…" that is at most max_w wide. Every
+-- result has been measured.
 function M.fit(text, max_w, width_of)
     if max_w <= 0 then return "" end
     if width_of(text) <= max_w then return text end
@@ -78,7 +102,9 @@ function M.fit(text, max_w, width_of)
         local mid = math.ceil((lo + hi) / 2)
         if width_of(M.prefix(text, mid) .. ELLIPSIS) <= max_w then lo = mid else hi = mid - 1 end
     end
-    return (M.prefix(text, lo):gsub("%s+$", "")) .. ELLIPSIS
+    local cut = (M.prefix(text, lo):gsub("%s+$", "")) .. ELLIPSIS
+    if lo == 0 and width_of(cut) > max_w then return "" end
+    return cut
 end
 
 -- Where everything goes. Zones are { x0, y0, x1, y1 } in window px.
@@ -111,10 +137,11 @@ function M.hit(lay, x, y, time_w)
     end
 end
 
--- Cursor x on the volume slider -> volume 0..100.
+-- Cursor x on the volume slider -> volume 0..100. The last pixel that can
+-- be clicked (x1 - 1) gives 100.
 function M.x_to_volume(x, lay)
     local z = lay.volume
-    return math.floor(clamp((x - z.x0) / (z.x1 - z.x0), 0, 1) * 100 + 0.5)
+    return math.floor(clamp((x - z.x0) / (z.x1 - 1 - z.x0), 0, 1) * 100 + 0.5)
 end
 
 local function style(st, size, opacity, bold, spacing)
@@ -123,9 +150,10 @@ local function style(st, size, opacity, bold, spacing)
 end
 
 -- ASS text for visibility v (> 0) and the time width (for M.hit).
--- st: suji's state. tip_x, tip_time: cursor x and the time under it, when
--- the cursor is on the timeline.
-function M.render(st, v, measure, tip_x, tip_time)
+-- st: suji's state. hover_time: the time under the cursor while it is on
+-- the timeline; it replaces the position, dimmed. icon_style: "line" or
+-- "fill".
+function M.render(st, v, measure, hover_time, icon_style)
     local s = st.scale
     local lay = M.layout(st.w, st.h, s)
     local function width(text, size, bold, spacing)
@@ -133,18 +161,19 @@ function M.render(st, v, measure, tip_x, tip_time)
         return measure(ass, M.len(text) * size * s * 0.55)
     end
     local function icon(name, z)
-        return draw.poly(icons.shape(name, (z.x0 + z.x1) / 2, lay.cy, ICON * s),
-            { opacity = v, outline = draw.outline(s, v) })
+        local shape, stroke = icons.shape(name, (z.x0 + z.x1) / 2, lay.cy, ICON * s, icon_style)
+        if stroke then return draw.stroke(shape, stroke, v, s) end
+        return draw.poly(shape, { opacity = v, outline = draw.outline(s, v) })
     end
 
-    local time = M.time_text(st.time, st.duration, st.remaining)
-    local time_w = width((time:gsub("%d", "0")), 15)
+    local left, right = M.time_text(st.time, st.duration, st.remaining, hover_time)
+    local time_w = width(((left .. right):gsub("%d", "0")), 15)
     local vz = lay.volume
     local vy0, vy1 = lay.cy - VOLUME_H * s / 2, lay.cy + VOLUME_H * s / 2
     local fill = vz.x0 + (vz.x1 - vz.x0) * clamp((tonumber(st.volume) or 0) / 100, 0, 1)
     local out = {
         icon(st.paused and "play" or "pause", lay.pause),
-        draw.text(lay.time_x, lay.cy, 4, time, style(st, 15, v)),
+        draw.text(lay.time_x, lay.cy, 4, { { left, hover_time and 0.6 * v or v }, { right, v } }, style(st, 15, v)),
         icon(icons.volume_name(st.volume, st.mute), lay.mute),
         draw.rect(vz.x0 - s, vy0 - s, vz.x1 + s, vy1 + s, { color = "&H000000&", opacity = 0.45 * v, blur = s }),
         draw.rect(vz.x0, vy0, vz.x1, vy1, { opacity = 0.3 * v }),
@@ -154,7 +183,7 @@ function M.render(st, v, measure, tip_x, tip_time)
 
     -- Title: one line, or series above episode when both are known.
     local top, main
-    if st.series and st.episode then top, main = st.series:upper(), st.episode
+    if st.series and st.episode then top, main = M.upper(st.series), st.episode
     else main = st.episode or st.series or st.title or "" end
     main = M.fit(main, lay.title_w, function(t) return width(t, 20, true) end)
     out[#out + 1] = draw.text(lay.title_x, lay.title_y, 1, main, style(st, 20, v, true))
@@ -163,13 +192,6 @@ function M.render(st, v, measure, tip_x, tip_time)
         out[#out + 1] = draw.text(lay.title_x, lay.title_y - 22 * s, 1, top, style(st, 13, 0.8 * v, false, 1.5))
     end
 
-    -- Time under the cursor, centred on it but kept inside the window.
-    if tip_x and tip_time then
-        local text = M.format_time(tip_time, valid(st.duration) and st.duration >= 3600)
-        local half = width((text:gsub("%d", "0")), 13) / 2
-        local y = bar.layout(st.w, st.h, s, v).y0 - 10 * s
-        out[#out + 1] = draw.text(clamp(tip_x, half, st.w - half), y, 2, text, style(st, 13, v))
-    end
     return table.concat(out, "\n"), time_w
 end
 

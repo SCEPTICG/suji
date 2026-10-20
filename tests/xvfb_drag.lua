@@ -2,7 +2,8 @@
 -- display (see tests/run.sh). It drives the mouse with input commands and
 -- checks that dragging the bar seeks, that window dragging is only
 -- switched off while the cursor is on the bar, and that real clicks reach
--- the pause button and the volume slider.
+-- the pause button, the time (run.sh checks suji's debug line) and the
+-- volume slider.
 --
 -- Window: 640x480, so suji's zone is y 456..479 and the row of controls is
 -- centred on y 440. File: 60 s, paused.
@@ -68,13 +69,15 @@ end)
 after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
 after(0.4, function()
     if mp.get_property_bool("pause") ~= false then finish(false, "pause button did not play") end
-    mp.commandv("mouse", "536", "440") -- middle of the volume slider
+    mp.commandv("mouse", "100", "440") -- the time
 end)
+after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
+after(0.4, function() mp.commandv("mouse", "536", "440") end) -- middle of the volume slider
 after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
 after(0.4, function()
     local v = mp.get_property_number("volume", -1)
-    if v ~= 50 then finish(false, ("volume %s after a click on the slider"):format(v)) end
-    finish(true, ("time-pos %.2f, pause and volume clicks"):format(mp.get_property_number("time-pos", -1)))
+    if v ~= 51 then finish(false, ("volume %s after a click on the slider"):format(v)) end
+    finish(true, ("time-pos %.2f, pause, time and volume clicks"):format(mp.get_property_number("time-pos", -1)))
 end)
 
 mp.observe_property("osd-dimensions", "native", function(_, d)

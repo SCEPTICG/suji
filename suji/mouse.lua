@@ -10,7 +10,7 @@
 -- pixels with the button held would start moving the window and cancel our
 -- drag. So while the bindings are on, input-builtin-dragging is switched
 -- off, and put back afterwards only if suji was the one that changed it and
--- nobody changed it since.
+-- it is still off.
 
 local msg = require "mp.msg"
 local opts = require "options"
@@ -78,14 +78,18 @@ local function press(x)
     elseif zone == "pause" then mp.commandv("cycle", "pause")
     elseif zone == "mute" then mp.commandv("cycle", "mute")
     elseif zone == "fullscreen" then mp.commandv("cycle", "fullscreen")
-    elseif zone == "time" then state.remaining = not state.remaining
+    elseif zone == "time" then
+        state.remaining = not state.remaining
+        if opts.debug then msg.info("remaining time " .. (state.remaining and "on" or "off")) end
     end
 end
 
-local function release(seek)
+-- End any drag, of the timeline or of the volume. seek as in bar.release.
+function M.release(seek)
     bar.release(seek)
     volume_drag = false
 end
+local release = M.release
 
 local function on_button(e)
     if e.event == "down" then
@@ -103,10 +107,14 @@ local function wheel(step)
     return function() mp.commandv("add", "volume", step) end
 end
 
+-- Put window dragging back, unless someone changed it since suji turned
+-- it off.
 local function restore_dragging()
     if not took_dragging then return end
     took_dragging = false
-    mp.set_property_bool("input-builtin-dragging", true)
+    if mp.get_property_bool("input-builtin-dragging") == false then
+        mp.set_property_bool("input-builtin-dragging", true)
+    end
 end
 
 local function set_bindings(enable, wheel_too)
@@ -143,11 +151,6 @@ function M.shutdown()
     restore_dragging()
 end
 
--- Someone else changed input-builtin-dragging while suji had it off: their
--- value wins, so suji will not put its own back.
-mp.observe_property("input-builtin-dragging", "bool", function(_, v)
-    if took_dragging and v ~= false then took_dragging = false end
-end)
 
 -- Re-evaluate the bindings and ask for a paint. Bindings are switched on as
 -- soon as the cursor enters the zone, never on the click itself, because

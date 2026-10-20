@@ -75,6 +75,23 @@ function M.poly(polys, style)
     return table.concat(out)
 end
 
+-- Lines `width` px wide with round ends and joins, for line icons:
+-- { {x1, y1, x2, y2, ...}, ... }. ASS only fills shapes, so each line is
+-- drawn there and back (no area) and libass's border draws the stroke.
+-- A thicker dark copy underneath gives the halo and shadow of M.outline.
+function M.stroke(lines, width, opacity, scale)
+    local d = {}
+    for _, p in ipairs(lines) do
+        d[#d + 1] = ("m %d %d"):format(q(p[1]), q(p[2]))
+        for i = 3, #p, 2 do d[#d + 1] = ("l %d %d"):format(q(p[i]), q(p[i + 1])) end
+        for i = #p - 3, 1, -2 do d[#d + 1] = ("l %d %d"):format(q(p[i]), q(p[i + 1])) end
+    end
+    local path = table.concat(d, " ")
+    return ("{\\an7\\pos(0,0)\\1a&HFF&%s\\bord%.2f\\p3}%s{\\p0}\n" ..
+            "{\\an7\\pos(0,0)\\1a&HFF&\\bord%.2f\\shad0\\3c&HFFFFFF&\\3a%s\\p3}%s{\\p0}"):format(
+        M.outline(scale, opacity), width / 2 + 1.2 * scale, path, width / 2, M.alpha(opacity), path)
+end
+
 -- Make outside text safe inside ASS: braces would open override blocks
 -- and a backslash would start an escape (\N, \h...). A zero-width space
 -- after the backslash keeps it literal. Line breaks become spaces.
@@ -85,12 +102,19 @@ end
 -- One line of white text. t: { font, size, opacity, scale, bold, spacing }.
 -- bold is plain bold: a semibold weight falls back to regular in fonts
 -- without that face.
--- an is the ASS alignment (1 = bottom left, 4 = middle left, 2 = bottom
--- centre). The text is escaped here.
+-- an is the ASS alignment (1 = bottom left, 4 = middle left). text is a
+-- string, or a list of { string, opacity } parts drawn one after another.
+-- It is escaped here.
 function M.text(x, y, an, text, t)
-    return ("{\\an%d\\pos(%.1f,%.1f)\\q2\\fn%s\\fs%.1f\\b%d\\fsp%.1f\\1c&HFFFFFF&\\1a%s%s}%s"):format(
-        an, x, y, t.font, t.size, t.bold and 1 or 0, t.spacing or 0, M.alpha(t.opacity),
-        M.outline(t.scale, t.opacity), M.escape(text))
+    if type(text) ~= "table" then text = { { text, t.opacity } } end
+    local parts = {}
+    for i, p in ipairs(text) do
+        parts[i] = ("{\\1a%s\\3a%s\\4a%s}%s"):format(M.alpha(p[2]), M.alpha(0.7 * p[2]),
+            M.alpha(0.4 * p[2]), M.escape(p[1]))
+    end
+    return ("{\\an%d\\pos(%.1f,%.1f)\\q2\\fn%s\\fs%.1f\\b%d\\fsp%.1f\\1c&HFFFFFF&%s}%s"):format(
+        an, x, y, t.font, t.size, t.bold and 1 or 0, t.spacing or 0,
+        M.outline(t.scale, t.opacity), table.concat(parts))
 end
 
 -- Filled circle made of four cubic Bezier curves.
