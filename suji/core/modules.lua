@@ -75,7 +75,9 @@ end
 -- Weak keys: the command buttons of an old controls option can go.
 local dead = setmetatable({}, { __mode = "k" })
 local names = setmetatable({}, { __mode = "k" })
-local contexts = setmetatable({}, { __mode = "k" })
+-- Weak values too: a ctx refers to its module, and with weak keys alone
+-- Lua 5.1 would keep both forever. A ctx nobody holds is made again.
+local contexts = setmetatable({}, { __mode = "kv" })
 local listeners = {}
 
 -- fn(mod) runs when a module is turned off.
@@ -90,9 +92,21 @@ local function kill(mod, what, err)
     painter.request()
 end
 
+local watched -- see below
+local deliver
+
 -- Turn a module that failed on again (main does it for the timeline when
--- a new file starts: suji is no use without it).
-function M.revive(mod) dead[mod] = nil end
+-- a new file starts: suji is no use without it). Its watches get the last
+-- value of each property again: while off, it missed the changes.
+function M.revive(mod)
+    if not dead[mod] then return end
+    dead[mod] = nil
+    for _, w in pairs(watched) do
+        if w.seen then
+            for _, it in ipairs(w.list) do if it.owner == mod then deliver(it, w.value) end end
+        end
+    end
+end
 
 -- A reason when the result is not usable, nil when it is.
 local CHECK = {
@@ -125,11 +139,11 @@ end
 
 -- Shared observers -----------------------------------------------------------
 
-local watched = {} -- prop .. " " .. kind -> { list = { handle }, seen, value, observer }
+watched = {} -- prop .. " " .. kind -> { list = { handle }, seen, value, observer }
 
 -- Every delivery is protected: a module's failure turns it off, a core
 -- observer's is logged once; the others still get the value.
-local function deliver(it, value)
+function deliver(it, value)
     if it.owner and dead[it.owner] then return end
     local ok, r = pcall(it.fn, value)
     if not ok then
@@ -180,12 +194,15 @@ function M.unwatch(it)
 end
 ctx.unwatch = M.unwatch
 
--- The ctx of module mod: the core's, with watch tied to mod.
+-- The ctx of module mod: the core's, with watch and unwatch tied to mod.
 function M.ctx_of(mod)
     local c = contexts[mod]
     if not c then
-        c = setmetatable({ watch = function(prop, kind, fn) return M.watch(prop, kind, fn, mod) end },
-            { __index = ctx })
+        c = setmetatable({
+            watch = function(prop, kind, fn) return M.watch(prop, kind, fn, mod) end,
+            -- Only the module's own watches.
+            unwatch = function(it) if type(it) == "table" and it.owner == mod then M.unwatch(it) end end,
+        }, { __index = ctx })
         contexts[mod] = c
     end
     return c

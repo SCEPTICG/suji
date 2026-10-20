@@ -77,6 +77,17 @@ T.eq(#bar.chapter_xs(many, 100, 1000, 4), 250, "at most one mark every 4 px")
 T.eq(#bar.chapter_xs({ { time = 10 }, { time = 10.1 }, { time = 30 } }, 100, 1000, 4), 2, "close chapters share a mark")
 T.check(bar.chapter_xs(many, 100, 1000) == bar.chapter_xs(many, 100, 1000), "same list: last result reused")
 T.check(bar.chapter_xs(many, 100, 1000) ~= bar.chapter_xs(many, 100, 1000, 4), "another spacing: walked again")
+-- 30000 chapters: never more than 500 marks, spread to the end of the bar
+local lots = {}
+for i = 1, 30000 do lots[i] = { time = i * 100 / 30001 } end
+for _, g in ipairs({ { 3840, 1 }, { 3840, 0.25 }, { 1280, 0.25 } }) do
+    local w, s = g[1], g[2]
+    local marks = bar.chapter_xs(lots, 100, w, 2 * bar.MARK_WIDTH * s)
+    local last = 0
+    for _, x in ipairs(marks) do last = math.max(last, x) end
+    T.check(#marks <= 500 and #marks >= 450, ("%d px, scale %s: %d marks, at most 500"):format(w, s, #marks))
+    T.check(last > w * 0.98, ("%d px, scale %s: the last mark at %.0f, near the end"):format(w, s, last))
+end
 local five = {}
 for i = 1, 5000 do five[i] = { time = i * 7200 / 5001 } end
 for _, g in ipairs({ { 1920, 1 }, { 3840, 1 }, { 3840, 2 } }) do

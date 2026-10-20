@@ -86,12 +86,13 @@ function M.cached_until(ranges, t)
 end
 
 -- x of every chapter start inside the file, except one at the very start,
--- at most one every `spacing` px (1 when not given) and MAX_MARKS in all,
--- so a huge chapter list stays cheap and its ASS small. The last result is
--- kept: the list is only walked again when something changed.
+-- at most one every `spacing` px (1 when not given). The spacing grows
+-- with the width so there are never more than MAX_MARKS, spread along the
+-- whole bar: a huge chapter list stays cheap and its ASS small. The last
+-- result is kept: the list is only walked again when something changed.
 local last_marks = {}
 function M.chapter_xs(chapters, duration, w, spacing)
-    spacing = spacing or 1
+    spacing = math.max(spacing or 1, w / M.MAX_MARKS)
     local m = last_marks
     if m.chapters == chapters and m.duration == duration and m.w == w and m.spacing == spacing then return m.xs end
     local xs, seen = {}, {}
@@ -99,11 +100,10 @@ function M.chapter_xs(chapters, duration, w, spacing)
         for _, c in ipairs(chapters) do
             local t = type(c) == "table" and tonumber(c.time)
             local x = t and t > 0 and t < duration and M.time_to_x(t, duration, w)
-            local slot = x and math.floor(x / spacing)
+            local slot = x and math.min(math.floor(x / spacing), M.MAX_MARKS - 1)
             if slot and not seen[slot] then
                 seen[slot] = true
                 xs[#xs + 1] = x
-                if #xs == M.MAX_MARKS then break end
             end
         end
     end

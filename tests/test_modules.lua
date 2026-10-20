@@ -273,6 +273,22 @@ mp.advance(1)
 T.check(mods().alive(tl), "file-loaded brings it back")
 T.check(painted():find("m 0 ", 1, true) ~= nil, "drawn again")
 
+-- While off, the timeline missed changes: back on, it gets the last values
+start()
+tl = mods().timeline
+render = tl.render -- this instance's own
+mp.fire("chapter-list", { { time = 20 } }) -- x 256
+tl.render = function() error("broken") end
+mp.mouse(640, 690)
+mp.advance(1)
+mp.fire("chapter-list", { { time = 50 } }) -- x 640, while it is off
+tl.render = render
+mp.emit("file-loaded")
+mp.mouse(641, 690)
+mp.advance(1)
+T.check(painted():find("m 2556 ", 1, true) ~= nil, "revived: the new chapter mark")
+T.check(painted():find("m 1020 ", 1, true) == nil, "and not the old one")
+
 -- A module that fails mid drag drops it: no pause or seek timer left
 start({ pause_on_drag = true })
 mp.fire("pause", false)
@@ -303,6 +319,34 @@ mp.fire("mute", false)
 mp.fire("mute", true)
 T.eq(#logs("error", "observer of mute"), 1, "a core observer that fails is logged once")
 T.eq(got, 6, "and does not stop the others")
+
+-- ctx.unwatch only stops the module's own watches
+start()
+local calls = 0
+local mine = mods().ctx_of(package.loaded["modules.pause"]).watch("mute", "bool", function() calls = calls + 1 end)
+mods().ctx_of(package.loaded["modules.time"]).unwatch(mine)
+mp.fire("mute", true)
+T.eq(calls, 1, "another module cannot stop it")
+mods().ctx_of(package.loaded["modules.pause"]).unwatch(mine)
+mp.fire("mute", false)
+T.eq(calls, 1, "its own module can")
+
+-- The command buttons of old controls options are freed
+start()
+local probe = setmetatable({}, { __mode = "k" })
+for r = 1, 300 do
+    local t = {}
+    for i = 1, 32 do t[i] = ("command:x:show-text %d_%d"):format(r, i) end
+    mp.set_opts({ controls = table.concat(t, ",") })
+    for _, e in ipairs(mods().row()) do probe[e.mod] = true end
+    mods().call(mods().row()[1].mod, "press")
+end
+mp.set_opts({ controls = "pause" })
+mp.mouse(640, 300) -- the zone under the cursor is not a button any more
+for _ = 1, 5 do collectgarbage("collect") end
+local left = 0
+for _ in pairs(probe) do left = left + 1 end
+T.eq(left, 0, "after 300 reloads no old command button is left in memory")
 
 -- ctx.relayout: a module whose width changed moves the zones at once
 start()
