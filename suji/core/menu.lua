@@ -501,7 +501,7 @@ function M.render(now)
     -- More above or below: a faint chevron at that edge.
     local cx = (g.x0 + g.x1) / 2
     if cur.scroll > 0 then out[#out + 1] = chevron(cx, g.list_top - 4 * s, -1, p, s) end
-    if cur.scroll + g.rows < #items then out[#out + 1] = chevron(cx, g.y1 + 5 * s, 1, p, s) end
+    if cur.scroll + g.rows < #items then out[#out + 1] = chevron(cx, g.y1 + 3 * s, 1, p, s) end
     local ass = table.concat(out, "\n")
     if p < 1 then
         -- Unfolding upwards from the row: a clip that grows with p.
