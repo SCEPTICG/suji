@@ -1,7 +1,8 @@
 #!/bin/sh
 # Runs the unit tests with Lua 5.1 (or $LUA), a smoke test with a windowless
-# mpv and, if xvfb-run is installed, a real drag and click test and a menu
-# test (which also needs ffmpeg and mkvmerge) in a virtual display.
+# mpv and, if xvfb-run is installed, a real drag and click test, a menu
+# test (which also needs ffmpeg and mkvmerge) and a double click test
+# (which also needs xdotool) in a virtual display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -110,6 +111,34 @@ else
     else
         printf 'xvfb-menu: FAIL\n%s\n' "$out"
         status=1
+    fi
+fi
+
+# Double clicks need real X events: xdotool.
+if [ -z "$tmp" ] || [ ! -s "$tmp/m.mkv" ]; then
+    echo "xvfb-dblclick: skipped (no test video)"
+elif ! command -v xdotool >/dev/null 2>&1; then
+    echo "xvfb-dblclick: skipped (no xdotool)"
+else
+    timeout 60 xvfb-run -a -s "-screen 0 1280x1024x24" sh tests/xvfb_dblclick.sh "$tmp/m.mkv" "$tmp/dbl.log"
+    # The speed set by the entry, then fullscreen from the second double
+    # click only, at least a second later.
+    sped=$(sed -n 's/^\[xvfb_dblclick\] speed 2\.0* at //p' "$tmp/dbl.log" | head -1)
+    full=$(sed -n 's/^\[xvfb_dblclick\] fullscreen yes at //p' "$tmp/dbl.log" | head -1)
+    if grep '^\[suji\]' "$tmp/dbl.log" | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-dblclick: FAIL\n%s\n' "$(cat "$tmp/dbl.log")"
+        status=1
+    elif [ -z "$sped" ]; then
+        printf 'xvfb-dblclick: FAIL (the menu entry was not chosen)\n%s\n' "$(cat "$tmp/dbl.log")"
+        status=1
+    elif [ -z "$full" ]; then
+        printf 'xvfb-dblclick: FAIL (a later double click on the video did not reach mpv)\n%s\n' "$(cat "$tmp/dbl.log")"
+        status=1
+    elif ! awk -v a="$sped" -v b="$full" 'BEGIN { exit !(b - a > 1) }'; then
+        printf 'xvfb-dblclick: FAIL (the double click on the menu toggled fullscreen)\n%s\n' "$(cat "$tmp/dbl.log")"
+        status=1
+    else
+        echo "xvfb-dblclick: ok speed 2 at $sped, fullscreen only at $full"
     fi
 fi
 
