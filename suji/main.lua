@@ -24,21 +24,27 @@ end
 local function debug_sizes(reason)
     if not opts.debug then return end
     msg.info(("%s: osd-dimensions %dx%d, display-hidpi-scale %s, scale option %s, scale %.3f")
-        :format(reason, state.w, state.h, tostring(mp.get_property_number("display-hidpi-scale")),
+        :format(reason, math.floor(state.w), math.floor(state.h), tostring(mp.get_property_number("display-hidpi-scale")),
             tostring(opts.scale), state.scale))
-end
-
--- Repaint only when the end of the progress line moves by a whole pixel.
-local function update_progress()
-    state.set("progress_px", bar.progress_px(state.time, state.duration, state.w))
-end
-
-local function request_if_dirty()
-    if state.dirty then painter.request() end
 end
 
 -- Visibility changes are smoothed by a short clock-based transition.
 local tween = animation.new(0.15)
+
+-- Something is on screen: the rest line, or a bar that has not faded out.
+local function bar_shown()
+    local now = mp.get_time()
+    return opts.idle_line or animation.value(tween, now) > 0 or animation.running(tween, now)
+end
+
+-- Repaint only when the end of the progress line moves by a whole pixel,
+-- and only if the line is on screen at all.
+local function update_progress()
+    local px = bar.progress_px(state.time, state.duration, state.w)
+    if px == state.progress_px then return end
+    state.progress_px = px
+    if bar_shown() then painter.request() end
+end
 
 painter.set_renderer(function()
     if state.w <= 0 or state.h <= 0 then return "", false end
@@ -72,12 +78,13 @@ end)
 mp.observe_property("time-pos", "number", function(_, t)
     state.time = t
     update_progress()
-    request_if_dirty()
 end)
 
 mp.observe_property("duration", "number", function(_, d)
     if state.set("duration", d) then
-        bar.release(false) -- a new file, or the length is unknown again
+        -- The duration can grow while playing (streams, files being
+        -- written); only a duration that is no longer usable ends a drag.
+        if not state.has_timeline() then bar.release(false) end
         update_progress()
     end
     mouse.refresh()
@@ -93,6 +100,15 @@ mp.observe_property("display-fps", "number", function(_, fps)
 end)
 
 mp.observe_property("mouse-pos", "native", mouse.on_mouse_pos)
+
+-- A drag never survives a change of file.
+local function drop_drag()
+    bar.release(false)
+    mouse.refresh()
+end
+mp.register_event("end-file", drop_drag)
+mp.register_event("file-loaded", drop_drag)
+mp.register_event("shutdown", mouse.shutdown)
 
 state.scale = draw.scale(state.hidpi, opts.scale)
 debug_sizes("start")

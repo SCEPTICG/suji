@@ -21,9 +21,14 @@ function M.set(key, value)
     return true
 end
 
--- The timeline is only shown and clickable when the duration is known.
+-- A duration the timeline can use: known, positive and finite.
+function M.valid_duration(d)
+    return type(d) == "number" and d > 0 and d < math.huge
+end
+
+-- The timeline is only shown and clickable when the duration is usable.
 function M.has_timeline()
-    return M.duration ~= nil and M.duration > 0
+    return M.valid_duration(M.duration)
 end
 
 return M

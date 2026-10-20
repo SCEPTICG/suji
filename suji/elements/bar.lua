@@ -5,6 +5,7 @@
 -- uses the global `mp` only when called, so tests can load this file.
 
 local draw = require "draw"
+local valid = require("state").valid_duration
 
 local M = {}
 
@@ -19,7 +20,7 @@ M.HALO = 1          -- dark halo around the line and the knob
 local BLACK = "&H000000&"
 local DRAG_SEEK_INTERVAL = 1 / 30 -- at most this many seeks per second
 local FAST_DRAG = 30              -- video seconds per second of dragging
-local LONG_VIDEO = 600            -- seconds; longer videos drag by keyframes
+local END_MARGIN = 0.5            -- seconds; seeks stop short of the end
 
 local function clamp(v, lo, hi)
     if v ~= v then return lo end
@@ -30,12 +31,12 @@ local function lerp(a, b, t) return a + (b - a) * t end
 local function round(n) return math.floor(n + 0.5) end
 
 function M.time_to_x(t, duration, w)
-    if not t or not duration or duration <= 0 or w <= 0 then return 0 end
+    if not t or not valid(duration) or w <= 0 then return 0 end
     return w * clamp(t / duration, 0, 1)
 end
 
 function M.x_to_time(x, duration, w)
-    if not duration or duration <= 0 or w <= 0 then return 0 end
+    if not valid(duration) or w <= 0 then return 0 end
     return duration * clamp(x / w, 0, 1)
 end
 
@@ -72,7 +73,7 @@ end
 -- drag_time, when set, replaces the playback time (the knob follows the
 -- cursor while dragging, before the seek lands).
 function M.render(st, v, opts, drag_time)
-    if not st.duration or st.duration <= 0 or st.w <= 0 or st.h <= 0 then return "" end
+    if not valid(st.duration) or st.w <= 0 or st.h <= 0 then return "" end
     v = clamp(v, 0, 1)
     local fade = opts.idle_line and 1 or v
     if fade <= 0 then return "" end
@@ -103,19 +104,28 @@ end
 
 -- Seeking -----------------------------------------------------------------
 
-local drag -- nil, or { target, px, resume, last_time, last_target, timer }
+-- Seek target for cursor x. It stops END_MARGIN before the end: seeking to
+-- the exact duration ends the file, which is never what a drag past the
+-- right edge means.
+function M.seek_target(x, duration, w)
+    local t = M.x_to_time(x, duration, w)
+    return math.min(t, math.max(0, duration - END_MARGIN))
+end
+
+local drag -- nil, or { target, px, resume, last_time, last_target, exact_target, timer }
 
 local function seek(t, mode)
     mp.commandv("seek", ("%.3f"):format(t), "absolute+" .. mode)
+    if drag then drag.exact_target = mode == "exact" and t or nil end
 end
 
-local function drag_seek(st)
+-- Slow drags seek exactly, fast drags by keyframes.
+local function drag_seek()
     if not drag then return end
     local now = mp.get_time()
     local speed = math.abs(drag.target - drag.last_target) /
         math.max(now - drag.last_time, 1e-3)
-    local fast = speed > FAST_DRAG or st.duration > LONG_VIDEO
-    seek(drag.target, fast and "keyframes" or "exact")
+    seek(drag.target, speed > FAST_DRAG and "keyframes" or "exact")
     drag.last_time, drag.last_target = now, drag.target
 end
 
@@ -123,12 +133,14 @@ function M.dragging() return drag ~= nil end
 function M.drag_time() return drag and drag.target end
 
 -- Mouse button down on the bar: exact seek to the cursor, start dragging.
+-- A drag still running means its button up was lost: drop it first.
 function M.press(x, st, opts)
-    if drag or not st.duration or st.duration <= 0 then return end
-    local t = M.x_to_time(x, st.duration, st.w)
+    if not valid(st.duration) then return end
+    if drag then M.release(false) end
+    local t = M.seek_target(x, st.duration, st.w)
     drag = { target = t, px = math.floor(x), resume = false,
              last_time = mp.get_time(), last_target = t }
-    drag.timer = mp.add_timeout(DRAG_SEEK_INTERVAL, function() drag_seek(st) end, true)
+    drag.timer = mp.add_timeout(DRAG_SEEK_INTERVAL, drag_seek, true)
     if opts.pause_on_drag and not st.paused then
         mp.set_property_bool("pause", true)
         drag.resume = true
@@ -143,11 +155,11 @@ function M.move(x, st)
     local px = math.floor(clamp(x, 0, st.w))
     if px == drag.px then return end
     drag.px = px
-    drag.target = M.x_to_time(px, st.duration, st.w)
+    drag.target = M.seek_target(px, st.duration, st.w)
     if drag.timer:is_enabled() then return end
     local wait = drag.last_time + DRAG_SEEK_INTERVAL - mp.get_time()
     if wait <= 0 then
-        drag_seek(st)
+        drag_seek()
     else
         drag.timer.timeout = wait
         drag.timer:kill()
@@ -155,15 +167,22 @@ function M.move(x, st)
     end
 end
 
--- End of the drag. final_seek = false drops it without seeking (for
--- example when the file changed underneath).
+-- End of the drag: one last exact seek, unless the last seek was already
+-- an exact one to the same place. final_seek = false drops the drag without
+-- seeking (for example when the file changed underneath).
 function M.release(final_seek)
     if not drag then return end
     local d = drag
     drag = nil
     d.timer:kill()
-    if final_seek ~= false then seek(d.target, "exact") end
-    if d.resume then mp.set_property_bool("pause", false) end
+    if final_seek ~= false and d.exact_target ~= d.target then
+        seek(d.target, "exact")
+    end
+    -- Resume only if the pause suji set is still there: the user may have
+    -- unpaused by hand during the drag.
+    if d.resume and mp.get_property_bool("pause") then
+        mp.set_property_bool("pause", false)
+    end
 end
 
 return M

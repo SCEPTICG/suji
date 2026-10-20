@@ -52,10 +52,4 @@ function M.request()
     timer:resume()
 end
 
-function M.clear()
-    timer:kill()
-    overlay:remove()
-    last_data = nil
-end
-
 return M
