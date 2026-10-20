@@ -4,6 +4,11 @@
 -- MBTN_LEFT is only bound while the cursor is over the visible bar (or a
 -- drag is in progress). Everywhere else the click goes through, so double
 -- click for fullscreen and window dragging keep working.
+--
+-- Forced bindings still allow mpv's built-in window dragging: moving a few
+-- pixels with the button held would start moving the window and cancel our
+-- drag. So while the bindings are on, input-builtin-dragging is switched
+-- off, and put back afterwards only if suji was the one that changed it.
 
 local msg = require "mp.msg"
 local opts = require "options"
@@ -19,6 +24,7 @@ local seen_real = false
 local last_move = 0
 local on_bar = false
 local bound = false
+local took_dragging = false -- suji set input-builtin-dragging=no
 local reported_error = false
 
 -- Fires once, hide_delay seconds after the last movement, so a
@@ -65,17 +71,34 @@ local function on_button(e)
     M.refresh()
 end
 
+local function restore_dragging()
+    if not took_dragging then return end
+    took_dragging = false
+    mp.set_property_bool("input-builtin-dragging", true)
+end
+
 local function set_bindings(enable)
     if enable == bound then return end
     bound = enable
     if enable then
+        if mp.get_property_bool("input-builtin-dragging") == true then
+            mp.set_property_bool("input-builtin-dragging", false)
+            took_dragging = true
+        end
         mp.add_forced_key_binding("MBTN_LEFT", "suji-bar", on_button, { complex = true })
         -- Swallow double clicks on the bar so they do not toggle fullscreen.
         mp.add_forced_key_binding("MBTN_LEFT_DBL", "suji-bar-dbl", function() end)
     else
         mp.remove_key_binding("suji-bar")
         mp.remove_key_binding("suji-bar-dbl")
+        restore_dragging()
     end
+end
+
+-- Leave the player as suji found it.
+function M.shutdown()
+    set_bindings(false)
+    restore_dragging()
 end
 
 -- Re-evaluate the bindings and ask for a paint. Bindings are switched on as
@@ -97,6 +120,7 @@ function M.on_mouse_pos(_, p)
     if type(p) ~= "table" or not p.hover then
         pos = nil
         bar.release()
+        idle_timer:kill()
     elseif seen_real or p.x ~= 0 or p.y ~= 0 then
         -- Some backends report (0, 0) before the first real movement.
         seen_real = true
