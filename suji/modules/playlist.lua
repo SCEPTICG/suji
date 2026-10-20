@@ -5,7 +5,12 @@
 local base = require "modules.menu_button"
 local time = require "modules.time"
 
+local TYPE = "suji-playlist"
+
 local chapters, count = 0, 0 -- the chapters property and playlist-count
+-- In the menu last built: the item of each chapter (by index from 0), and
+-- the chapter marked. A new chapter only moves the mark.
+local where, marked = {}, nil
 
 -- What to show for a path or URL with no title: its last part, for a URL
 -- without the query; the URL itself (the menu cuts it) when it has no path.
@@ -25,9 +30,11 @@ end
 local function chapter_items(list, items)
     local current = mp.get_property_number("chapter")
     local long = (mp.get_property_number("duration") or 0) >= 3600
+    where, marked = {}, current
     for i, c in ipairs(list) do
         if #items >= base.MAX_ITEMS then break end
         if type(c) == "table" then
+            where[i - 1] = #items + 1
             local title = type(c.title) == "string" and c.title ~= "" and c.title or ("Chapter %d"):format(i)
             items[#items + 1] = { title = title, hint = time.format_time(tonumber(c.time), long),
                                   value = { "set", "chapter", ("%d"):format(i - 1) }, active = current == i - 1 }
@@ -49,6 +56,15 @@ end
 local M = base.new({
     icon = "playlist",
     live = { "chapter-list", "chapter", "playlist" },
+
+    on_live = function(ctx, prop)
+        if prop ~= "chapter" then return false end
+        local current = mp.get_property_number("chapter")
+        if where[marked] then ctx.mark_menu(TYPE, where[marked], false) end
+        if where[current] then ctx.mark_menu(TYPE, where[current], true) end
+        marked = current
+        return true
+    end,
 
     init = function(ctx)
         local function update(c, n)
@@ -75,7 +91,7 @@ local M = base.new({
             items[#items + 1] = base.header("Playlist")
         end
         playlist_items(pl, items)
-        return { type = "suji-playlist", items = items }
+        return { type = TYPE, items = items }
     end,
 })
 

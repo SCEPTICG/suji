@@ -79,14 +79,27 @@ function T.fake_mp(props)
     function mp.register_script_message(name, fn) mp.messages[name] = fn end
 
     mp.observed = {} -- number of observe_property calls per property
-    function mp.observe_property(name, _, fn)
+    -- With mp.async_observe set, every new observer gets the property's
+    -- value (nil for kind "none") once, at the next advance, as mpv does.
+    -- Off by default: the older tests fire every value by hand.
+    local initial = {}
+    function mp.observe_property(name, kind, fn)
         mp.observers[name] = mp.observers[name] or {}
         table.insert(mp.observers[name], fn)
         mp.observed[name] = (mp.observed[name] or 0) + 1
+        if mp.async_observe then initial[#initial + 1] = { name = name, kind = kind, fn = fn } end
     end
     function mp.unobserve_property(fn)
         for _, list in pairs(mp.observers) do
             for i = #list, 1, -1 do if list[i] == fn then table.remove(list, i) end end
+        end
+        for _, it in ipairs(initial) do if it.fn == fn then it.gone = true end end
+    end
+    local function deliver_initial()
+        local list = initial
+        initial = {}
+        for _, it in ipairs(list) do
+            if not it.gone then it.fn(it.name, it.kind ~= "none" and mp.props[it.name] or nil) end
         end
     end
     -- Observers still registered for a property.
@@ -117,6 +130,7 @@ function T.fake_mp(props)
     end
     -- Advance the clock, firing due timers in order.
     function mp.advance(dt)
+        deliver_initial()
         local stop = mp.now + dt
         while true do
             local next_t

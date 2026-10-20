@@ -20,6 +20,8 @@
 --   on_bar         boolean     The cursor is inside the bar's active zone.
 --   on_controls    boolean     The cursor is on the zone of any element of
 --                              the row (a button, the time, the volume...).
+--                              Also true while a menu is open, wherever
+--                              the cursor is.
 --   paused         boolean     Playback is paused.
 --   dragging       boolean     The user is dragging the timeline or something
 --                              in the row (the volume slider).

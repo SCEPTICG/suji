@@ -2,14 +2,18 @@
 -- and more have in common, and the helpers they share. See core/menu.lua
 -- for the menu and core/modules.lua for the module contract.
 --
--- spec: { icon, build, live, init?, available? }
+-- spec: { icon, build, live, on_live?, init?, available? }
 --   build(ctx)  the menu, read from mpv's properties when it opens
 --   live        properties watched only while the menu is open: when one
 --               changes (another script picks a track, a new file starts)
---               the menu is built again and replaces the one on screen
+--               the menu is built again and replaces the one on screen.
+--               Watched with no value (kind "none"): build reads them.
+--   on_live(ctx, prop)  optional: true when it handled the change itself
+--               (a cheaper update), so the menu is not built again
 -- init and available are the module's own (see the contract).
 
 local msg = require "mp.msg"
+local draw = require "core.draw"
 
 local unpack = table.unpack or unpack
 
@@ -38,13 +42,16 @@ function M.new(spec)
         if not ctx.open_menu(spec.build(ctx), box) then return end
         b.menu_closed(ctx)
         handles = {}
-        local ready = false -- a value already seen is delivered at once: not new
         for _, prop in ipairs(spec.live) do
-            handles[#handles + 1] = ctx.watch(prop, "native", function()
-                if ready then ctx.update_menu(spec.build(ctx)) end
+            -- The first delivery is the value of now, already in the menu:
+            -- at once when the property was observed already, else when
+            -- mpv sends it, a moment later.
+            local first = true
+            handles[#handles + 1] = ctx.watch(prop, "none", function()
+                if first then first = false; return end
+                if not (spec.on_live and spec.on_live(ctx, prop)) then ctx.update_menu(spec.build(ctx)) end
             end)
         end
-        ready = true
     end
 
     return b
@@ -108,6 +115,17 @@ local function first_line(s)
     return i and s:match("^.*%S", i) or ""
 end
 
+-- What a web page can put in the clipboard must not reach mpv's other
+-- protocols: av://lavfi:... builds a filter graph that can write any file
+-- of the user, and there are more (fd://, edl://, memory://...). So only a
+-- local path, file:// or http(s):// is taken. The scheme is compared in
+-- lower case, as mpv does; a single letter is a Windows drive (C://).
+local SCHEMES = { file = true, http = true, https = true }
+function M.clipboard_allowed(s)
+    local scheme = s:match("^([%w+.-]+)://")
+    return not scheme or #scheme == 1 or SCHEMES[scheme:lower()] == true
+end
+
 -- An item that runs command with the first line of the clipboard, read
 -- when it is chosen. The text is one argument of mp.commandv: it is never
 -- parsed as commands, and ${...} in it is not expanded.
@@ -120,8 +138,14 @@ function M.clipboard_item(title, command, ...)
             mp.commandv("show-text", "Clipboard is empty", "1500")
             return
         end
+        if not M.clipboard_allowed(line) then
+            mp.commandv("show-text", "Clipboard: unsupported address", "1500")
+            return
+        end
         local ok, err = mp.commandv(command, line, unpack(extra))
-        if ok == nil and err then msg.warn(("%s from the clipboard failed: %s"):format(command, tostring(err))) end
+        if ok == nil and err then
+            msg.warn(("%s from the clipboard failed: %s"):format(command, draw.printable(err, 300)))
+        end
     end }
 end
 

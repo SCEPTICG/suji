@@ -27,6 +27,12 @@ local seen_real = false
 local last_move = 0
 local hit           -- zone under the cursor (see layout.hit) or nil
 local captured      -- module holding the mouse, or nil
+-- A click on a menu closes it, and with it the reason to bind the mouse;
+-- the second click of a double click would then reach mpv (fullscreen).
+-- So the bindings stay until the cursor goes away: { x, y, time } of that
+-- click, or nil.
+local held
+local HELD_DISTANCE = 16 -- px at scale 1
 local bound, wheel_bound = false, false
 local took_dragging = false -- suji set input-builtin-dragging=no
 local reported_error = false
@@ -79,7 +85,12 @@ local release = M.release
 local function press(x, y)
     if captured then release(false) end -- its button up was lost
     if menu.is_open() then
-        if menu.contains(x, y) then menu.press(x, y) else menu.close() end
+        if menu.contains(x, y) then
+            held = { x = x, y = y, time = mp.get_time() }
+            menu.press(x, y)
+        else
+            menu.close()
+        end
         return
     end
     if hit and modules.call(hit.mod, "press", hit, x, y) == true then captured = hit.mod end
@@ -162,9 +173,9 @@ end
 -- soon as the cursor enters the zone, never on the click itself, because
 -- mpv applies them asynchronously and the first click would be lost.
 function M.refresh()
-    if not opts.enabled then pos, hit = nil, nil; idle_timer:kill() end
+    if not opts.enabled then pos, hit, held = nil, nil, nil; idle_timer:kill() end
     local usable = hit ~= nil and (not hit.bar or state.has_timeline())
-    local want = captured ~= nil or menu.is_open() or (usable and M.target(mp.get_time()) > 0)
+    local want = captured ~= nil or menu.is_open() or held ~= nil or (usable and M.target(mp.get_time()) > 0)
     local on_menu = pos ~= nil and menu.contains(pos.x, pos.y)
     set_bindings(want, want and (on_menu or (hit ~= nil and modules.takes(hit.mod, "wheel"))))
     painter.request()
@@ -178,7 +189,7 @@ end
 function M.on_mouse_pos(p)
     if not opts.enabled then return end
     if type(p) ~= "table" or not p.hover then
-        pos = nil
+        pos, held = nil, nil
         release()
         idle_timer:kill()
     elseif seen_real or p.x ~= 0 or p.y ~= 0 then
@@ -189,6 +200,11 @@ function M.on_mouse_pos(p)
             last_move = mp.get_time()
             if captured then drag(p.x, p.y) end
             M.rearm()
+            -- Gone from the click on a menu: far, or after a double click's time.
+            if held and (math.abs(p.x - held.x) + math.abs(p.y - held.y) > HELD_DISTANCE * state.scale or
+                last_move - held.time > (mp.get_property_number("input-doubleclick-time") or 300) / 1000) then
+                held = nil
+            end
         end
     end
     update_zone()
@@ -215,11 +231,12 @@ function M.on_layout()
     M.refresh()
 end
 
+-- A menu opened or closed: bindings and a paint.
+menu.on_change(M.refresh)
+
 -- A module that failed loses the mouse and its zone. If it held the
 -- mouse, it is still told to drop what it was doing (a pause it set, a
 -- timer), protected: it is off, so modules.call would not reach it.
-menu.on_change(M.refresh)
-
 modules.on_failure(function(mod)
     if captured == mod then
         captured = nil

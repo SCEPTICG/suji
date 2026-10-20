@@ -6,6 +6,9 @@
 --                             module's box); the same menu again closes it
 --   ctx.update_menu(menu)     replace the open menu of the same type, if
 --                             it is this module's: no animation, same scroll
+--   ctx.mark_menu(type, i, on) mark item i of this module's open menu of
+--                             that type as active or not, without cleaning
+--                             the whole menu again (cheap for long lists)
 --   ctx.close_menu()          close this module's menu
 --   ctx.menu_open()           true while this module's menu is open
 --
@@ -282,7 +285,17 @@ function M.update(owner, def)
     return true
 end
 
+-- Item i of owner's open menu of type mtype becomes active (on) or not.
+function M.mark(owner, mtype, i, on)
+    local it = M.is_open(owner) and mtype == cur.def.type and cur.def.items[i]
+    if not it then return false end
+    it.active = on == true
+    painter.request()
+    return true
+end
+
 modules.bind("open_menu", M.open)
+modules.bind("mark_menu", M.mark)
 modules.bind("update_menu", M.update)
 modules.bind("close_menu", function(owner) if M.is_open(owner) then M.close() end end)
 modules.bind("menu_open", M.is_open)
@@ -334,8 +347,13 @@ end
 local function move(d)
     return function()
         if not M.is_open() or #cur.def.items == 0 then return end
+        local items = cur.def.items
         local i = cur.cursor and step(cur.cursor, d) or cur.def.selected
-        if not cur.def.items[i].selectable then i = step(i, d) end
+        -- Never on an item that cannot be chosen: the next one that can,
+        -- that way or else the other; none, and the cursor stays put.
+        if not items[i].selectable then i = step(i, d) end
+        if not items[i].selectable then i = step(i, -d) end
+        if not items[i].selectable then return end
         cur.cursor, cur.by_keys = i, true
         show(i, geometry(), true)
         painter.request()

@@ -8,7 +8,10 @@ local function start(props, script_opts)
     T.unload()
     props = props or {}
     props["mpv-version"] = props["mpv-version"] or "mpv v0.40.0"
+    props["osd-dimensions"], props.duration, props.pause = { w = W, h = H }, 100, true
+    props["time-pos"], props.volume = 50, 100
     mp = T.fake_mp(props)
+    mp.async_observe = true -- first values arrive later, as in mpv
     mp.script_opts = script_opts
     dofile("suji/main.lua")
     mp.fire("osd-dimensions", { w = W, h = H })
@@ -126,7 +129,9 @@ open("subtitles")
 T.eq(click(row("subtitles", 4, 4)), "set sid 3", "the last track")
 mp.advance(1)
 T.check(not painted():find("}Off", 1, true), "closed: not drawn")
+mp.mouse(640, 300)
 T.eq(suji_bindings(), "", "closed, cursor away: no binding of suji left")
+mp.advance(5)
 T.eq(mp.active_timers(), 0, "no timers")
 
 -- The active mark follows a change made elsewhere, with the menu open
@@ -196,6 +201,34 @@ mp.bindings["suji-menu-up"].fn()
 mp.bindings["suji-menu-enter"].fn()
 T.eq(last_cmd(), "set sid no", "Up stops at the first item")
 
+-- The keys never stop on what cannot be chosen
+start()
+ctx_of("more").open_menu({ type = "x", items = {
+    { title = "Group", selectable = false }, { title = "A", value = { "show-text", "a" } },
+    { title = "B", value = { "show-text", "b" } } } }, box_of("more"))
+mp.bindings["suji-menu-up"].fn()
+mp.bindings["suji-menu-enter"].fn()
+T.eq(last_cmd(), "show-text a", "Up on a header first: the first item that can be chosen")
+ctx_of("more").open_menu({ type = "x", items = {
+    { title = "Group", selectable = false }, { title = "A", value = { "show-text", "a" } },
+    { title = "Other", selectable = false } } }, box_of("more"))
+mp.bindings["suji-menu-down"].fn()
+mp.bindings["suji-menu-down"].fn()
+mp.bindings["suji-menu-up"].fn()
+mp.bindings["suji-menu-up"].fn()
+mp.mouse(640, 300)
+mp.advance(0.1)
+T.eq(tonumber(painted():match("\\1a&HE6&\\p3}m %d+ (%d+)")), (Y1 - 90 + 30) * 4, "the cursor stays on A")
+mp.commands = {}
+mp.bindings["suji-menu-enter"].fn()
+T.eq(last_cmd(), "show-text a", "and Enter takes it")
+ctx_of("more").open_menu({ type = "x", items = { { title = "Only a header", selectable = false } } }, box_of("more"))
+mp.bindings["suji-menu-down"].fn()
+mp.bindings["suji-menu-up"].fn()
+mp.advance(0.1)
+T.check(painted():find("\\1a&HE6&", 1, true) == nil, "nothing to choose: no cursor")
+menu().close(true)
+
 -- Hover --------------------------------------------------------------------------------
 start({ ["track-list"] = SUBS })
 open("subtitles")
@@ -225,11 +258,39 @@ open("subtitles")
 T.eq(click(640, 300), "", "in the middle of the video: nothing")
 T.check(mp.bindings["suji-bar-dbl"] == nil, "double clicks on the video are mpv's again")
 open("subtitles")
-T.check(not menu().is_open() == false, "open")
+T.check(menu().is_open(), "open")
 T.eq(open("subtitles"), "", "the same button closes it")
 T.check(not menu().is_open(), "closed")
 mp.advance(1)
 T.check(not menu().is_open(), "and it does not open again")
+
+-- A double click on an entry does not reach mpv (it would toggle fullscreen)
+start({ ["track-list"] = SUBS })
+open("subtitles")
+local dx, dy = row("subtitles", 2, 4)
+mp.mouse(dx, dy)
+mp.commands = {}
+mp.button("press")
+T.eq(last_cmd(), "set sid 1", "the first click chooses")
+T.check(not menu().is_open(), "and closes the menu")
+T.check(mp.bindings["suji-bar-dbl"] ~= nil, "the double click is still swallowed where the menu was")
+mp.commands = {}
+mp.button("press")
+T.eq(#mp.commands, 0, "the second click does nothing")
+mp.mouse(dx + 3, dy + 2)
+T.check(mp.bindings["suji-bar-dbl"] ~= nil, "a small move right away keeps it")
+mp.mouse(dx + 40, dy)
+T.eq(mp.bindings["suji-bar-dbl"], nil, "moving away gives the mouse back to mpv")
+open("subtitles")
+click(row("subtitles", 2, 4))
+mp.advance(0.4)
+mp.mouse(dx + 1, dy)
+T.eq(mp.bindings["suji-bar-dbl"], nil, "so does any move after mpv's double-click time")
+open("subtitles")
+click(row("subtitles", 2, 4))
+mp.mouse(dx, dy, false)
+mp.mouse(dx, dy)
+T.eq(mp.bindings["suji-bar-dbl"], nil, "or leaving the window")
 
 -- Opening another closes the first --------------------------------------------------------
 start({ ["track-list"] = SUBS })
@@ -489,9 +550,17 @@ local big = {}
 for i = 1, 30000 do big[i] = { filename = ("/v/Episode %d.mkv"):format(i), current = i == 25000 } end
 start({ ["playlist-count"] = 30000 })
 mp.props.playlist = big
+local reads = 0
+local get_native = mp.get_property_native
+mp.get_property_native = function(name, def)
+    if name == "playlist" then reads = reads + 1 end
+    return get_native(name, def)
+end
 local t0 = os.clock()
 open("playlist")
 local took = os.clock() - t0
+mp.advance(1)
+T.eq(reads, 1, "opening reads the playlist once, also after mpv sends the first values")
 T.check(painted():find("}Episode 25000.mkv", 1, true) ~= nil, "30 000 entries: opened on the current one")
 T.eq(count(painted(), "}Episode %d+"), 20, "20 drawn")
 T.check(took < 2, ("opened in %.2f s"):format(took))
@@ -507,6 +576,33 @@ T.check(painted():find("}Renamed.mkv", 1, true) ~= nil, "with the new data")
 T.eq(mp.live("playlist"), 1, "the playlist is watched while open")
 menu().close(true)
 T.eq(mp.live("playlist"), 0, "and not after")
+
+-- Chapters and 30 000 entries: a new chapter moves the mark, nothing more
+start({ ["playlist-count"] = 30000, chapters = 3 })
+mp.props.playlist, mp.props["chapter-list"], mp.props.chapter = big, { { time = 0 }, { time = 30 }, { time = 60 } }, 0
+reads = 0
+get_native = mp.get_property_native
+mp.get_property_native = function(name, def)
+    if name == "playlist" then reads = reads + 1 end
+    return get_native(name, def)
+end
+big[25000].current = false
+big[1].current = true
+open("playlist") -- Chapters, three chapters, Playlist, then the entries
+T.eq(reads, 1, "one read to open")
+T.eq(marks()[1], Y1 - 20 * 30 + 45 - 7, "chapter 1 is marked (item 2)")
+t0 = os.clock()
+mp.props.chapter = 2
+mp.fire("chapter", 2)
+mp.advance(0.1)
+T.eq(reads, 1, "a new chapter does not read the playlist again")
+T.check(os.clock() - t0 < 0.1, ("and costs little (%.3f s)"):format(os.clock() - t0))
+T.eq(marks()[1], Y1 - 20 * 30 + 105 - 7, "the mark moved to chapter 3 (item 4)")
+T.eq(#marks(), 2, "and the current entry keeps its own")
+mp.props.chapter = -1
+mp.fire("chapter", -1)
+mp.advance(0.1)
+T.eq(#marks(), 1, "before the first chapter: no chapter marked")
 
 -- More --------------------------------------------------------------------------------------------------------
 start({ ["property-list"] = { "pause", "clipboard" } })
@@ -560,6 +656,28 @@ mp.props["clipboard/text"] = "https://example.com/s.srt\n;quit"
 open("subtitles")
 T.eq(click(row("subtitles", 2, 2)), "sub-add https://example.com/s.srt", "load subtitles from the clipboard")
 T.eq(#mp.commands[#mp.commands], 2, "one argument")
+-- Only a local path, file:// and http(s)://: other protocols could do much
+-- more than play a file (av://lavfi can write files).
+local refused = { "av://lavfi:sine,metadata=mode=print:file=/home/u/.bashrc", "AV://lavfi:x", "Av://x",
+                  "lavf://x", "fd://3", "fdclose://3", "edl://a.mkv,0,1", "memory://x", "ytdl://x",
+                  "  av://x", "mf://*.png", "x-y.z+w://a" }
+for _, text in ipairs(refused) do
+    mp.props["clipboard/text"] = text
+    open("subtitles")
+    T.eq(click(row("subtitles", 2, 2)), "show-text Clipboard: unsupported address 1500", "refused: " .. text)
+end
+local allowed = { ["C:\\Videos\\subs.ass"] = "C:\\Videos\\subs.ass", ["C:/Videos/subs.ass"] = "C:/Videos/subs.ass",
+                  ["/home/u/subs.ass"] = "/home/u/subs.ass", ["file:///home/u/a.srt"] = "file:///home/u/a.srt",
+                  ["FILE:///x.srt"] = "FILE:///x.srt", ["https://example.com/a.srt"] = "https://example.com/a.srt",
+                  ["HTTP://example.com/a.srt"] = "HTTP://example.com/a.srt", ["subs/a:b.srt"] = "subs/a:b.srt" }
+for text, arg in pairs(allowed) do
+    mp.props["clipboard/text"] = text
+    open("subtitles")
+    T.eq(click(row("subtitles", 2, 2)), "sub-add " .. arg, "allowed: " .. text)
+end
+mp.props["clipboard/text"] = "av://lavfi:x"
+open("more")
+T.eq(click(row("more", 12, 12)), "show-text Clipboard: unsupported address 1500", "open from the clipboard refuses it too")
 start()
 open("subtitles")
 T.check(not painted():find("clipboard", 1, true), "mpv 0.39 (no clipboard property): no clipboard entries")
