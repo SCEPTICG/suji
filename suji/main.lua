@@ -1,7 +1,8 @@
 -- suji: a minimal on-screen controller for mpv.
 -- Entry point: version check, the core's property observers, the modules,
 -- the controls option and the frame renderer. The core is in core/, the
--- elements it draws in modules/ (see core/modules.lua).
+-- elements it draws in modules/ (see core/modules.lua). Menus are a service
+-- of the core (core/menu.lua) that modules use.
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -13,6 +14,7 @@ local painter = require "core.painter"
 local modules = require "core.modules"
 local layout = require "core.layout"
 local mouse = require "core.mouse"
+local menu = require "core.menu"
 
 local watch, ctx, timeline = modules.watch, modules.ctx, modules.timeline
 
@@ -68,7 +70,9 @@ painter.set_renderer(function()
         local row_top = state.h - (layout.ROW_LIFT + layout.HEIGHT / 2) * state.scale
         add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = row_top }, v))
     end
-    return table.concat(out, "\n"), animation.running(tween, now)
+    local menu_ass, menu_running = menu.render(now) -- on top of everything
+    add(menu_ass)
+    return table.concat(out, "\n"), animation.running(tween, now) or menu_running
 end)
 
 check_version()
@@ -177,6 +181,7 @@ local function set_enabled(on)
         mp.set_property_bool("osc", false)
         took_osc = true
     elseif not on then
+        menu.close(true)
         mouse.release(false)
         if took_osc and mp.get_property_bool("osc") == false then mp.set_property_bool("osc", true) end
         took_osc = false

@@ -64,7 +64,7 @@ mp.advance(0.1)
 T.eq(#mp.updates, n + 1, "shown: a module watcher repaints")
 
 -- safe: a module that fails in render is turned off -----------------------
-start()
+start({ controls = "pause,time,space,volume,fullscreen" }) -- nothing slides into its place
 local volume = package.loaded["modules.volume"]
 mp.mouse(1176, 680)
 mp.button("down")

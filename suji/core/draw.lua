@@ -110,7 +110,8 @@ function M.escape(text)
 end
 
 -- One line of white text, escaped here. t: { font, size, opacity, scale,
--- bold (plain bold: semibold falls back to regular in many fonts), spacing }.
+-- bold (plain bold: semibold falls back to regular in many fonts), italic,
+-- spacing }.
 -- an: ASS alignment. text: a string, or a list of { string, opacity } parts.
 function M.text(x, y, an, text, t)
     if type(text) ~= "table" then text = { { text, t.opacity } } end
@@ -119,8 +120,8 @@ function M.text(x, y, an, text, t)
         parts[i] = ("{\\1a%s\\3a%s\\4a%s}%s"):format(M.alpha(p[2]), M.alpha(0.7 * p[2]),
             M.alpha(0.4 * p[2]), M.escape(p[1]))
     end
-    return ("{\\an%d\\pos(%.1f,%.1f)\\q2\\fn%s\\fs%.1f\\b%d\\fsp%.1f\\1c&HFFFFFF&%s}%s"):format(
-        an, x, y, t.font, t.size, t.bold and 1 or 0, t.spacing or 0,
+    return ("{\\an%d\\pos(%.1f,%.1f)\\q2\\fn%s\\fs%.1f\\b%d%s\\fsp%.1f\\1c&HFFFFFF&%s}%s"):format(
+        an, x, y, t.font, t.size, t.bold and 1 or 0, t.italic and "\\i1" or "", t.spacing or 0,
         M.outline(t.scale, t.opacity), table.concat(parts))
 end
 

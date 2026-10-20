@@ -7,6 +7,9 @@
 -- through, so double click and window dragging keep working. Forced
 -- bindings still let mpv start a window drag that cancels ours, so
 -- input-builtin-dragging is off while they are on (see restore_dragging).
+-- An open menu (core/menu.lua) comes first: MBTN_LEFT is bound everywhere,
+-- a click on the menu is a choice and a click anywhere else only closes
+-- it, and the controls stay on screen.
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -15,6 +18,7 @@ local painter = require "core.painter"
 local visibility = require "core.visibility"
 local layout = require "core.layout"
 local modules = require "core.modules"
+local menu = require "core.menu"
 
 local M = {}
 
@@ -39,7 +43,7 @@ function M.input(now)
         idle_time = now - last_move,
         hide_delay = opts.hide_delay,
         on_bar = hit ~= nil and hit.bar == true,
-        on_controls = hit ~= nil and not hit.bar,
+        on_controls = (hit ~= nil and not hit.bar) or menu.is_open(),
         paused = state.paused,
         dragging = captured ~= nil,
     }
@@ -74,6 +78,10 @@ local release = M.release
 
 local function press(x, y)
     if captured then release(false) end -- its button up was lost
+    if menu.is_open() then
+        if menu.contains(x, y) then menu.press(x, y) else menu.close() end
+        return
+    end
     if hit and modules.call(hit.mod, "press", hit, x, y) == true then captured = hit.mod end
 end
 
@@ -98,7 +106,10 @@ local function on_button(e)
 end
 
 local function wheel(dir)
-    return function() if hit then modules.call(hit.mod, "wheel", dir) end end
+    return function()
+        if pos and menu.contains(pos.x, pos.y) then menu.wheel(dir)
+        elseif hit then modules.call(hit.mod, "wheel", dir) end
+    end
 end
 
 -- Put window dragging back, unless someone changed it since suji turned
@@ -142,6 +153,7 @@ end
 
 -- Leave the player as suji found it.
 function M.shutdown()
+    menu.close(true)
     set_bindings(false, false)
     restore_dragging()
 end
@@ -152,8 +164,9 @@ end
 function M.refresh()
     if not opts.enabled then pos, hit = nil, nil; idle_timer:kill() end
     local usable = hit ~= nil and (not hit.bar or state.has_timeline())
-    local want = captured ~= nil or (usable and M.target(mp.get_time()) > 0)
-    set_bindings(want, want and hit ~= nil and modules.takes(hit.mod, "wheel"))
+    local want = captured ~= nil or menu.is_open() or (usable and M.target(mp.get_time()) > 0)
+    local on_menu = pos ~= nil and menu.contains(pos.x, pos.y)
+    set_bindings(want, want and (on_menu or (hit ~= nil and modules.takes(hit.mod, "wheel"))))
     painter.request()
 end
 
@@ -179,6 +192,7 @@ function M.on_mouse_pos(p)
         end
     end
     update_zone()
+    menu.pointer(pos and pos.x, pos and pos.y)
     M.refresh()
 end
 
@@ -195,6 +209,7 @@ end
 -- The zones moved: the window size, the scale or the row changed. A module
 -- that is no longer laid out lets go of the mouse.
 function M.on_layout()
+    menu.on_layout()
     if captured and not layout.find(layout.current(), captured) then release(false) end
     update_zone()
     M.refresh()
@@ -203,6 +218,8 @@ end
 -- A module that failed loses the mouse and its zone. If it held the
 -- mouse, it is still told to drop what it was doing (a pause it set, a
 -- timer), protected: it is off, so modules.call would not reach it.
+menu.on_change(M.refresh)
+
 modules.on_failure(function(mod)
     if captured == mod then
         captured = nil

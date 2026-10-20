@@ -13,6 +13,7 @@
 --   release(ctx, commit)    the button went up; commit is false when the
 --                           drag is dropped (file change, window left...)
 --   wheel(ctx, dir)         wheel over its zone: 1 up, -1 down
+--   menu_closed(ctx)        the menu it opened closed (see core/menu.lua)
 --
 -- box: { x0, y0, x1, y1, cy } in window px, cy the centre of the row.
 -- The core only calls modules through M.call, which gives each module its
@@ -194,6 +195,13 @@ function M.unwatch(it)
 end
 ctx.unwatch = M.unwatch
 
+-- Functions of the ctx tied to the module that calls them: name -> fn(mod, ...).
+local bound = {}
+
+-- Give every module's ctx a function name that calls fn(mod, ...) (the
+-- menu service adds ctx.open_menu and its friends this way).
+function M.bind(name, fn) bound[name] = fn end
+
 -- The ctx of module mod: the core's, with watch and unwatch tied to mod.
 function M.ctx_of(mod)
     local c = contexts[mod]
@@ -202,7 +210,13 @@ function M.ctx_of(mod)
             watch = function(prop, kind, fn) return M.watch(prop, kind, fn, mod) end,
             -- Only the module's own watches.
             unwatch = function(it) if type(it) == "table" and it.owner == mod then M.unwatch(it) end end,
-        }, { __index = ctx })
+        }, { __index = function(t, k)
+            local fn = bound[k]
+            if not fn then return ctx[k] end
+            local f = function(...) return fn(mod, ...) end
+            rawset(t, k, f)
+            return f
+        end })
         contexts[mod] = c
     end
     return c
@@ -215,6 +229,10 @@ local ROW = {
     time = require "modules.time",
     volume = require "modules.volume",
     fullscreen = require "modules.fullscreen",
+    subtitles = require "modules.subtitles",
+    audio = require "modules.audio",
+    playlist = require "modules.playlist",
+    more = require "modules.more",
 }
 local command = require "modules.command"
 M.timeline = require "modules.timeline" -- always there, not part of the row
@@ -225,7 +243,7 @@ function M.init()
     names[M.timeline], names[M.title] = "timeline", "title"
     M.call(M.timeline, "init")
     M.call(M.title, "init")
-    for _, name in ipairs({ "pause", "time", "volume", "fullscreen" }) do
+    for _, name in ipairs({ "pause", "time", "volume", "fullscreen", "subtitles", "audio", "playlist", "more" }) do
         names[ROW[name]] = name
         M.call(ROW[name], "init")
     end

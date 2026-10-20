@@ -38,10 +38,22 @@ Delete the `scripts/suji` folder (and `script-opts/suji.conf`, if you made one).
 - **Time:** click it to switch between the duration and the remaining time.
 - **Volume:** click the speaker to mute, click or drag the slider to set the volume, and use the wheel over either to change it by 5.
 - **Fullscreen:** the button on the right.
+- **Menus:** the four buttons before the volume, described below.
 
 The controls appear as the mouse gets close to the bottom of the window and hide when it moves away or stays still for a moment. They stay up while paused, while the cursor is on them and while dragging. Double clicks on the controls do not toggle fullscreen; everywhere else, mpv's mouse bindings work as usual.
 
 Above the controls suji shows the title: mpv's `media-title`, or the file name without its extension when the file has no title. Another script can replace it, see below.
+
+## Menus
+
+Each menu opens upwards from its button. A button with nothing to offer is hidden.
+
+- **Subtitles:** Off, the subtitle tracks and *Load from clipboard* (a path or URL in the clipboard, mpv 0.40 or newer). Shown whenever a file is loaded.
+- **Audio:** the audio tracks and, below them, the audio devices. Shown when there is more than one track or more than one device.
+- **Playlist:** the chapters, then the playlist. Shown when the file has chapters or the playlist has more than one entry.
+- **More:** the video track and the editions when there is a choice (a new edition restarts playback), the speed, and *Open from clipboard* (mpv 0.40 or newer).
+
+Click an entry to choose it; the active one has a thin mark on its left. The wheel scrolls a long list, and the arrow keys and Enter work too. A menu closes after a choice, with a click anywhere outside it (that click does nothing else) or with Esc. While a menu is open the controls stay on screen.
 
 ## Options
 
@@ -72,10 +84,10 @@ That works from the console, from a key in `input.conf` (`F9 change-list script-
 The `controls` option chooses which elements the row shows and in which order. The default is the row described above:
 
 ```
-controls=pause,time,space,volume,fullscreen
+controls=pause,time,space,subtitles,audio,playlist,more,volume,fullscreen
 ```
 
-- The elements are `pause`, `time`, `volume` and `fullscreen`.
+- The elements are `pause`, `time`, `volume`, `fullscreen` and the menus `subtitles`, `audio`, `playlist` and `more`.
 - `space` pushes what follows it to the right; `gap` leaves a small hole.
 - `command:icon:command` adds a button that runs an mpv command, for example `command:x:playlist-next`.
 - A condition in `<...>` before an element shows it only when it holds, for example `<has_playlist>command:x:playlist-next`. A hidden element leaves no gap.

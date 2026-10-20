@@ -19,6 +19,9 @@ local function start(w, h, hidpi, script_opts)
     unload()
     mp = T.fake_mp({ ["mpv-version"] = "mpv v0.40.0" })
     mp.script_opts = script_opts or { debug = true }
+    -- v0.1.0's row, by hand: the default controls have more buttons now
+    -- (v0.1.0 had no such option and ignores it).
+    mp.script_opts.controls = "pause,time,space,volume,fullscreen"
     dofile("suji/main.lua")
     mp.fire("osd-dimensions", { w = w, h = h })
     mp.fire("display-hidpi-scale", hidpi)

@@ -16,20 +16,22 @@ local DEFAULTS = {
     debug = false,         -- log sizes and scale to the mpv console
     -- TODO(SCEPTICG): this line decides what everyone who installs suji and
     -- touches nothing sees in the row, and in which order. The value below
-    -- only reproduces v0.1.0 so that everything works and the tests pass;
-    -- the final one is yours to choose (keep docs/suji.conf in step).
+    -- is provisional: v0.1.0's row with the four menu buttons, so that the
+    -- menus can be tried; the final one is yours to choose (keep
+    -- docs/suji.conf in step). All the elements exist now except button:.
     -- Elements, left to right, separated by commas (see core/controls.lua):
     --   pause, time, volume, fullscreen      the controls of v0.1.0
+    --   subtitles, audio, playlist, more     buttons with menus; each one
+    --                hides, leaving no gap, when it has nothing to offer
     --   space        takes the free width: what follows goes to the right
     --   gap          a small fixed hole
     --   command:icon:command?text            a button that runs an mpv command
-    --   subtitles, audio, playlist, more     buttons with menus (part 2)
-    --   button:name  a button another script defines (part 3)
+    --   button:name  a button another script defines (not yet)
     -- Conditions go before an element, in <...>: video, audio, stream,
     -- has_chapter, has_playlist, idle, or any mpv property or user-data/...
     -- (true when it exists and is not false, no, 0 or empty). "," is OR,
     -- "+" is AND, "!" negates: <video,audio>, <has_playlist+!stream>.
-    controls = "pause,time,space,volume,fullscreen",
+    controls = "pause,time,space,subtitles,audio,playlist,more,volume,fullscreen",
 }
 
 -- Numbers are kept in these ranges; NaN falls back to the default.

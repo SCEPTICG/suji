@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs the unit tests with Lua 5.1 (or $LUA), a smoke test with a windowless
-# mpv and, if xvfb-run is installed, a real drag and click test in a virtual
-# display.
+# mpv and, if xvfb-run is installed, a real drag and click test and a menu
+# test (which also needs ffmpeg and mkvmerge) in a virtual display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -77,6 +77,38 @@ else
         printf '%s\n' "$out" | grep 'xvfb-drag:'
     else
         printf 'xvfb-drag: FAIL\n%s\n' "$out"
+        status=1
+    fi
+fi
+
+# Menus: a file with two audio tracks, two subtitle tracks and three chapters.
+if [ -n "$tmp" ] && command -v ffmpeg >/dev/null 2>&1 && command -v mkvmerge >/dev/null 2>&1; then
+    printf '1\n00:00:00,000 --> 00:00:30,000\nOne\n' >"$tmp/a.srt"
+    printf '1\n00:00:00,000 --> 00:00:30,000\nTwo\n' >"$tmp/b.srt"
+    printf 'CHAPTER01=00:00:00.000\nCHAPTER01NAME=One\nCHAPTER02=00:00:10.000\nCHAPTER02NAME=Two\nCHAPTER03=00:00:20.000\nCHAPTER03NAME=Three\n' \
+        >"$tmp/chapters.txt"
+    timeout 120 ffmpeg -v error -f lavfi -i testsrc=duration=30:size=320x240:rate=10 \
+        -f lavfi -i sine=frequency=440:duration=30 -f lavfi -i sine=frequency=880:duration=30 \
+        -i "$tmp/a.srt" -i "$tmp/b.srt" -map 0 -map 1 -map 2 -map 3 -map 4 \
+        -c:v mpeg4 -c:a aac -c:s srt "$tmp/m0.mkv" >/dev/null 2>&1 &&
+        timeout 60 mkvmerge -q -o "$tmp/m.mkv" --chapters "$tmp/chapters.txt" "$tmp/m0.mkv" >/dev/null 2>&1
+fi
+if [ -z "$tmp" ]; then
+    echo "xvfb-menu: skipped (no xvfb-run)"
+elif [ ! -s "$tmp/m.mkv" ]; then
+    echo "xvfb-menu: skipped (could not make the test video: needs ffmpeg and mkvmerge)"
+else
+    out=$(timeout 60 xvfb-run -a mpv --no-config --vo=x11 --ao=null \
+        --geometry=640x480 --pause --keep-open=yes --script=./suji \
+        --script=tests/xvfb_menu.lua --msg-level=all=no,suji=info,xvfb_menu=info \
+        "$tmp/m.mkv" 2>&1)
+    if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-menu: FAIL\n%s\n' "$out"
+        status=1
+    elif printf '%s\n' "$out" | grep -q 'xvfb-menu: ok'; then
+        printf '%s\n' "$out" | grep 'xvfb-menu:'
+    else
+        printf 'xvfb-menu: FAIL\n%s\n' "$out"
         status=1
     fi
 fi
