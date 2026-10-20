@@ -3,7 +3,8 @@
 -- checks that dragging the bar seeks, that window dragging is only
 -- switched off while the cursor is on the bar, and that real clicks reach
 -- the pause button, the time (run.sh checks suji's debug line) and the
--- volume slider.
+-- volume slider. mpv's OSC is left on in the command line: suji has to
+-- turn it off, so it must be gone when the mouse moves.
 --
 -- Window: 640x480, so suji's zone is y 456..479 and the row of controls is
 -- centred on y 440. File: 60 s, paused.
@@ -37,6 +38,10 @@ end
 
 after(0.5, function() mp.commandv("mouse", tostring(W / 2), "100") end)
 after(0.3, function()
+    -- The OSC keeps its state in user-data/osc while it is loaded.
+    if mp.get_property_bool("osc") ~= false or mp.get_property_native("user-data/osc") ~= nil then
+        finish(false, "mpv's OSC is still loaded")
+    end
     if mp.get_property_bool("input-builtin-dragging") ~= true then
         finish(false, "window dragging is off away from the bar")
     end

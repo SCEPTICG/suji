@@ -9,7 +9,7 @@ local M = {
     duration = nil,   -- duration in seconds, nil when unknown
     paused = false,
     volume = 100, mute = false, fullscreen = false,
-    title = "",       -- media-title
+    title = nil,      -- media-title (see controls.file_title), cut; nil when empty
     series = nil,     -- two-line title sent with set-title, nil when unset
     episode = nil,
     font = "sans-serif", -- osd-font

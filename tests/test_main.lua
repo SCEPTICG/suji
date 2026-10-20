@@ -379,6 +379,96 @@ mp.commands = {}
 mp.mouse(1100, 600)
 T.eq(#mp.commands, 0, "no volume change after the resize")
 
+-- Options changed at run time ---------------------------------------------
+start({ debug = true })
+o = package.loaded["options"]
+local st = package.loaded["state"]
+mp.set_opts({ scale = 1.5 })
+T.eq(st.scale, 1.5, "scale applied at run time")
+T.check(mp.logs[#mp.logs][2]:find("^options: .*scale 1%.500") ~= nil, "new scale logged")
+mp.set_opts({ scale = 1e9, hide_delay = -5, proximity = 0 / 0, accent = "nope" })
+T.eq(o.scale, 8, "reload: scale capped")
+T.eq(o.hide_delay, 0, "reload: hide_delay floored")
+T.eq(o.proximity, 120, "reload: NaN proximity falls back")
+T.eq(o.accent, "ffffff", "reload: invalid accent falls back")
+local warned = false
+for _, l in ipairs(mp.logs) do warned = warned or (l[1] == "warn" and l[2]:find("accent") ~= nil) end
+T.check(warned, "reload: invalid accent warned")
+mp.set_opts({ scale = 1, hide_delay = 1.5, accent = "ff0000" })
+mp.fire("pause", true)
+mp.advance(1)
+T.check(painted():find("&H0000FF&", 1, true) ~= nil, "new accent painted")
+mp.set_opts({ remaining_time = true })
+T.eq(st.remaining, true, "remaining_time applied at run time")
+mp.advance(0.1)
+T.check(painted():find(" / -00:50", 1, true) ~= nil, "remaining time painted")
+start({ idle_line = false })
+n = #mp.updates
+mp.set_opts({ idle_line = true })
+mp.advance(0.1)
+T.eq(#mp.updates, n + 1, "idle_line on at run time repaints")
+T.check(painted() ~= "", "rest line back")
+T.eq(mp.active_timers(), 0, "reload leaves no timers")
+
+-- enabled and mpv's OSC -------------------------------------------------
+start(nil, { osc = true })
+T.eq(mp.props.osc, false, "OSC turned off at start")
+mp.mouse(640, 710)
+mp.button("down")
+mp.set_opts({ enabled = false })
+T.eq(mp.props.osc, true, "disabled: OSC back on")
+T.check(not bar().dragging(), "disabled: drag dropped")
+T.eq(mp.bindings["suji-bar"], nil, "disabled: no bindings")
+T.eq(mp.props["input-builtin-dragging"], true, "disabled: window dragging back")
+mp.advance(0.5)
+T.eq(painted(), "", "disabled: nothing on screen")
+n = #mp.updates
+mp.mouse(640, 712)
+mp.fire("time-pos", 80)
+mp.fire("pause", true)
+mp.advance(1)
+T.eq(#mp.updates, n, "disabled: no repaint")
+T.eq(mp.bindings["suji-bar"], nil, "disabled: the bar takes no clicks")
+T.eq(mp.active_timers(), 0, "disabled: no timers")
+mp.set_opts({ enabled = true })
+T.eq(mp.props.osc, false, "enabled again: OSC off")
+mp.advance(1)
+T.check(painted() ~= "", "enabled again: painted")
+mp.mouse(640, 711)
+T.check(mp.bindings["suji-bar"] ~= nil, "enabled again: bar clickable")
+
+start({ enabled = false }, { osc = true })
+T.eq(mp.props.osc, true, "disabled from the start: OSC untouched")
+T.eq(mp.updates[#mp.updates] and mp.updates[#mp.updates].data or "", "", "disabled from the start: nothing drawn")
+start(nil, { osc = false })
+mp.set_opts({ enabled = false })
+T.eq(mp.props.osc, false, "OSC the user turned off stays off")
+start(nil, { osc = true })
+mp.set_property_bool("osc", true) -- turned back on by the user
+mp.set_opts({ enabled = false })
+T.eq(mp.props.osc, true, "OSC the user turned on stays on")
+
+-- File name without the extension -----------------------------------------
+start()
+mp.fire("pause", true)
+mp.fire("filename", "Bills Must Be Paid part 1.mp4")
+mp.fire("filename/no-ext", "Bills Must Be Paid part 1")
+mp.fire("media-title", "Bills Must Be Paid part 1.mp4")
+mp.advance(1)
+T.check(painted():find("}Bills Must Be Paid part 1$") ~= nil, "file name shown without extension")
+mp.fire("media-title", string.rep("b", 1000))
+T.eq(package.loaded["state"].title, string.rep("b", 200), "a title tag is cut, never raw")
+
+-- set-title: one part, and a clean debug log -------------------------------
+start({ debug = true })
+mp.messages["set-title"]("", "Episode 5")
+T.eq(package.loaded["state"].episode, "Episode 5", "episode alone")
+T.eq(package.loaded["state"].series, nil, "no series")
+mp.messages["set-title"]("a\27[31mb\194\155c", "\7")
+local line = mp.logs[#mp.logs][2]
+T.check(not line:find("%c") and not line:find("\194[\128-\159]"), "no control characters in the log")
+T.check(line:find("a?[31mb?c", 1, true) ~= nil, "the rest of the text is kept")
+
 -- Old mpv -----------------------------------------------------------------
 T.unload()
 mp = T.fake_mp({ ["mpv-version"] = "mpv 0.38.0" })

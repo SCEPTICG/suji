@@ -1,11 +1,13 @@
--- Default options, overridden by script-opts/suji.conf and by
--- --script-opts=suji-<option>=<value>. The type of each default decides
+-- Options, read from script-opts/suji.conf and --script-opts=suji-<option>=<value>.
+-- They can change while mpv runs (through the script-opts property); the
+-- file itself is only read at start-up. The type of each default decides
 -- how mpv converts the value, so none of them may be nil.
 
 local msg = require "mp.msg"
 local draw = require "draw"
 
-local M = {
+local DEFAULTS = {
+    enabled = true,        -- no = suji draws nothing and leaves the player alone
     idle_line = true,      -- 2 px progress line at rest; no = nothing on screen
     accent = "ffffff",     -- colour of the progress and the knob (rrggbb)
     pause_on_drag = false, -- pause while dragging the timeline
@@ -13,30 +15,46 @@ local M = {
     hide_delay = 1.5,      -- seconds without mouse movement before hiding
     proximity = 120,       -- distance in px (at scale 1) where the bar reacts
     scale = 1,             -- size factor, multiplied by the system HiDPI scale
-    -- Temporary, to compare during the alpha: one style is removed before
-    -- v0.1.0. "line" (thin strokes) or "fill" (solid shapes).
-    icon_style = "line",
     debug = false,         -- log sizes and scale to the mpv console
 }
 
-require("mp.options").read_options(M, "suji")
+-- Numbers are kept in these ranges; NaN falls back to the default.
+local LIMITS = { hide_delay = { 0, 3600 }, proximity = { 1, 10000 }, scale = { 0.25, 8 } }
 
-if not draw.color(M.accent) then
-    msg.warn(("invalid accent '%s', using ffffff"):format(M.accent))
-    M.accent = "ffffff"
+local M = {}
+
+-- The usable value of every option in raw (left untouched), with warnings.
+function M.validate(raw)
+    local out = {}
+    for k, v in pairs(DEFAULTS) do
+        out[k] = raw[k]
+        if type(out[k]) ~= type(v) then out[k] = v end
+    end
+    if not draw.color(out.accent) then
+        msg.warn(("invalid accent '%s', using ffffff"):format(out.accent))
+        out.accent = DEFAULTS.accent
+    end
+    for k, r in pairs(LIMITS) do
+        local v = out[k]
+        if v ~= v then v = DEFAULTS[k] end
+        out[k] = math.max(r[1], math.min(r[2], v))
+    end
+    return out
 end
-if M.icon_style ~= "line" and M.icon_style ~= "fill" then
-    msg.warn(("invalid icon_style '%s', using line"):format(M.icon_style))
-    M.icon_style = "line"
-end
--- Keep numbers in a sane range; NaN falls back to the default.
-local function limit(key, lo, hi, default)
-    local v = M[key]
-    if v ~= v then v = default end
-    M[key] = math.max(lo, math.min(hi, v))
-end
-limit("hide_delay", 0, 3600, 1.5)
-limit("proximity", 1, 10000, 120)
-limit("scale", 0.25, 8, 1)
+
+-- mpv writes into raw; M only ever holds validated values.
+local raw, listener = {}, nil
+for k, v in pairs(DEFAULTS) do raw[k] = v end
+local function apply() for k, v in pairs(M.validate(raw)) do M[k] = v end end
+
+-- fn(changed) runs after a change at run time; changed[name] is true for
+-- each option that changed.
+function M.on_update(fn) listener = fn end
+
+require("mp.options").read_options(raw, "suji", function(changed)
+    apply()
+    if listener then listener(changed) end
+end)
+apply()
 
 return M

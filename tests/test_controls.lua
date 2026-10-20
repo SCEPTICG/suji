@@ -5,24 +5,20 @@ local controls = require "elements.controls"
 
 local function tt(...) local x, y = controls.time_text(...); return x .. y end
 
--- Icons: every one is a valid \p drawing and scales with the size
+-- Icons: every one is a valid \p stroke and scales with the size
 for _, name in ipairs({ "play", "pause", "volume0", "volume1", "volume2", "mute",
                         "fullscreen", "windowed" }) do
-    local ass = draw.poly(icons.shape(name, 50, 50, 24), { opacity = 1, outline = draw.outline(1, 1) })
-    local path = ass:match("\\p3}(.-){\\p0}$")
-    T.check(path and path:match("^m %-?%d+ %-?%d+ ") ~= nil, name .. " starts with a move")
-    T.check(path and path:gsub("[ml] %-?%d+ %-?%d+ ", "") == "", name .. " only has m/l points")
     local small, big = icons.shape(name, 0, 0, 22), icons.shape(name, 0, 0, 44)
     T.near(big[1][1], small[1][1] * 2, name .. " scales x")
     T.near(big[1][2], small[1][2] * 2, name .. " scales y")
-    local lines, width = icons.shape(name, 50, 50, 24, "line")
+    local lines, width = icons.shape(name, 50, 50, 24)
     local st = draw.stroke(lines, width, 1, 1)
     local _, events = st:gsub("\n", "")
     T.eq(events, 1, name .. " line: halo and stroke")
     local lpath = st:match("[^\n]*$"):match("\\p3}(.-){\\p0}$")
     T.check(lpath and lpath:gsub("[ml] %-?%d+ %-?%d+ ?", "") == "", name .. " line only has m/l points")
     T.check(width >= 2 and width <= 2.2, name .. " line about 2 px wide")
-    local _, w2 = icons.shape(name, 0, 0, 48, "line")
+    local _, w2 = icons.shape(name, 0, 0, 48)
     T.near(w2, width * 2, name .. " line width scales")
 end
 T.eq(icons.shape("nope", 0, 0, 22), nil, "unknown icon")
@@ -126,6 +122,15 @@ T.check(w10(controls.fit(junk, 100, w10)) <= 100, "a cut of junk is measured and
 T.eq(controls.len("a\195\169b"), 3, "UTF-8 length")
 T.eq(controls.prefix("a\195\169b", 2), "a\195\169", "UTF-8 prefix")
 
+-- Title without the extension when mpv fell back to the file name
+local ft2 = controls.file_title
+T.eq(ft2("Bills Must Be Paid part 1.mp4", "Bills Must Be Paid part 1.mp4", "Bills Must Be Paid part 1"),
+    "Bills Must Be Paid part 1", "file name without extension")
+T.eq(ft2("A Title", "a.mkv", "a"), "A Title", "a title tag is kept")
+T.eq(ft2("noext", "noext", "noext"), "noext", "no extension")
+T.eq(ft2("x.mkv", "x.mkv", ""), "x.mkv", "empty no-ext keeps the name")
+T.eq(ft2(nil, nil, nil), nil, "nothing known")
+
 -- Rendering
 local st = { w = 1280, h = 720, scale = 1, time = 50, duration = 100, volume = 40, mute = false,
              fullscreen = false, paused = true, title = "Title", font = "sans-serif" }
@@ -135,7 +140,7 @@ T.check(time_w > 0, "time width measured")
 T.check(ass:find("}00:50{", 1, true) ~= nil and ass:find("} / 01:40", 1, true) ~= nil, "time shown")
 T.check(ass:find("}Title", 1, true) ~= nil, "media title shown")
 local _, n = ass:gsub("\n", "")
-T.eq(n + 1, 8, "icons, time, slider and title")
+T.eq(n + 1, 11, "icons (two events each), time, slider and title")
 st.series, st.episode = "Show", "Ep 1"
 ass = controls.render(st, 1, measure, 30)
 T.check(ass:find("}SHOW", 1, true) ~= nil, "series in capitals")
@@ -143,9 +148,9 @@ T.check(ass:find("\\fsp1.5", 1, true) ~= nil, "series letter spacing")
 T.check(ass:find("}Ep 1", 1, true) ~= nil, "episode")
 T.check(ass:find("\\1a&H66&\\3a&H94&\\4a&HC2&}00:30{", 1, true) ~= nil, "time under the cursor, dimmed")
 T.check(ass:find("\\an2", 1, true) == nil, "no floating tooltip")
-local line = controls.render(st, 1, measure, nil, "line")
-T.check(line ~= controls.render(st, 1, measure, nil, "fill"), "two icon styles")
-T.check(line:find("\\1a&HFF&", 1, true) ~= nil, "line icons are strokes with no fill")
+local line = controls.render(st, 1, measure)
+local _, strokes = line:gsub("\\1a&HFF&", "")
+T.eq(strokes, 6, "the three icons are strokes with no fill (halo and line each)")
 T.check(controls.render(st, 0.5, measure) ~= controls.render(st, 1, measure), "fades with v")
 
 T.done("test_controls")

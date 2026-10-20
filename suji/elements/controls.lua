@@ -107,6 +107,13 @@ function M.fit(text, max_w, width_of)
     return cut
 end
 
+-- The title to show: media-title, without the extension when mpv fell back
+-- to the file name (a file with no title tag).
+function M.file_title(media_title, filename, no_ext)
+    if media_title == filename and type(no_ext) == "string" and no_ext ~= "" then return no_ext end
+    return media_title
+end
+
 -- Where everything goes. Zones are { x0, y0, x1, y1 } in window px.
 function M.layout(w, h, s)
     local cy, half = h - ROW_LIFT * s, BUTTON * s / 2
@@ -151,9 +158,8 @@ end
 
 -- ASS text for visibility v (> 0) and the time width (for M.hit).
 -- st: suji's state. hover_time: the time under the cursor while it is on
--- the timeline; it replaces the position, dimmed. icon_style: "line" or
--- "fill".
-function M.render(st, v, measure, hover_time, icon_style)
+-- the timeline; it replaces the position, dimmed.
+function M.render(st, v, measure, hover_time)
     local s = st.scale
     local lay = M.layout(st.w, st.h, s)
     local function width(text, size, bold, spacing)
@@ -161,9 +167,8 @@ function M.render(st, v, measure, hover_time, icon_style)
         return measure(ass, M.len(text) * size * s * 0.55)
     end
     local function icon(name, z)
-        local shape, stroke = icons.shape(name, (z.x0 + z.x1) / 2, lay.cy, ICON * s, icon_style)
-        if stroke then return draw.stroke(shape, stroke, v, s) end
-        return draw.poly(shape, { opacity = v, outline = draw.outline(s, v) })
+        local shape, stroke = icons.shape(name, (z.x0 + z.x1) / 2, lay.cy, ICON * s)
+        return draw.stroke(shape, stroke, v, s)
     end
 
     local left, right = M.time_text(st.time, st.duration, st.remaining, hover_time)

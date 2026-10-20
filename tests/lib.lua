@@ -137,8 +137,17 @@ function T.fake_mp(props)
     local function log(level) return function(...) table.insert(mp.logs, { level, ... }) end end
     package.loaded["mp.msg"] = { info = log("info"), warn = log("warn"), error = log("error"),
                                  debug = log("debug") }
-    package.loaded["mp.options"] = { read_options = function(t, _, _)
+    -- Options: mp.script_opts at start; mp.set_opts(t) changes them at run
+    -- time like the script-opts property, calling on_update with the list.
+    package.loaded["mp.options"] = { read_options = function(t, _, on_update)
         for k, v in pairs(mp.script_opts or {}) do t[k] = v end
+        function mp.set_opts(new)
+            local changed = {}
+            for k, v in pairs(new) do
+                if t[k] ~= v then t[k], changed[k] = v, true end
+            end
+            if on_update and next(changed) then on_update(changed) end
+        end
     end }
     return mp
 end

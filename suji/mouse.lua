@@ -108,7 +108,8 @@ local function wheel(step)
 end
 
 -- Put window dragging back, unless someone changed it since suji turned
--- it off.
+-- it off. A write of "no" by another script in the meantime cannot be
+-- told apart: the value does not change, so not even an observer sees it.
 local function restore_dragging()
     if not took_dragging then return end
     took_dragging = false
@@ -156,6 +157,7 @@ end
 -- soon as the cursor enters the zone, never on the click itself, because
 -- mpv applies them asynchronously and the first click would be lost.
 function M.refresh()
+    if not opts.enabled then pos, zone = nil, nil; idle_timer:kill() end
     local usable = zone ~= nil and (zone ~= "bar" or state.has_timeline())
     local want = bar.dragging() or volume_drag or (usable and M.target(mp.get_time()) > 0)
     set_bindings(want, want and (zone == "mute" or zone == "volume"))
@@ -172,6 +174,7 @@ end
 
 -- Observer for the mouse-pos property.
 function M.on_mouse_pos(_, p)
+    if not opts.enabled then return end
     if type(p) ~= "table" or not p.hover then
         pos = nil
         release()

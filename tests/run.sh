@@ -21,8 +21,10 @@ if ! command -v mpv >/dev/null 2>&1; then
 fi
 
 # Only suji's own lines count: errors and warnings from suji or from Lua.
-out=$(timeout 60 mpv --no-config --osc=no --vo=null --ao=null --script=./suji \
-    --script=tests/smoke_title.lua --script-opts=suji-debug=yes --length=2 --msg-level=all=no,suji=info \
+# mpv's OSC is left on: suji has to turn it off by itself.
+out=$(timeout 60 mpv --no-config --vo=null --ao=null --script=./suji \
+    --script=tests/smoke_title.lua --script-opts=suji-debug=yes --length=5 \
+    --msg-level=all=no,suji=info,smoke_title=info \
     'av://lavfi:testsrc=duration=10' 2>&1)
 if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
     printf 'smoke: FAIL\n%s\n' "$out"
@@ -32,6 +34,16 @@ elif ! printf '%s\n' "$out" | grep -q '^\[suji\] start:'; then
     status=1
 elif ! printf '%s\n' "$out" | grep -q '^\[suji\] set-title: Show / Episode'; then
     printf 'smoke: FAIL (no answer to set-title)\n%s\n' "$out"
+    status=1
+elif ! printf '%s\n' "$out" | grep -q '^\[smoke_title\] osc at start: no'; then
+    printf 'smoke: FAIL (the OSC was not turned off)\n%s\n' "$out"
+    status=1
+elif ! printf '%s\n' "$out" | grep -q '^\[suji\] options: .*scale 1\.500'; then
+    printf 'smoke: FAIL (scale not changed at run time)\n%s\n' "$out"
+    status=1
+elif ! printf '%s\n' "$out" | grep -q '^\[suji\] disabled' ||
+     ! printf '%s\n' "$out" | grep -q '^\[smoke_title\] osc when disabled: yes'; then
+    printf 'smoke: FAIL (enabled=no at run time)\n%s\n' "$out"
     status=1
 else
     echo "smoke: ok"
@@ -50,7 +62,7 @@ if [ -z "$tmp" ]; then
 elif [ ! -s "$tmp/t.mkv" ]; then
     echo "xvfb-drag: skipped (could not make the test video)"
 else
-    out=$(timeout 60 xvfb-run -a mpv --no-config --osc=no --vo=x11 --ao=null \
+    out=$(timeout 60 xvfb-run -a mpv --no-config --vo=x11 --ao=null \
         --geometry=640x480 --pause --keep-open=yes --script=./suji \
         --script=tests/xvfb_drag.lua --script-opts=suji-debug=yes \
         --msg-level=all=no,suji=info,xvfb_drag=info \

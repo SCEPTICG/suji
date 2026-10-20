@@ -24,7 +24,7 @@ local function check_version()
 end
 
 local function debug_sizes(reason)
-    if not opts.debug then return end
+    if not opts.debug or not reason then return end
     msg.info(("%s: osd-dimensions %dx%d, display-hidpi-scale %s, scale option %s, scale %.3f")
         :format(reason, math.floor(state.w), math.floor(state.h), tostring(mp.get_property_number("display-hidpi-scale")),
             tostring(opts.scale), state.scale))
@@ -35,13 +35,14 @@ local tween = animation.new(0.15)
 
 -- The controls, title and grown bar are on screen (visibility above 0).
 local function grown()
+    if not opts.enabled then return false end
     local now = mp.get_time()
     return animation.value(tween, now) > 0 or animation.running(tween, now)
 end
 
 -- Something is on screen: the rest line, or a bar that has not faded out.
 local function bar_shown()
-    return opts.idle_line or grown()
+    return (opts.enabled and opts.idle_line) or grown()
 end
 
 -- Repaint only when the end of the progress line moves by a whole pixel
@@ -68,7 +69,7 @@ local function request_if_grown()
 end
 
 painter.set_renderer(function()
-    if state.w <= 0 or state.h <= 0 then return "", false end
+    if not opts.enabled or state.w <= 0 or state.h <= 0 then return "", false end
     local now = mp.get_time()
     animation.set_target(tween, mouse.target(now), now)
     local v = animation.value(tween, now)
@@ -79,7 +80,7 @@ painter.set_renderer(function()
         if p and state.has_timeline() and (mouse.zone() == "bar" or bar.dragging()) then
             hover = bar.drag_time() or bar.x_to_time(p.x, state.duration, state.w)
         end
-        local ass, time_w = controls.render(state, v, painter.measure, hover, opts.icon_style)
+        local ass, time_w = controls.render(state, v, painter.measure, hover)
         state.time_w = time_w
         out = out == "" and ass or out .. "\n" .. ass
     end
@@ -100,11 +101,16 @@ mp.observe_property("osd-dimensions", "native", function(_, dim)
     mouse.on_resize()
 end)
 
-mp.observe_property("display-hidpi-scale", "number", function(_, scale)
-    state.set("hidpi", scale or 1)
-    state.set("scale", draw.scale(state.hidpi, opts.scale))
-    debug_sizes("hidpi")
+-- The size factor changed (HiDPI or the scale option): zones move too.
+local function rescale(reason)
+    state.scale = draw.scale(state.hidpi, opts.scale)
+    debug_sizes(reason)
     mouse.on_resize()
+end
+
+mp.observe_property("display-hidpi-scale", "number", function(_, scale)
+    state.hidpi = scale or 1
+    rescale("hidpi")
 end)
 
 mp.observe_property("time-pos", "number", function(_, t)
@@ -137,10 +143,19 @@ end
 
 -- Property, type, field in state.
 for _, p in ipairs({ { "volume", "number", "volume" }, { "mute", "bool", "mute" },
-                     { "fullscreen", "bool", "fullscreen" }, { "media-title", "string", "title" },
-                     { "chapter-list", "native", "chapters" } }) do
+                     { "fullscreen", "bool", "fullscreen" }, { "chapter-list", "native", "chapters" } }) do
     mp.observe_property(p[1], p[2], function(_, value)
-        state[p[3]] = p[3] == "title" and clean(value) or value
+        state[p[3]] = value
+        request_if_grown()
+    end)
+end
+
+-- The title comes from three properties, see controls.file_title.
+local names = {}
+for _, p in ipairs({ "media-title", "filename", "filename/no-ext" }) do
+    mp.observe_property(p, "string", function(_, value)
+        names[p] = value
+        state.title = clean(controls.file_title(names["media-title"], names.filename, names["filename/no-ext"]))
         request_if_grown()
     end)
 end
@@ -157,11 +172,16 @@ mp.observe_property("demuxer-cache-state", "native", function(_, c)
     update_progress()
 end)
 
+-- Outside text, safe for a terminal: no control characters, C1 ones
+-- (U+0080..U+009F) included, which some terminals take as escapes.
+local function printable(s) return (tostring(s):gsub("%c", "?"):gsub("\194[\128-\159]", "?")) end
+
 -- set-title <series> <episode>: a two-line title until the file ends.
--- Both empty (or missing) go back to media-title.
+-- Only one of them: a one-line title. Both empty (or missing) go back to
+-- media-title. See the README.
 mp.register_script_message("set-title", function(series, episode)
     state.series, state.episode = clean(series), clean(episode)
-    if opts.debug then msg.info(("set-title: %s / %s"):format(tostring(state.series), tostring(state.episode))) end
+    if opts.debug then msg.info(("set-title: %s / %s"):format(printable(state.series), printable(state.episode))) end
     request_if_grown()
 end)
 
@@ -183,6 +203,31 @@ end)
 mp.register_event("file-loaded", drop_drag)
 mp.register_event("shutdown", mouse.shutdown)
 
-state.scale = draw.scale(state.hidpi, opts.scale)
+-- Only one interface at a time: suji turns mpv's own OSC off while it is
+-- enabled (setting the osc option at run time unloads the OSC script), and
+-- turns it back on when disabled, if suji was the one that turned it off.
+local took_osc = false
+local function set_enabled(on)
+    if on and mp.get_property_bool("osc") == true then
+        mp.set_property_bool("osc", false)
+        took_osc = true
+    elseif not on then
+        mouse.release(false)
+        if took_osc and mp.get_property_bool("osc") == false then mp.set_property_bool("osc", true) end
+        took_osc = false
+    end
+    if opts.debug then msg.info(on and "enabled" or "disabled") end
+    mouse.refresh() -- bindings on or off, and a paint (empty when disabled)
+end
+
+-- Options changed at run time (script-opts). The rest is read where it
+-- is used; rescale also asks for a paint.
+opts.on_update(function(changed)
+    if changed.remaining_time then state.remaining = opts.remaining_time end
+    if changed.enabled then set_enabled(opts.enabled) end
+    rescale(changed.scale and "options" or nil)
+end)
+
 state.remaining = opts.remaining_time
-debug_sizes("start")
+if opts.enabled then set_enabled(true) end
+rescale("start")
