@@ -33,11 +33,16 @@
 local M = {}
 
 function M.compute(input)
-    -- TODO(SCEPTICG): replace this placeholder
-    if input.dragging then return 1 end
+    -- Never hide while the user is working with the bar or has paused.
+    if input.dragging or input.on_bar or input.paused then return 1 end
+    -- Cursor outside the window, or the mouse has been still long enough.
     if not input.distance then return 0 end
+    if input.idle_time >= input.hide_delay then return 0 end
+    -- Squared so the bar barely reacts from afar and grows when you go for it.
+    -- Clamp first: a negative value squared would turn positive.
     local v = 1 - input.distance / input.proximity
-    return math.max(0, math.min(1, v))
+    v = math.max(0, math.min(1, v))
+    return v * v
 end
 
 return M
