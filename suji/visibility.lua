@@ -18,6 +18,8 @@
 --                              `hide_delay` seconds have passed, so a rule
 --                              like "idle_time >= hide_delay" just works.
 --   on_bar         boolean     The cursor is inside the bar's active zone.
+--   on_controls    boolean     The cursor is on a button, the time or the
+--                              volume slider.
 --   paused         boolean     Playback is paused.
 --   dragging       boolean     The user is dragging the timeline.
 --
@@ -34,7 +36,7 @@ local M = {}
 
 function M.compute(input)
     -- Never hide while the user is working with the bar or has paused.
-    if input.dragging or input.on_bar or input.paused then return 1 end
+    if input.dragging or input.on_bar or input.on_controls or input.paused then return 1 end
     -- Cursor outside the window, or the mouse has been still long enough.
     if not input.distance then return 0 end
     if input.idle_time >= input.hide_delay then return 0 end

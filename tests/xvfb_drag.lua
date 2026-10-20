@@ -1,9 +1,11 @@
 -- Real drag test, loaded as a second script next to suji in a virtual X
 -- display (see tests/run.sh). It drives the mouse with input commands and
--- checks that dragging the bar seeks, and that window dragging is only
--- switched off while the cursor is on the bar.
+-- checks that dragging the bar seeks, that window dragging is only
+-- switched off while the cursor is on the bar, and that real clicks reach
+-- the pause button and the volume slider.
 --
--- Window: 640x480, so suji's zone is y 456..479. File: 60 s, paused.
+-- Window: 640x480, so suji's zone is y 456..479 and the row of controls is
+-- centred on y 440. File: 60 s, paused.
 
 local msg = require "mp.msg"
 
@@ -54,16 +56,25 @@ after(0.8, function()
     local want = 60 * TO / W
     if math.abs(t - want) > 1.5 then
         finish(false, ("time-pos %.2f, wanted about %.2f"):format(t, want))
-        return
     end
     mp.commandv("mouse", tostring(W / 2), "100")
-    mp.add_timeout(0.4, function()
-        if mp.get_property_bool("input-builtin-dragging") ~= true then
-            finish(false, "window dragging not restored after leaving the bar")
-        else
-            finish(true, ("time-pos %.2f"):format(t))
-        end
-    end)
+end)
+after(0.4, function()
+    if mp.get_property_bool("input-builtin-dragging") ~= true then
+        finish(false, "window dragging not restored after leaving the bar")
+    end
+    mp.commandv("mouse", "42", "436") -- the pause button
+end)
+after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
+after(0.4, function()
+    if mp.get_property_bool("pause") ~= false then finish(false, "pause button did not play") end
+    mp.commandv("mouse", "536", "440") -- middle of the volume slider
+end)
+after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
+after(0.4, function()
+    local v = mp.get_property_number("volume", -1)
+    if v ~= 50 then finish(false, ("volume %s after a click on the slider"):format(v)) end
+    finish(true, ("time-pos %.2f, pause and volume clicks"):format(mp.get_property_number("time-pos", -1)))
 end)
 
 mp.observe_property("osd-dimensions", "native", function(_, d)

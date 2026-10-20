@@ -224,6 +224,109 @@ T.eq(o.hide_delay, 3600, "hide_delay capped")
 T.eq(o.proximity, 10000, "proximity capped")
 T.eq(o.scale, 1, "NaN scale falls back")
 
+-- Controls ----------------------------------------------------------------
+local function last_cmd() local c = mp.commands[#mp.commands]; return c and table.concat(c, " ") end
+local function painted() return mp.updates[#mp.updates].data end
+
+-- At rest the time does not repaint, even when its text changes.
+start()
+mp.fire("duration", 10000) -- 0.128 px per second
+mp.advance(1)
+n = #mp.updates
+mp.fire("time-pos", 51)
+mp.advance(1)
+T.eq(#mp.updates, n, "at rest: a new second alone does not repaint")
+mp.fire("pause", true) -- paused: everything shows
+mp.advance(1)
+T.check(painted():find("00:51 / ", 1, true) ~= nil, "time shown while paused")
+n = #mp.updates
+mp.fire("time-pos", 52)
+mp.advance(0.1)
+T.eq(#mp.updates, n + 1, "shown: a new second repaints")
+mp.fire("time-pos", 52.5)
+mp.advance(0.1)
+T.eq(#mp.updates, n + 1, "same second, same pixel: no repaint")
+T.eq(mp.active_timers(), 0, "controls leave no timers behind")
+
+start()
+mp.fire("media-title", "Movie")
+mp.fire("volume", 100)
+local seen
+package.loaded["visibility"].compute = function(input) seen = input.on_controls; return 1 end
+mp.mouse(42, 680)
+T.eq(seen, true, "visibility knows the cursor is on a control")
+T.check(mp.bindings["suji-bar"] ~= nil, "bindings on over the pause button")
+T.eq(mp.props["input-builtin-dragging"], false, "built-in dragging off over a button")
+T.eq(mp.bindings["suji-wheel-up"], nil, "wheel left alone over pause")
+mp.commands = {}
+mp.button("down"); mp.button("up")
+T.eq(last_cmd(), "cycle pause", "pause button")
+T.eq(seeks(), 0, "pause button does not seek")
+mp.advance(1)
+T.check(painted():find("}Movie", 1, true) ~= nil, "media-title shown")
+mp.mouse(100, 680)
+mp.button("down"); mp.button("up")
+mp.advance(0.1)
+T.check(painted():find(" / -00:50", 1, true) ~= nil, "click on the time shows the remaining time")
+mp.mouse(1120, 680)
+mp.button("press")
+T.eq(last_cmd(), "cycle mute", "volume icon mutes")
+T.check(mp.bindings["suji-wheel-up"] ~= nil, "wheel bound over the volume icon")
+mp.bindings["suji-wheel-up"].fn()
+T.eq(last_cmd(), "add volume 5", "wheel up")
+mp.bindings["suji-wheel-down"].fn()
+T.eq(last_cmd(), "add volume -5", "wheel down")
+mp.mouse(1176, 680)
+mp.button("down")
+T.eq(last_cmd(), "set volume 50", "click on the slider")
+mp.mouse(1100, 600) -- drag past the start and out of the zone
+T.eq(last_cmd(), "set volume 0", "drag on the slider")
+T.check(mp.bindings["suji-bar"] ~= nil, "bindings stay while dragging the volume")
+mp.button("up")
+mp.mouse(1240, 680)
+mp.button("press")
+T.eq(last_cmd(), "cycle fullscreen", "fullscreen button")
+mp.mouse(640, 680)
+T.eq(mp.bindings["suji-bar"], nil, "empty middle of the row: nothing bound")
+T.eq(mp.bindings["suji-wheel-up"], nil, "wheel released")
+T.eq(mp.props["input-builtin-dragging"], true, "built-in dragging back")
+
+-- Hidden controls take no clicks
+start()
+package.loaded["visibility"].compute = function() return 0 end
+mp.mouse(42, 680)
+T.eq(mp.bindings["suji-bar"], nil, "hidden: the pause button is not clickable")
+
+-- Tooltip and two-line title
+start()
+mp.fire("media-title", "Movie")
+mp.mouse(320, 710)
+mp.advance(1)
+T.check(painted():find("}00:25", 1, true) ~= nil, "time under the cursor")
+mp.messages["set-title"]("Show", "Ep {1}")
+mp.advance(1)
+T.check(painted():find("}SHOW", 1, true) ~= nil, "series from set-title")
+T.check(painted():find("}Ep \\{1\\}", 1, true) ~= nil, "episode from set-title, escaped")
+T.check(painted():find("}Movie", 1, true) == nil, "media-title replaced")
+mp.messages["set-title"]("", "")
+mp.advance(1)
+T.check(painted():find("}Movie", 1, true) ~= nil, "empty set-title goes back to media-title")
+mp.messages["set-title"](string.rep("\195\169", 300), nil)
+T.eq(package.loaded["state"].series, string.rep("\195\169", 200), "long titles are cut by characters")
+T.eq(package.loaded["state"].episode, nil, "missing argument")
+mp.advance(1)
+T.check(painted():find("}\195\169", 1, true) ~= nil, "a single part shows on one line")
+mp.emit("end-file")
+T.eq(package.loaded["state"].series, nil, "end-file clears the title")
+
+-- Someone else turns window dragging back on while suji has it off
+start()
+mp.mouse(640, 710)
+mp.set_property_bool("input-builtin-dragging", true)
+mp.set_property_bool("input-builtin-dragging", false)
+mp.mouse(640, 300)
+T.eq(mp.props["input-builtin-dragging"], false, "a change made meanwhile is not overwritten")
+
 -- Old mpv -----------------------------------------------------------------
 T.unload()
 mp = T.fake_mp({ ["mpv-version"] = "mpv 0.38.0" })

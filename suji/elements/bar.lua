@@ -16,6 +16,7 @@ M.LIFT = 6          -- distance from the bottom edge when fully grown
 M.KNOB_SIZE = 13    -- knob diameter
 M.ZONE_HEIGHT = 24  -- clickable area, taller than the line itself
 M.HALO = 1          -- dark halo around the line and the knob
+M.MARK_WIDTH = 2    -- chapter marks
 
 local BLACK = "&H000000&"
 local DRAG_SEEK_INTERVAL = 1 / 30 -- at most this many seeks per second
@@ -69,7 +70,31 @@ function M.layout(w, h, scale, v)
     }
 end
 
--- ASS text for the bar. st: { w, h, scale, time, duration }.
+-- End of the cached range that contains time t, from the seekable-ranges
+-- of demuxer-cache-state. nil when t is not inside any of them.
+function M.cached_until(ranges, t)
+    if type(ranges) ~= "table" or type(t) ~= "number" then return nil end
+    local best
+    for _, r in ipairs(ranges) do
+        local a, b = type(r) == "table" and tonumber(r.start), type(r) == "table" and tonumber(r["end"])
+        if a and b and a <= t and t <= b and (not best or b > best) then best = b end
+    end
+    return best
+end
+
+-- x of every chapter start inside the file, except one at the very start.
+function M.chapter_xs(chapters, duration, w)
+    local xs = {}
+    if type(chapters) ~= "table" or not valid(duration) then return xs end
+    for _, c in ipairs(chapters) do
+        local t = type(c) == "table" and tonumber(c.time)
+        if t and t > 0 and t < duration then xs[#xs + 1] = M.time_to_x(t, duration, w) end
+    end
+    return xs
+end
+
+-- ASS text for the bar. st: { w, h, scale, time, duration, cache_ranges,
+-- chapters }.
 -- drag_time, when set, replaces the playback time (the knob follows the
 -- cursor while dragging, before the seek lands).
 function M.render(st, v, opts, drag_time)
@@ -87,9 +112,19 @@ function M.render(st, v, opts, drag_time)
             { color = BLACK, opacity = 0.45 * fade, blur = g.halo }),
         draw.rect(g.x0, g.y0, g.x1, g.y1,
             { color = white, opacity = lerp(opts.idle_line and 0.15 or 0, 0.35, v) }),
-        draw.rect(g.x0, g.y0, px, g.y1,
-            { color = accent, opacity = fade * lerp(0.75, 1, v) }),
     }
+    -- Cached range and chapter marks only while the bar is grown.
+    local cached = v > 0 and M.cached_until(st.cache_ranges, st.time)
+    if cached and cached > st.time then
+        out[#out + 1] = draw.rect(M.time_to_x(st.time, st.duration, st.w), g.y0,
+            M.time_to_x(cached, st.duration, st.w), g.y1, { color = white, opacity = 0.18 * v })
+    end
+    out[#out + 1] = draw.rect(g.x0, g.y0, px, g.y1, { color = accent, opacity = fade * lerp(0.75, 1, v) })
+    local marks, hw = {}, M.MARK_WIDTH * st.scale / 2
+    for _, x in ipairs(v > 0 and M.chapter_xs(st.chapters, st.duration, st.w) or {}) do
+        marks[#marks + 1] = { x - hw, g.y0, x + hw, g.y0, x + hw, g.y1, x - hw, g.y1 }
+    end
+    if #marks > 0 then out[#out + 1] = draw.poly(marks, { color = BLACK, opacity = 0.55 * v }) end
     if v > 0.01 then
         -- Keep the knob inside the window at both ends.
         local r = g.knob_r * lerp(0.5, 1, v)

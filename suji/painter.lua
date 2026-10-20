@@ -18,7 +18,6 @@ local timer -- created disabled below, re-armed on demand
 
 local function flush()
     last_paint = mp.get_time()
-    state.dirty = false
     if not render then return end
     local data, animating = render()
     if data ~= last_data or state.w ~= last_w or state.h ~= last_h then
@@ -50,6 +49,24 @@ function M.request()
     timer.timeout = wait > 0 and wait or 0
     timer:kill()
     timer:resume()
+end
+
+-- Width in px of one event of ASS text, measured by libass in a hidden
+-- overlay. That is slow, so results are cached; guess is used when mpv
+-- cannot tell.
+local probe = mp.create_osd_overlay("ass-events")
+probe.hidden, probe.compute_bounds = true, true
+local widths, cached = {}, 0
+
+function M.measure(ass, guess)
+    if widths[ass] then return widths[ass] end
+    probe.res_x, probe.res_y = state.w, state.h
+    probe.data = ass
+    local r = probe:update()
+    local w = type(r) == "table" and r.x0 and r.x1 and r.x1 - r.x0 or guess
+    if cached >= 256 then widths, cached = {}, 0 end
+    widths[ass], cached = w, cached + 1
+    return w
 end
 
 return M

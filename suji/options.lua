@@ -9,6 +9,7 @@ local M = {
     idle_line = true,      -- 2 px progress line at rest; no = nothing on screen
     accent = "ffffff",     -- colour of the progress and the knob (rrggbb)
     pause_on_drag = false, -- pause while dragging the timeline
+    remaining_time = false, -- show "-13:52" instead of the duration
     hide_delay = 1.5,      -- seconds without mouse movement before hiding
     proximity = 120,       -- distance in px (at scale 1) where the bar reacts
     scale = 1,             -- size factor, multiplied by the system HiDPI scale

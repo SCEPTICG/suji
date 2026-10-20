@@ -9,8 +9,10 @@ local animation = require "animation"
 local painter = require "painter"
 local mouse = require "mouse"
 local bar = require "elements.bar"
+local controls = require "elements.controls"
 
 local MIN_MAJOR, MIN_MINOR = 0, 39
+local MAX_TITLE = 200 -- characters kept from a set-title argument
 
 local function check_version()
     local v = mp.get_property("mpv-version", "")
@@ -37,13 +39,28 @@ local function bar_shown()
     return opts.idle_line or animation.value(tween, now) > 0 or animation.running(tween, now)
 end
 
--- Repaint only when the end of the progress line moves by a whole pixel,
--- and only if the line is on screen at all.
+-- The controls, title and grown bar are on screen (visibility above 0).
+local function grown()
+    local now = mp.get_time()
+    return animation.value(tween, now) > 0 or animation.running(tween, now)
+end
+
+-- Repaint only when the end of the progress line moves by a whole pixel
+-- and the line is on screen, or when the time shown or the end of the
+-- cached range changes while the controls are on screen.
 local function update_progress()
     local px = bar.progress_px(state.time, state.duration, state.w)
-    if px == state.progress_px then return end
-    state.progress_px = px
-    if bar_shown() then painter.request() end
+    local cached = bar.cached_until(state.cache_ranges, state.time)
+    local cache_px = cached and bar.progress_px(cached, state.duration, state.w) or -1
+    local text = controls.time_text(state.time, state.duration, state.remaining)
+    local moved = px ~= state.progress_px
+    local changed = cache_px ~= state.cache_px or text ~= state.time_text
+    state.progress_px, state.cache_px, state.time_text = px, cache_px, text
+    if (moved and bar_shown()) or (changed and grown()) then painter.request() end
+end
+
+local function request_if_grown()
+    if grown() then painter.request() end
 end
 
 painter.set_renderer(function()
@@ -51,7 +68,17 @@ painter.set_renderer(function()
     local now = mp.get_time()
     animation.set_target(tween, mouse.target(now), now)
     local v = animation.value(tween, now)
-    return bar.render(state, v, opts, bar.drag_time()), animation.running(tween, now)
+    local out = bar.render(state, v, opts, bar.drag_time())
+    if v > 0 then
+        local p, tip = mouse.pos(), nil
+        if p and state.has_timeline() and (mouse.zone() == "bar" or bar.dragging()) then
+            tip = bar.drag_time() or bar.x_to_time(p.x, state.duration, state.w)
+        end
+        local ass, time_w = controls.render(state, v, painter.measure, p and p.x, tip)
+        state.time_w = time_w
+        out = out == "" and ass or out .. "\n" .. ass
+    end
+    return out, animation.running(tween, now)
 end)
 
 check_version()
@@ -95,6 +122,41 @@ mp.observe_property("pause", "bool", function(_, paused)
     mouse.refresh()
 end)
 
+-- Property, type, field in state.
+for _, p in ipairs({ { "volume", "number", "volume" }, { "mute", "bool", "mute" },
+                     { "fullscreen", "bool", "fullscreen" }, { "media-title", "string", "title" },
+                     { "chapter-list", "native", "chapters" } }) do
+    mp.observe_property(p[1], p[2], function(_, value)
+        state[p[3]] = value
+        request_if_grown()
+    end)
+end
+
+mp.observe_property("osd-font", "string", function(_, font)
+    -- Braces and backslashes would break the override block.
+    state.font = (font or ""):gsub("[{}\\]", "")
+    if state.font == "" then state.font = "sans-serif" end
+    request_if_grown()
+end)
+
+mp.observe_property("demuxer-cache-state", "native", function(_, c)
+    state.cache_ranges = type(c) == "table" and c["seekable-ranges"] or nil
+    update_progress()
+end)
+
+-- set-title <series> <episode>: a two-line title until the file ends.
+-- Both empty (or missing) go back to media-title.
+local function clean(s)
+    if type(s) ~= "string" then return nil end
+    s = controls.prefix(s, MAX_TITLE)
+    return s ~= "" and s or nil
+end
+mp.register_script_message("set-title", function(series, episode)
+    state.series, state.episode = clean(series), clean(episode)
+    if opts.debug then msg.info(("set-title: %s / %s"):format(tostring(state.series), tostring(state.episode))) end
+    request_if_grown()
+end)
+
 mp.observe_property("display-fps", "number", function(_, fps)
     painter.set_fps(fps)
 end)
@@ -106,9 +168,13 @@ local function drop_drag()
     bar.release(false)
     mouse.refresh()
 end
-mp.register_event("end-file", drop_drag)
+mp.register_event("end-file", function()
+    state.series, state.episode = nil, nil
+    drop_drag()
+end)
 mp.register_event("file-loaded", drop_drag)
 mp.register_event("shutdown", mouse.shutdown)
 
 state.scale = draw.scale(state.hidpi, opts.scale)
+state.remaining = opts.remaining_time
 debug_sizes("start")

@@ -8,16 +8,25 @@ local M = {
     time = nil,       -- time-pos in seconds, nil when unknown
     duration = nil,   -- duration in seconds, nil when unknown
     paused = false,
-    progress_px = -1, -- progress line end in whole pixels, last value seen
-    dirty = true,     -- something visible changed since the last paint
+    volume = 100, mute = false, fullscreen = false,
+    title = "",       -- media-title
+    series = nil,     -- two-line title sent with set-title, nil when unset
+    episode = nil,
+    font = "sans-serif", -- osd-font
+    remaining = false,   -- show the remaining time instead of the duration
+    chapters = {},       -- chapter-list
+    cache_ranges = nil,  -- seekable-ranges of demuxer-cache-state
+    -- Last values seen, to repaint only when what is shown changes:
+    progress_px = -1, -- progress line end in whole pixels
+    cache_px = -1,    -- end of the cached range in whole pixels
+    time_text = "",   -- the time as shown
+    time_w = 0,       -- measured width of the time, for its click zone
 }
 
--- Set a field and mark the state dirty if the value changed.
--- Returns true when it changed.
+-- Set a field. Returns true when the value changed.
 function M.set(key, value)
     if M[key] == value then return false end
     M[key] = value
-    M.dirty = true
     return true
 end
 

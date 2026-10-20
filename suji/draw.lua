@@ -40,9 +40,17 @@ local function q(n)
     return math.floor(n * 4 + 0.5)
 end
 
+-- Dark thin border and soft shadow for text and icons, so they read on
+-- bright scenes without a background. Faded with the element's opacity.
+function M.outline(scale, opacity)
+    return ("\\bord%.2f\\shad%.2f\\blur0.5\\3c&H000000&\\4c&H000000&\\3a%s\\4a%s"):format(
+        1.2 * scale, scale, M.alpha(0.7 * opacity), M.alpha(0.4 * opacity))
+end
+
 local function tags(style)
-    return ("{\\an7\\pos(0,0)\\bord0\\shad0\\blur%s\\1c%s\\1a%s\\p3}"):format(
-        style.blur or 0, style.color or "&HFFFFFF&", M.alpha(style.opacity or 1))
+    local edge = style.outline or ("\\bord0\\shad0\\blur%s"):format(style.blur or 0)
+    return ("{\\an7\\pos(0,0)%s\\1c%s\\1a%s\\p3}"):format(
+        edge, style.color or "&HFFFFFF&", M.alpha(style.opacity or 1))
 end
 
 -- Filled rectangle from (x0, y0) to (x1, y1).
@@ -51,6 +59,38 @@ function M.rect(x0, y0, x1, y1, style)
     local a, b, c, d = q(x0), q(y0), q(x1), q(y1)
     return tags(style) ..
         ("m %d %d l %d %d l %d %d l %d %d{\\p0}"):format(a, b, c, b, c, d, a, d)
+end
+
+-- Filled polygons, all in one event: { {x1, y1, x2, y2, ...}, ... }.
+-- style as for rect, plus `outline` (see M.outline) to replace the plain
+-- edge.
+function M.poly(polys, style)
+    local out = { tags(style) }
+    for _, p in ipairs(polys) do
+        for i = 1, #p, 2 do
+            out[#out + 1] = ("%s %d %d "):format(i == 1 and "m" or "l", q(p[i]), q(p[i + 1]))
+        end
+    end
+    out[#out + 1] = "{\\p0}"
+    return table.concat(out)
+end
+
+-- Make outside text safe inside ASS: braces would open override blocks
+-- and a backslash would start an escape (\N, \h...). A zero-width space
+-- after the backslash keeps it literal. Line breaks become spaces.
+function M.escape(text)
+    return (tostring(text):gsub("\\", "\\\226\128\139"):gsub("[{}]", "\\%0"):gsub("[\r\n]", " "))
+end
+
+-- One line of white text. t: { font, size, opacity, scale, bold, spacing }.
+-- bold is plain bold: a semibold weight falls back to regular in fonts
+-- without that face.
+-- an is the ASS alignment (1 = bottom left, 4 = middle left, 2 = bottom
+-- centre). The text is escaped here.
+function M.text(x, y, an, text, t)
+    return ("{\\an%d\\pos(%.1f,%.1f)\\q2\\fn%s\\fs%.1f\\b%d\\fsp%.1f\\1c&HFFFFFF&\\1a%s%s}%s"):format(
+        an, x, y, t.font, t.size, t.bold and 1 or 0, t.spacing or 0, M.alpha(t.opacity),
+        M.outline(t.scale, t.opacity), M.escape(text))
 end
 
 -- Filled circle made of four cubic Bezier curves.

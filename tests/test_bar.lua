@@ -56,4 +56,27 @@ T.eq(bar.render({ w = 1280, h = 720, scale = 1, time = 5 }, 1, on), "", "no dura
 T.eq(bar.render({ w = 0, h = 0, scale = 1, time = 5, duration = 10 }, 1, on), "", "no window")
 T.check(bar.render(st, 1, on, 25) ~= bar.render(st, 1, on), "drag time moves the progress")
 
+
+-- Cached range
+local ranges = { { start = 0, ["end"] = 10 }, { start = 40, ["end"] = 70 }, { start = 45, ["end"] = 60 } }
+T.eq(bar.cached_until(ranges, 50), 70, "range around the position")
+T.eq(bar.cached_until(ranges, 20), nil, "position outside every range")
+T.eq(bar.cached_until(nil, 50), nil, "no cache state")
+T.eq(bar.cached_until({ "junk", { start = "x" } }, 5), nil, "malformed ranges")
+T.eq(bar.cached_until(ranges, nil), nil, "unknown position")
+
+-- Chapter marks
+local xs = bar.chapter_xs({ { time = 0 }, { time = 25 }, { time = 150 }, { time = -3 }, {}, "x" }, 100, 1000)
+T.eq(#xs, 1, "only chapters inside the file, none at 0")
+T.eq(xs[1], 250, "chapter x")
+T.eq(#bar.chapter_xs({}, 100, 1000), 0, "empty list")
+T.eq(#bar.chapter_xs(nil, 100, 1000), 0, "no list")
+T.eq(#bar.chapter_xs({ { time = 5 } }, nil, 1000), 0, "no duration")
+
+local full = { w = 1280, h = 720, scale = 1, time = 50, duration = 100,
+               cache_ranges = { { start = 40, ["end"] = 80 } }, chapters = { { time = 0 }, { time = 30 } } }
+T.eq(events(bar.render(full, 1, on)), 7, "grown: plus cache and chapter marks")
+T.eq(events(bar.render(full, 0, on)), 3, "at rest: no cache and no marks")
+T.check(bar.render(full, 1, on):find("\\1a&HD1&", 1, true) ~= nil, "cache at 18 %")
+
 T.done("test_bar")

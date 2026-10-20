@@ -72,6 +72,8 @@ function T.fake_mp(props)
         if b then b.fn({ event = event, canceled = canceled }) end
     end
     function mp.commandv(...) mp.commands[#mp.commands + 1] = { ... } end
+    mp.messages = {}
+    function mp.register_script_message(name, fn) mp.messages[name] = fn end
 
     function mp.observe_property(name, _, fn)
         mp.observers[name] = mp.observers[name] or {}
@@ -122,6 +124,7 @@ function T.fake_mp(props)
     function mp.create_osd_overlay(format)
         local ov = { format = format, data = "", res_x = 0, res_y = 720 }
         function ov.update(self)
+            if self.hidden then return nil end -- measuring: no bounds known
             mp.updates[#mp.updates + 1] = { data = self.data, w = self.res_x, h = self.res_y }
         end
         function ov.remove() end
@@ -140,7 +143,7 @@ end
 -- Forget suji's modules so each scenario starts from a clean state.
 function T.unload()
     for _, name in ipairs({ "options", "state", "draw", "animation", "painter", "mouse",
-                            "visibility", "elements.bar", "main" }) do
+                            "visibility", "icons", "elements.bar", "elements.controls", "main" }) do
         package.loaded[name] = nil
     end
 end
