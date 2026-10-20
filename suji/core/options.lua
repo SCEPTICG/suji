@@ -14,11 +14,10 @@ local DEFAULTS = {
     proximity = 120,       -- distance in px (at scale 1) where the bar reacts
     scale = 1,             -- size factor, multiplied by the system HiDPI scale
     debug = false,         -- log sizes and scale to the mpv console
-    -- TODO(SCEPTICG): this line decides what everyone who installs suji and
-    -- touches nothing sees in the row, and in which order. The value below
-    -- is provisional: v0.1.0's row with the four menu buttons, so that the
-    -- menus can be tried; the final one is yours to choose (keep
-    -- docs/suji.conf in step). All the elements exist now except button:.
+    -- The row everyone sees who installs suji and touches nothing: playback
+    -- on the left, under the title; what is changed while watching (the
+    -- menus, the volume, fullscreen) together on the right, where opening a
+    -- menu never covers the title. Keep docs/suji.conf in step.
     -- Elements, left to right, separated by commas (see core/controls.lua):
     --   pause, time, volume, fullscreen      the controls of v0.1.0
     --   subtitles, audio, playlist, more     buttons with menus; each one
