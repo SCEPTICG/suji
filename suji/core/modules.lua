@@ -5,7 +5,8 @@
 --   init(ctx)               once at start; the place to call ctx.watch
 --   available(ctx)          false hides it and leaves no gap (default: shown)
 --   width(ctx)              its width in the row, in px already scaled
---   render(ctx, box, v)     ASS text for its box; v is the visibility, 0..1
+--   render(ctx, box, v)     ASS text for its box (nil: nothing); v is the
+--                           visibility, 0..1
 --   press(ctx, box, x, y)   button down on its zone; true captures the
 --                           mouse until the button is released
 --   move(ctx, box, x, y)    the cursor moved while it holds the mouse
@@ -14,10 +15,11 @@
 --   wheel(ctx, dir)         wheel over its zone: 1 up, -1 down
 --
 -- box: { x0, y0, x1, y1, cy } in window px, cy the centre of the row.
--- The core only calls modules through M.call: one that fails or returns
--- nonsense is turned off (not drawn, no clicks), logged once, and loses
--- the mouse if it held it. Modules have no clock of their own: to repaint
--- they call ctx.request().
+-- The core only calls modules through M.call, which gives each module its
+-- own ctx: one that fails or returns nonsense is turned off (not drawn, no
+-- clicks), logged once, and lets go of the mouse if it held it. Modules
+-- have no clock of their own: to repaint they call ctx.request(), and
+-- ctx.relayout() when their width or available() changed.
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -34,6 +36,8 @@ local MAX_ASS = 65536     -- bytes a module may draw
 local MAX_WIDTH = 100000  -- px a module may take
 local MAX_CONDITIONS = 64 -- properties watched for the controls option
 
+local on_layout -- fn() to lay out the row and its zones again (set by main)
+
 -- What every module gets. visible and hover_time are set by main.
 local ctx = {
     state = state, opts = opts, draw = draw, icons = icons, text = text, log = msg,
@@ -43,7 +47,9 @@ local ctx = {
     visible = function() return false end,  -- the controls are on screen
     hover_time = function() return nil end, -- time under the cursor on the timeline
 }
-M.ctx = ctx
+M.ctx = ctx -- the core's own; modules get theirs from M.ctx_of
+
+function ctx.relayout() if on_layout then on_layout() end end
 
 -- Text style for draw.text at the current scale and font.
 function ctx.style(size, opacity, bold, spacing)
@@ -69,6 +75,7 @@ end
 -- Weak keys: the command buttons of an old controls option can go.
 local dead = setmetatable({}, { __mode = "k" })
 local names = setmetatable({}, { __mode = "k" })
+local contexts = setmetatable({}, { __mode = "k" })
 local listeners = {}
 
 -- fn(mod) runs when a module is turned off.
@@ -83,9 +90,19 @@ local function kill(mod, what, err)
     painter.request()
 end
 
+-- Turn a module that failed on again (main does it for the timeline when
+-- a new file starts: suji is no use without it).
+function M.revive(mod) dead[mod] = nil end
+
+-- A reason when the result is not usable, nil when it is.
 local CHECK = {
-    render = function(r) return type(r) == "string" and #r <= MAX_ASS end,
-    width = function(r) return type(r) == "number" and r >= 0 and r <= MAX_WIDTH end, -- NaN fails
+    render = function(r)
+        if type(r) ~= "string" then return "bad result (" .. type(r) .. ")" end
+        if #r > MAX_ASS then return ("render too large (%d bytes)"):format(#r) end
+    end,
+    width = function(r)
+        if type(r) ~= "number" or not (r >= 0 and r <= MAX_WIDTH) then return "bad width (" .. tostring(r) .. ")" end
+    end,
 }
 
 function M.alive(mod) return mod ~= nil and not dead[mod] end
@@ -93,54 +110,86 @@ function M.alive(mod) return mod ~= nil and not dead[mod] end
 -- True when the module is alive and has the function fname.
 function M.takes(mod, fname) return M.alive(mod) and mod[fname] ~= nil end
 
--- mod[fname](...), protected. Returns its first result, or nil when the
--- module is off, has no such function or failed.
+-- mod[fname](ctx, ...), protected, with the module's own ctx. Returns its
+-- first result, or nil when the module is off, has no such function or
+-- failed. A render that returns nil draws nothing.
 function M.call(mod, fname, ...)
     if not M.takes(mod, fname) then return nil end
-    local ok, r = pcall(mod[fname], ...)
-    if ok and CHECK[fname] and not CHECK[fname](r) then ok, r = false, "bad result (" .. type(r) .. ")" end
+    local ok, r = pcall(mod[fname], M.ctx_of(mod), ...)
+    if ok and fname == "render" and r == nil then r = "" end
+    local bad = ok and CHECK[fname] and CHECK[fname](r)
+    if bad then ok, r = false, bad end
     if not ok then kill(mod, fname, r); return nil end
     return r
 end
 
 -- Shared observers -----------------------------------------------------------
 
-local watched = {} -- prop .. " " .. kind -> { list = { { fn, owner } }, seen, value }
-local owner        -- the module whose init is running
+local watched = {} -- prop .. " " .. kind -> { list = { handle }, seen, value, observer }
 
-local function deliver(it, value, prop)
-    local r
-    if it.owner then
-        if dead[it.owner] then return end
-        local ok
-        ok, r = pcall(it.fn, value)
-        if not ok then kill(it.owner, "watch " .. prop, r); return end
-    else
-        r = it.fn(value)
+-- Every delivery is protected: a module's failure turns it off, a core
+-- observer's is logged once; the others still get the value.
+local function deliver(it, value)
+    if it.owner and dead[it.owner] then return end
+    local ok, r = pcall(it.fn, value)
+    if not ok then
+        if it.owner then kill(it.owner, "watch " .. it.prop, r)
+        elseif not it.failed then
+            it.failed = true
+            msg.error(("observer of %s failed: %s"):format(draw.printable(it.prop, 64), draw.printable(r, 300)))
+        end
+    elseif r == true and ctx.visible() then
+        painter.request()
     end
-    if r == true and ctx.visible() then painter.request() end
 end
 
 -- fn(value) runs when the property changes, and at once if a value has
 -- already arrived. One mp.observe_property per property and type, however
 -- many ask for it. fn returning true asks for a paint if the controls are
--- on screen.
-function M.watch(prop, kind, fn)
+-- on screen. owner: the module it belongs to (ctx.watch sets it). Returns
+-- a handle for M.unwatch.
+function M.watch(prop, kind, fn, owner)
     local key = prop .. " " .. kind
     local w = watched[key]
     if not w then
         w = { list = {} }
-        watched[key] = w
-        mp.observe_property(prop, kind, function(_, value)
+        w.observer = function(_, value)
             w.seen, w.value = true, value
-            for _, it in ipairs(w.list) do deliver(it, value, prop) end
-        end)
+            for _, it in ipairs(w.list) do deliver(it, value) end
+        end
+        watched[key] = w
+        mp.observe_property(prop, kind, w.observer)
     end
-    local it = { fn = fn, owner = owner }
+    local it = { fn = fn, owner = owner, prop = prop, key = key }
     w.list[#w.list + 1] = it
-    if w.seen then deliver(it, w.value, prop) end
+    if w.seen then deliver(it, w.value) end
+    return it
 end
-ctx.watch = M.watch
+
+-- Stop a watch. The last one of a property stops observing it.
+function M.unwatch(it)
+    local w = watched[it.key]
+    if not w then return end
+    local list = {} -- a new list: a delivery in progress keeps the old one
+    for _, other in ipairs(w.list) do if other ~= it then list[#list + 1] = other end end
+    w.list = list
+    if #list == 0 then
+        watched[it.key] = nil
+        mp.unobserve_property(w.observer)
+    end
+end
+ctx.unwatch = M.unwatch
+
+-- The ctx of module mod: the core's, with watch tied to mod.
+function M.ctx_of(mod)
+    local c = contexts[mod]
+    if not c then
+        c = setmetatable({ watch = function(prop, kind, fn) return M.watch(prop, kind, fn, mod) end },
+            { __index = ctx })
+        contexts[mod] = c
+    end
+    return c
+end
 
 -- The registry -------------------------------------------------------------
 
@@ -154,27 +203,23 @@ local command = require "modules.command"
 M.timeline = require "modules.timeline" -- always there, not part of the row
 M.title = require "modules.title"       -- background layer above the row
 
-local function init(mod, name)
-    names[mod] = name
-    owner = mod
-    M.call(mod, "init", ctx)
-    owner = nil
-end
-
 -- Called once by main, after the core's own observers.
 function M.init()
-    init(M.timeline, "timeline")
-    init(M.title, "title")
-    for _, name in ipairs({ "pause", "time", "volume", "fullscreen" }) do init(ROW[name], name) end
+    names[M.timeline], names[M.title] = "timeline", "title"
+    M.call(M.timeline, "init")
+    M.call(M.title, "init")
+    for _, name in ipairs({ "pause", "time", "volume", "fullscreen" }) do
+        names[ROW[name]] = name
+        M.call(ROW[name], "init")
+    end
 end
 
 -- The controls option --------------------------------------------------------
 
 local items = {}       -- the option, resolved: { mod | space | gap, cond }
 local values = {}      -- last value of each property the conditions name
-local cond_props, n_props = {}, 0 -- properties watched for conditions
+local handles = {}     -- the watches of those properties
 local shown = ""       -- which conditions held at the last check
-local on_layout        -- fn() when the row changed because of a condition
 
 local warned, n_warned = {}, 0
 local function warn(line)
@@ -190,22 +235,40 @@ local function conditions()
     return table.concat(t)
 end
 
-local function watch_condition(prop)
-    if cond_props[prop] then return end
-    if n_props >= MAX_CONDITIONS then
-        warn(("controls: more than %d properties in conditions, '%s' counts as false")
-            :format(MAX_CONDITIONS, draw.printable(prop, 64)))
-        return
+-- A watched property changed: lay out again if the row changed with it.
+local function check()
+    local now = conditions()
+    if now ~= shown then
+        shown = now
+        ctx.relayout()
     end
-    cond_props[prop], n_props = true, n_props + 1
-    M.watch(prop, "native", function(v)
-        values[prop] = v
-        local now = conditions()
-        if now ~= shown then
-            shown = now
-            if on_layout then on_layout() end
+end
+
+-- Watch the properties the conditions name now, at most MAX_CONDITIONS
+-- (the rest count as false), and stop watching the old ones.
+local function watch_conditions(list)
+    local keep, seen, ignored = {}, {}, 0
+    for _, it in ipairs(list) do
+        for _, prop in ipairs(it.props or {}) do
+            if not seen[prop] then
+                seen[prop] = true
+                if #keep < MAX_CONDITIONS then keep[#keep + 1] = prop else ignored = ignored + 1 end
+            end
         end
-    end)
+    end
+    if ignored > 0 then
+        warn(("controls: %d properties in conditions over the first %d are ignored (they count as false)")
+            :format(ignored, MAX_CONDITIONS))
+    end
+    local new, used = {}, {}
+    for _, prop in ipairs(keep) do
+        used[prop] = true
+        -- Watched before the old ones go, so a shared observer stays.
+        new[#new + 1] = M.watch(prop, "native", function(v) values[prop] = v; check() end)
+    end
+    for _, h in ipairs(handles) do M.unwatch(h) end
+    handles = new
+    for prop in pairs(values) do if not used[prop] then values[prop] = nil end end
 end
 
 function M.on_layout(fn) on_layout = fn end
@@ -214,7 +277,7 @@ function M.on_layout(fn) on_layout = fn end
 function M.set_controls(s)
     local list, used = {}, {}
     for _, e in ipairs(controls.parse(s, ROW, warn)) do
-        local it = { cond = e.cond, space = e.kind == "space", gap = e.kind == "gap" }
+        local it = { cond = e.cond, props = e.props, space = e.kind == "space", gap = e.kind == "gap" }
         if e.kind == "module" then
             if used[e.name] then
                 warn(("controls: '%s' is listed twice, only the first one is shown"):format(e.name))
@@ -229,7 +292,7 @@ function M.set_controls(s)
         list[#list + 1] = it
     end
     items = list
-    for _, prop in ipairs(controls.props(items)) do watch_condition(prop) end
+    watch_conditions(items)
     shown = conditions()
 end
 
@@ -241,8 +304,8 @@ function M.row()
         if not it.cond or controls.eval(it.cond, values) then
             if it.space or it.gap then
                 out[#out + 1] = { space = it.space, gap = it.gap }
-            elseif M.call(it.mod, "available", ctx) ~= false and M.alive(it.mod) then
-                local w = M.call(it.mod, "width", ctx)
+            elseif M.call(it.mod, "available") ~= false and M.alive(it.mod) then
+                local w = M.call(it.mod, "width")
                 if w and M.alive(it.mod) then out[#out + 1] = { mod = it.mod, width = w } end
             end
         end

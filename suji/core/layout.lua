@@ -62,23 +62,23 @@ function M.place(items, geo)
     return out
 end
 
-local function inside(z, x, y) return x >= z.x0 and x < z.x1 and y >= z.y0 and y < z.y1 end
-
--- The zone under (x, y): the timeline's (placed.bar, checked first), the
--- box of a module of the row, or nil.
-function M.hit(placed, x, y)
-    if placed.bar and inside(placed.bar, x, y) then return placed.bar end
+-- The first zone for which test(zone) holds: the timeline's (placed.bar)
+-- first, then the boxes of the row in order.
+local function first(placed, test)
+    if placed.bar and test(placed.bar) then return placed.bar end
     for _, b in ipairs(placed.boxes) do
-        if inside(b, x, y) then return b end
+        if test(b) then return b end
     end
+end
+
+-- The zone under (x, y), or nil.
+function M.hit(placed, x, y)
+    return first(placed, function(z) return x >= z.x0 and x < z.x1 and y >= z.y0 and y < z.y1 end)
 end
 
 -- The zone or box of module mod, nil when it is not laid out.
 function M.find(placed, mod)
-    if placed.bar and placed.bar.mod == mod then return placed.bar end
-    for _, b in ipairs(placed.boxes) do
-        if b.mod == mod then return b end
-    end
+    return first(placed, function(z) return z.mod == mod end)
 end
 
 -- The timeline's zone: the whole width, along the bottom edge.

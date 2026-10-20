@@ -61,12 +61,12 @@ painter.set_renderer(function()
     local v = animation.value(tween, now)
     local out = {}
     local function add(ass) if ass and ass ~= "" then out[#out + 1] = ass end end
-    add(modules.call(timeline, "render", ctx, layout.bar_zone(), v))
+    add(modules.call(timeline, "render", layout.bar_zone(), v))
     if v > 0 then
         local placed = layout.current()
-        for _, box in ipairs(placed.boxes) do add(modules.call(box.mod, "render", ctx, box, v)) end
+        for _, box in ipairs(placed.boxes) do add(modules.call(box.mod, "render", box, v)) end
         local row_top = state.h - (layout.ROW_LIFT + layout.HEIGHT / 2) * state.scale
-        add(modules.call(modules.title, "render", ctx, { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = row_top }, v))
+        add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = row_top }, v))
     end
     return table.concat(out, "\n"), animation.running(tween, now)
 end)
@@ -162,7 +162,11 @@ mp.register_event("end-file", function()
     state.series, state.episode = nil, nil
     drop_drag()
 end)
-mp.register_event("file-loaded", drop_drag)
+-- The timeline is not optional: if it failed, each new file gets it back.
+mp.register_event("file-loaded", function()
+    modules.revive(timeline)
+    drop_drag()
+end)
 mp.register_event("shutdown", mouse.shutdown)
 
 -- One interface at a time: osc=no at run time unloads mpv's OSC. It is

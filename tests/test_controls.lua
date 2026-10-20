@@ -93,8 +93,16 @@ T.eq(holds("has_chapter", { chapters = 0 }), false, "no chapters")
 T.eq(holds("has_playlist", { ["playlist-count"] = 2 }), true, "has_playlist")
 T.eq(holds("has_playlist", { ["playlist-count"] = 1 }), false, "one file is not a playlist")
 T.eq(holds("idle", { ["idle-active"] = true }), true, "idle")
-local props = controls.props(parse("<video+!pause>time,<video,user-data/a>pause"))
-T.eq(table.concat(props, " "), "current-tracks/video pause user-data/a", "properties to watch, once each")
+local two = parse("<video+!pause,video>time,<video,user-data/a>pause,gap")
+T.eq(table.concat(two[1].props, " "), "current-tracks/video pause", "properties to watch, once each")
+T.eq(table.concat(two[2].props, " "), "current-tracks/video user-data/a", "per element")
+T.eq(two[3].props, nil, "none without conditions")
+-- Strings that mean false: set user-data/x 0 in input.conf gives "0"
+for _, v in ipairs({ "0", "false" }) do
+    T.eq(holds("p", { p = v }), false, "the string " .. v .. " is false")
+end
+T.eq(holds("p", { p = "1" }), true, "the string 1 is true")
+T.eq(holds("p", { p = "yes" }), true, "yes is true")
 
 -- Limits
 local many = {}
@@ -106,5 +114,21 @@ T.eq(kinds(parse(long)):sub(1, 9), "pause,gap", "a long string still works")
 T.check(warnings[1]:find("4096", 1, true) ~= nil, "longer than 4 KiB: cut and warned")
 local cut = "time," .. (" "):rep(5000) .. "pause"
 T.eq(kinds(parse(cut)), "time", "nothing is read past 4 KiB")
+local half = "pause,time" .. (" "):rep(4080) .. ",fullscreen" -- the cut falls inside "fullscreen"
+T.eq(kinds(parse(half)), "pause,time", "an element cut in half is dropped")
+T.eq(#warnings, 1, "without a warning of its own")
+local exact = "pause,time" .. (" "):rep(4086) .. ",fullscreen" -- byte 4097 is the comma
+T.eq(kinds(parse(exact)), "pause,time", "a cut on a comma keeps the element before it")
+T.eq(#("pause,time" .. (" "):rep(4086)), 4096, "(the cut is right before the comma)")
+
+-- Long runs of spaces cost linear time
+local t0 = os.clock()
+for _ = 1, 20 do
+    parse((" "):rep(4096))
+    parse("pause" .. (" "):rep(4000) .. "x")
+    parse("<" .. (" "):rep(4000) .. "a>pause")
+    parse("command:x:" .. (" "):rep(4000) .. "?t")
+end
+T.check(os.clock() - t0 < 0.5, ("80 parses of 4 KiB of spaces take %.3f s"):format(os.clock() - t0))
 
 T.done("test_controls")

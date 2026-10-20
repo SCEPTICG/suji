@@ -18,7 +18,8 @@ M.LIFT = 6          -- distance from the bottom edge when fully grown
 M.KNOB_SIZE = 13    -- knob diameter
 M.ZONE_HEIGHT = 24  -- clickable area, taller than the line itself
 M.HALO = 1          -- dark halo around the line and the knob
-M.MARK_WIDTH = 2    -- chapter marks
+M.MARK_WIDTH = 2    -- chapter marks, at least twice as far apart
+M.MAX_MARKS = 500   -- chapter marks drawn at most
 
 local BLACK = "&H000000&"
 local DRAG_SEEK_INTERVAL = 1 / 30 -- at most this many seeks per second
@@ -85,24 +86,28 @@ function M.cached_until(ranges, t)
 end
 
 -- x of every chapter start inside the file, except one at the very start,
--- at most one per pixel column so a huge chapter list stays cheap. The
--- last result is kept: the list is only walked again when something changed.
+-- at most one every `spacing` px (1 when not given) and MAX_MARKS in all,
+-- so a huge chapter list stays cheap and its ASS small. The last result is
+-- kept: the list is only walked again when something changed.
 local last_marks = {}
-function M.chapter_xs(chapters, duration, w)
+function M.chapter_xs(chapters, duration, w, spacing)
+    spacing = spacing or 1
     local m = last_marks
-    if m.chapters == chapters and m.duration == duration and m.w == w then return m.xs end
+    if m.chapters == chapters and m.duration == duration and m.w == w and m.spacing == spacing then return m.xs end
     local xs, seen = {}, {}
     if type(chapters) == "table" and valid(duration) then
         for _, c in ipairs(chapters) do
             local t = type(c) == "table" and tonumber(c.time)
             local x = t and t > 0 and t < duration and M.time_to_x(t, duration, w)
-            if x and not seen[math.floor(x)] then
-                seen[math.floor(x)] = true
+            local slot = x and math.floor(x / spacing)
+            if slot and not seen[slot] then
+                seen[slot] = true
                 xs[#xs + 1] = x
+                if #xs == M.MAX_MARKS then break end
             end
         end
     end
-    last_marks = { chapters = chapters, duration = duration, w = w, xs = xs }
+    last_marks = { chapters = chapters, duration = duration, w = w, spacing = spacing, xs = xs }
     return xs
 end
 
@@ -133,7 +138,7 @@ function M.ass(st, v, opts, drag_time, cache_ranges, chapters)
     end
     out[#out + 1] = draw.rect(g.x0, g.y0, px, g.y1, { color = accent, opacity = fade * lerp(0.75, 1, v) })
     local marks, hw = {}, M.MARK_WIDTH * st.scale / 2
-    for _, x in ipairs(v > 0 and M.chapter_xs(chapters, st.duration, st.w) or {}) do
+    for _, x in ipairs(v > 0 and M.chapter_xs(chapters, st.duration, st.w, 2 * M.MARK_WIDTH * st.scale) or {}) do
         marks[#marks + 1] = { x - hw, g.y0, x + hw, g.y0, x + hw, g.y1, x - hw, g.y1 }
     end
     if #marks > 0 then out[#out + 1] = draw.poly(marks, { color = BLACK, opacity = 0.55 * v }) end

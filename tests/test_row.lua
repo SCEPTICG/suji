@@ -166,8 +166,8 @@ local ctx = modules.ctx
 
 local function row_ass(v)
     local placed, out = layout.current(), {}
-    for _, bx in ipairs(placed.boxes) do out[#out + 1] = modules.call(bx.mod, "render", ctx, bx, v) end
-    out[#out + 1] = modules.call(modules.title, "render", ctx, { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = 0 }, v)
+    for _, bx in ipairs(placed.boxes) do out[#out + 1] = modules.call(bx.mod, "render", bx, v) end
+    out[#out + 1] = modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = 0 }, v)
     return table.concat(out, "\n"), placed
 end
 local ass, placed = row_ass(1)

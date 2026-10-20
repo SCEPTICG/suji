@@ -206,19 +206,123 @@ T.eq(mp.observed["fullscreen"], 2, "bool for the module, native for the conditio
 mp.fire("fullscreen", true)
 T.eq(click(42, 680), "cycle pause", "the condition sees the value")
 
--- Limits on the number of watched properties
+-- Limits on the number of watched properties: one warning per reading
 local list = {}
 for i = 1, 70 do list[i] = "<user-data/p" .. i .. ">pause" end
 start({ controls = table.concat(list, ",") })
-local w = logs("warn")
-local over = 0
-for _, line in ipairs(w) do if line:find("counts as false", 1, true) then over = over + 1 end end
-T.eq(over, 0, "32 elements at most, so not over the limit here")
+T.eq(#logs("warn", "properties in conditions"), 0, "32 elements at most, so not over the limit here")
 local cond = {}
-for i = 1, 70 do cond[i] = "user-data/q" .. i end
-start({ controls = "<" .. table.concat(cond, "+") .. ">pause" })
-T.check(#logs("warn", "counts as false") >= 1, "more than 64 properties: warned")
-T.check(mp.observed["user-data/q70"] == nil, "and not watched")
+for i = 1, 500 do cond[i] = "a" .. i end
+start({ controls = "<" .. table.concat(cond, ",") .. ">pause" })
+local over = logs("warn", "properties in conditions")
+T.eq(#over, 1, "more than 64 properties: a single warning")
+T.check(over[1] and over[1]:find("436 properties", 1, true) ~= nil, "saying how many are ignored")
+T.eq(mp.observed.a64, 1, "the first 64 are watched")
+T.eq(mp.observed.a65, nil, "the rest are not")
+mp.fire("a65", true)
+T.eq(click(42, 680), nil, "an ignored property counts as false")
+mp.fire("a64", true)
+T.eq(click(42, 680), "cycle pause", "a watched one works")
+
+-- Old conditions are not watched any more: 200 reloads, a new property each
+start()
+for i = 1, 200 do
+    mp.set_opts({ controls = ("<user-data/r%d>pause,time"):format(i) })
+end
+local alive = 0
+for i = 1, 199 do alive = alive + mp.live("user-data/r" .. i) end
+T.eq(alive, 0, "no observer left for the old properties")
+T.eq(mp.live("user-data/r200"), 1, "one for the one in use")
+T.eq(#logs("warn", "properties in conditions"), 0, "the limit counts each reading on its own")
+mp.fire("user-data/r200", "yes")
+T.eq(click(42, 680), "cycle pause", "the last condition works")
+mp.fire("user-data/r200", "0")
+mp.advance(1)
+T.eq(click(42, 680), nil, "and the string 0 hides it")
+mp.set_opts({ controls = "<fullscreen>pause" })
+mp.set_opts({ controls = "pause" })
+T.eq(mp.live("fullscreen"), 1, "a property a module also watches keeps that module's observer")
+mp.set_opts({ controls = "<fullscreen>pause" })
+T.eq(mp.live("fullscreen"), 2, "watched again: a new observer for the condition")
+mp.fire("fullscreen", true)
+T.eq(click(42, 680), "cycle pause", "and it follows the property")
+
+-- Many chapters do not turn the timeline off ------------------------------
+start()
+mp.fire("osd-dimensions", { w = 3840, h = 2160 })
+local five = {}
+for i = 1, 5000 do five[i] = { time = i * 100 / 5001 } end
+mp.fire("chapter-list", five)
+mp.mouse(1000, 2150)
+mp.advance(1)
+T.check(mods().alive(mods().timeline), "5000 chapters at 3840 px: the timeline is alive")
+T.eq(#logs("error"), 0, "no error")
+T.check(#painted() < 65536 and painted():find("m 0 ", 1, true) ~= nil, "and it is drawn")
+
+-- The timeline comes back with the next file
+start()
+local tl = mods().timeline
+local render = tl.render
+tl.render = function() error("broken") end
+mp.mouse(640, 690)
+mp.advance(1)
+T.check(not mods().alive(tl), "a failed timeline is off")
+tl.render = render
+mp.emit("file-loaded")
+mp.advance(1)
+T.check(mods().alive(tl), "file-loaded brings it back")
+T.check(painted():find("m 0 ", 1, true) ~= nil, "drawn again")
+
+-- A module that fails mid drag drops it: no pause or seek timer left
+start({ pause_on_drag = true })
+mp.fire("pause", false)
+mp.mouse(640, 710)
+mp.button("down")
+T.eq(mp.props.pause, true, "paused by the drag")
+tl = mods().timeline
+tl.render = function() error("broken") end
+mp.advance(1)
+T.check(not tl.dragging(), "the failed timeline dropped its drag")
+T.eq(mp.props.pause, false, "and gave the pause back")
+mp.advance(1)
+T.eq(mp.active_timers(), 0, "no seek timer left")
+tl.render = render
+
+-- Each module has its own ctx: a watch made outside init is protected too
+start()
+local fs = package.loaded["modules.fullscreen"]
+local got = 0
+mods().watch("mute", "bool", function() got = got + 1 end)
+mods().ctx_of(fs).watch("mute", "bool", function() error("late") end)
+mods().watch("mute", "bool", function() got = got + 1 end)
+mp.fire("mute", true)
+T.check(not mods().alive(fs), "a late watch that fails turns its module off")
+T.eq(got, 2, "the other observers still get the value")
+mods().watch("mute", "bool", function() error("core") end)
+mp.fire("mute", false)
+mp.fire("mute", true)
+T.eq(#logs("error", "observer of mute"), 1, "a core observer that fails is logged once")
+T.eq(got, 6, "and does not stop the others")
+
+-- ctx.relayout: a module whose width changed moves the zones at once
+start()
+mp.mouse(100, 680) -- on the time
+local pause = package.loaded["modules.pause"]
+local width = pause.width
+pause.width = function() return 120 end
+mods().ctx_of(pause).relayout()
+mp.commands = {}
+mp.button("press")
+T.eq(last_cmd(), "cycle pause", "the wider pause button is under the cursor, without moving it")
+pause.width = width
+
+-- A render that returns nil draws nothing and is not a failure
+start()
+package.loaded["modules.fullscreen"].render = function() end
+mp.mouse(640, 690)
+mp.advance(1)
+T.check(mods().alive(package.loaded["modules.fullscreen"]), "nil from render is fine")
+T.eq(#logs("error"), 0, "no error")
 
 -- on_controls: the cursor on any module of the row ------------------------
 start({ controls = "command:x:set pause yes,space,fullscreen" })

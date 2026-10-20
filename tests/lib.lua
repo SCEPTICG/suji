@@ -84,6 +84,13 @@ function T.fake_mp(props)
         table.insert(mp.observers[name], fn)
         mp.observed[name] = (mp.observed[name] or 0) + 1
     end
+    function mp.unobserve_property(fn)
+        for _, list in pairs(mp.observers) do
+            for i = #list, 1, -1 do if list[i] == fn then table.remove(list, i) end end
+        end
+    end
+    -- Observers still registered for a property.
+    function mp.live(name) return #(mp.observers[name] or {}) end
     function mp.fire(name, value)
         for _, fn in ipairs(mp.observers[name] or {}) do fn(name, value) end
     end

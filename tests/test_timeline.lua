@@ -72,8 +72,18 @@ T.eq(xs[1], 250, "chapter x")
 T.eq(#bar.chapter_xs({}, 100, 1000), 0, "empty list")
 local many = {}
 for i = 1, 30000 do many[i] = { time = i / 300 } end
-T.eq(#bar.chapter_xs(many, 100, 1000), 1000, "at most one mark per pixel column")
+T.eq(#bar.chapter_xs(many, 100, 1000), 500, "at most 500 marks")
+T.eq(#bar.chapter_xs(many, 100, 1000, 4), 250, "at most one mark every 4 px")
+T.eq(#bar.chapter_xs({ { time = 10 }, { time = 10.1 }, { time = 30 } }, 100, 1000, 4), 2, "close chapters share a mark")
 T.check(bar.chapter_xs(many, 100, 1000) == bar.chapter_xs(many, 100, 1000), "same list: last result reused")
+T.check(bar.chapter_xs(many, 100, 1000) ~= bar.chapter_xs(many, 100, 1000, 4), "another spacing: walked again")
+local five = {}
+for i = 1, 5000 do five[i] = { time = i * 7200 / 5001 } end
+for _, g in ipairs({ { 1920, 1 }, { 3840, 1 }, { 3840, 2 } }) do
+    local big = { w = g[1], h = 1080 * g[2], scale = g[2], time = 50, duration = 7200 }
+    local ass = bar.ass(big, 1, on, nil, nil, five)
+    T.check(#ass < 32768, ("5000 chapters at %d px, scale %d: %d bytes, well under 64 KiB"):format(g[1], g[2], #ass))
+end
 T.eq(#bar.chapter_xs(nil, 100, 1000), 0, "no list")
 T.eq(#bar.chapter_xs({ { time = 5 } }, nil, 1000), 0, "no duration")
 

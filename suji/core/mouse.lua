@@ -18,7 +18,6 @@ local modules = require "core.modules"
 
 local M = {}
 
-local ctx = modules.ctx
 local pos           -- { x, y } in OSD pixels, nil when unknown or outside
 local seen_real = false
 local last_move = 0
@@ -69,13 +68,13 @@ function M.release(commit)
     local mod = captured
     if not mod then return end
     captured = nil
-    modules.call(mod, "release", ctx, commit)
+    modules.call(mod, "release", commit)
 end
 local release = M.release
 
 local function press(x, y)
     if captured then release(false) end -- its button up was lost
-    if hit and modules.call(hit.mod, "press", ctx, hit, x, y) == true then captured = hit.mod end
+    if hit and modules.call(hit.mod, "press", hit, x, y) == true then captured = hit.mod end
 end
 
 -- The cursor moved while a module holds the mouse. It gets its box of now;
@@ -83,7 +82,7 @@ end
 local function drag(x, y)
     local box = layout.find(layout.current(), captured)
     if not box then return release(false) end
-    modules.call(captured, "move", ctx, box, x, y)
+    modules.call(captured, "move", box, x, y)
 end
 
 local function on_button(e)
@@ -99,7 +98,7 @@ local function on_button(e)
 end
 
 local function wheel(dir)
-    return function() if hit then modules.call(hit.mod, "wheel", ctx, dir) end end
+    return function() if hit then modules.call(hit.mod, "wheel", dir) end end
 end
 
 -- Put window dragging back, unless someone changed it since suji turned
@@ -201,9 +200,14 @@ function M.on_layout()
     M.refresh()
 end
 
--- A module that failed loses the mouse and its zone.
+-- A module that failed loses the mouse and its zone. If it held the
+-- mouse, it is still told to drop what it was doing (a pause it set, a
+-- timer), protected: it is off, so modules.call would not reach it.
 modules.on_failure(function(mod)
-    if captured == mod then captured = nil end
+    if captured == mod then
+        captured = nil
+        if type(mod.release) == "function" then pcall(mod.release, modules.ctx_of(mod), false) end
+    end
     if hit and hit.mod == mod and not hit.bar then hit = nil end
     M.refresh()
 end)

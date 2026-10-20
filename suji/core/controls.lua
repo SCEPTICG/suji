@@ -27,18 +27,24 @@ local NAMED = {
 }
 
 -- Any other property (or user-data/...) holds when it exists and is not
--- false, "no", 0 or empty.
+-- false, "no", 0 or empty. Strings too: "false" and "0" (set user-data/x 0
+-- from input.conf gives a string).
+local FALSE = { [false] = true, no = true, ["false"] = true, [0] = true, ["0"] = true, [""] = true }
 function M.truthy(v)
-    if v == nil or v == false or v == "no" or v == 0 or v == "" then return false end
+    if v == nil or FALSE[v] then return false end
     return type(v) ~= "table" or next(v) ~= nil
 end
 
-local function trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+-- Linear in the length, also for a long run of spaces.
+local function trim(s)
+    local i = s:find("%S")
+    return i and s:match("^.*%S", i) or ""
+end
 
--- "a,b+!c" -> { { factor, ... }, ... }: OR of ANDs. A factor is
--- { prop = name, test = fn, neg = bool }.
+-- "a,b+!c" -> { { factor, ... }, ... }: OR of ANDs, and the properties it
+-- names, once each. A factor is { prop = name, test = fn, neg = bool }.
 local function parse_cond(s)
-    local terms = {}
+    local terms, props, seen = {}, {}, {}
     for term in (s .. ","):gmatch("([^,]*),") do
         local factors = {}
         for f in (term .. "+"):gmatch("([^+]*)%+") do
@@ -49,11 +55,13 @@ local function parse_cond(s)
                 return nil, "bad condition '" .. f .. "'"
             end
             local named = NAMED[f]
-            factors[#factors + 1] = { prop = named and named[1] or f, test = named and named[2] or M.truthy, neg = neg }
+            local prop = named and named[1] or f
+            factors[#factors + 1] = { prop = prop, test = named and named[2] or M.truthy, neg = neg }
+            if not seen[prop] then seen[prop] = true; props[#props + 1] = prop end
         end
         terms[#terms + 1] = factors
     end
-    return terms
+    return terms, props
 end
 
 -- true when cond holds; values[prop] is the last value seen of each property.
@@ -68,28 +76,16 @@ function M.eval(cond, values)
     return false
 end
 
--- Every property a list of elements depends on, once each.
-function M.props(list)
-    local out, seen = {}, {}
-    for _, it in ipairs(list) do
-        for _, factors in ipairs(it.cond or {}) do
-            for _, f in ipairs(factors) do
-                if not seen[f.prop] then seen[f.prop] = true; out[#out + 1] = f.prop end
-            end
-        end
-    end
-    return out
-end
-
--- One element -> { kind = "space" | "gap" | "module" | "command", ... } or
--- nil and the reason. known[name] is true for the modules of the row.
+-- One element -> { kind = "space" | "gap" | "module" | "command", cond,
+-- props, ... } or nil and the reason. props: the properties cond names.
+-- known[name] is true for the modules of the row.
 local function parse_item(raw, known)
-    local cond, err
+    local cond, props
     if raw:sub(1, 1) == "<" then
         local close = raw:find(">", 2, true)
         if not close then return nil, "no closing >" end
-        cond, err = parse_cond(raw:sub(2, close - 1))
-        if not cond then return nil, err end
+        cond, props = parse_cond(raw:sub(2, close - 1))
+        if not cond then return nil, props end
         raw = trim(raw:sub(close + 1))
     end
     local name, rest = raw:match("^([%w_]+)(.*)$")
@@ -102,12 +98,12 @@ local function parse_item(raw, known)
         if q then command, text = command:sub(1, q - 1), command:sub(q + 1) end
         command = trim(command)
         if command == "" then return nil, "empty command" end
-        return { kind = "command", icon = icon, command = command, text = text, cond = cond }
+        return { kind = "command", icon = icon, command = command, text = text, cond = cond, props = props }
     end
     if name == "button" then return nil, "button: is not supported yet" end
     if rest ~= "" then return nil, "unexpected '" .. rest .. "'" end
-    if name == "space" or name == "gap" then return { kind = name, cond = cond } end
-    if known[name] then return { kind = "module", name = name, cond = cond } end
+    if name == "space" or name == "gap" then return { kind = name, cond = cond, props = props } end
+    if known[name] then return { kind = "module", name = name, cond = cond, props = props } end
     return nil, "unknown element"
 end
 
@@ -117,7 +113,9 @@ function M.parse(s, known, warn)
     if type(s) ~= "string" then return {} end
     if #s > M.MAX_BYTES then
         warn(("controls: longer than %d bytes, the rest is ignored"):format(M.MAX_BYTES))
-        s = s:sub(1, M.MAX_BYTES)
+        -- Without the element cut in half, unless the cut falls on a comma.
+        local cut = s:sub(1, M.MAX_BYTES)
+        s = s:sub(M.MAX_BYTES + 1, M.MAX_BYTES + 1) == "," and cut or (cut:match("^(.*),") or "")
     end
     local out, n, i = {}, 0, 1
     while i <= #s do
