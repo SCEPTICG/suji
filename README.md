@@ -6,6 +6,12 @@ A minimal on-screen controller for [mpv](https://mpv.io), written from scratch i
 
 > **Status:** early development. Nothing to install yet.
 
+### Development notes
+
+To try the work in progress, copy the `suji/` folder into mpv's `scripts/` folder and add `osc=no` to `mpv.conf` (suji does not turn off the built-in OSC by itself yet). Options go in `script-opts/suji.conf`.
+
+Tests: `tests/run.sh` runs the unit tests with Lua 5.1 and a smoke test with a windowless mpv.
+
 ## Planned for v0.1
 
 - A 2 px progress line at rest (can be turned off), growing into a full-width seek bar as the mouse gets close
