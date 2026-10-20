@@ -60,6 +60,26 @@ function M.rect(x0, y0, x1, y1, style)
         ("m %d %d l %d %d l %d %d l %d %d{\\p0}"):format(a, b, c, b, c, d, a, d)
 end
 
+-- Filled rectangle with corners rounded to radius r (cubic Bezier
+-- quarter circles, see KAPPA below). style as for rect.
+local KAPPA = 0.5523
+function M.round_rect(x0, y0, x1, y1, r, style)
+    r = math.max(0, math.min(r, (x1 - x0) / 2, (y1 - y0) / 2))
+    local k = r * (1 - KAPPA)
+    local p = function(x, y) return ("%d %d"):format(q(x), q(y)) end
+    return tags(style) .. table.concat({
+        "m ", p(x0 + r, y0), " l ", p(x1 - r, y0),
+        " b ", p(x1 - k, y0), " ", p(x1, y0 + k), " ", p(x1, y0 + r),
+        " l ", p(x1, y1 - r),
+        " b ", p(x1, y1 - k), " ", p(x1 - k, y1), " ", p(x1 - r, y1),
+        " l ", p(x0 + r, y1),
+        " b ", p(x0 + k, y1), " ", p(x0, y1 - k), " ", p(x0, y1 - r),
+        " l ", p(x0, y0 + r),
+        " b ", p(x0, y0 + k), " ", p(x0 + k, y0), " ", p(x0 + r, y0),
+        "{\\p0}",
+    })
+end
+
 -- Filled polygons, all in one event: { {x1, y1, x2, y2, ...}, ... }.
 -- style as for rect.
 function M.poly(polys, style)
@@ -126,7 +146,6 @@ function M.text(x, y, an, text, t)
 end
 
 -- Filled circle made of four cubic Bezier curves.
-local KAPPA = 0.5523
 function M.circle(cx, cy, r, style)
     local k = r * KAPPA
     local p = function(x, y) return ("%d %d"):format(q(x), q(y)) end

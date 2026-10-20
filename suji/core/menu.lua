@@ -63,6 +63,9 @@ local SIZE, HINT_SIZE, TITLE_SIZE = 15, 13, 13
 local ICON = 18      -- an item's icon
 local MARK_W, MARK_H = 2, 14 -- the active mark
 local WHEEL_STEP = 2 -- items per wheel step
+local BG_OPACITY = 0.6 -- the black panel behind the menu
+local RADIUS = 8     -- its corners
+local BG_PAD = 6     -- the panel's room above and below the items
 
 -- What a menu may hold: longer texts are cut, more items are left out.
 M.MAX_ITEMS = 50000
@@ -370,11 +373,11 @@ KEYS.KP_ENTER = KEYS.ENTER
 
 -- Mouse ------------------------------------------------------------------------
 
--- True when (x, y) is on the open menu, its title included.
+-- True when (x, y) is on the open menu's panel, its title included.
 function M.contains(x, y)
     if not M.is_open() or not x then return false end
-    local g = geometry()
-    return x >= g.x0 and x < g.x1 and y >= g.y0 and y < g.y1
+    local g, pad = geometry(), BG_PAD * state.scale
+    return x >= g.x0 and x < g.x1 and y >= g.y0 - pad and y < g.y1 + pad
 end
 
 -- The cursor moved (x nil: it left the window). The item under it is
@@ -442,7 +445,8 @@ end
 local function draw_item(out, it, i, y0, g, p, s)
     local cy = y0 + g.row_h / 2
     if i == cur.cursor and it.selectable then
-        out[#out + 1] = draw.rect(g.x0, y0, g.x1, y0 + g.row_h, { opacity = 0.1 * p })
+        -- Inset and rounded, so it stays inside the panel's corners.
+        out[#out + 1] = draw.round_rect(g.x0 + 3 * s, y0, g.x1 - 3 * s, y0 + g.row_h, 4 * s, { opacity = 0.1 * p })
     end
     if it.active then
         -- A thin upright line in the accent, with the dark halo of the bar.
@@ -482,6 +486,9 @@ function M.render(now)
     local s, g = state.scale, geometry()
     clamp_scroll(g)
     local out, items = {}, cur.def.items
+    -- A black, see-through panel with round corners, behind everything.
+    out[1] = draw.round_rect(g.x0, g.y0 - BG_PAD * s, g.x1, g.y1 + BG_PAD * s, RADIUS * s,
+        { color = "&H000000&", opacity = BG_OPACITY * p })
     if cur.def.title then
         local t = text.fit(cur.def.title, g.x1 - g.x0 - 2 * PAD * s,
             function(t) return modules.ctx.text_width(t, TITLE_SIZE) end)

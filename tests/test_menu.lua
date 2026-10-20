@@ -3,6 +3,7 @@ local T = require "lib"
 
 local W, H = 1280, 720
 local Y1 = 646 -- bottom of a menu at scale 1: 12 px above the row's zones (658)
+local BG = 6   -- the panel behind it reaches this much above and below the items
 
 local function start(props, script_opts)
     T.unload()
@@ -246,6 +247,10 @@ T.check(painted():find("\\1a&HE6&", 1, true) == nil, "off the menu: no highlight
 -- A click outside closes and does nothing else ---------------------------------------------
 start({ ["track-list"] = SUBS })
 open("subtitles")
+T.eq(click(box_of("subtitles").x0 + 40, Y1 + BG - 2), "", "a click on the panel's edge: nothing")
+T.check(menu().is_open(), "and the menu stays open")
+menu().close(true)
+open("subtitles")
 T.eq(click(640, 710), "", "a click on the timeline: no seek")
 T.check(not menu().is_open(), "and the menu closed")
 open("subtitles")
@@ -350,27 +355,29 @@ local y = Y1 - 15
 T.check(menu().contains(1259, y), "moved left to fit")
 T.check(not menu().contains(1260, y), "20 px from the right edge")
 T.check(menu().contains(1080, y) and not menu().contains(1079, y), "180 px wide")
-T.check(menu().contains(1100, Y1 - 1) and not menu().contains(1100, Y1), "bottom 12 px above the row")
-T.check(menu().contains(1100, Y1 - 90) and not menu().contains(1100, Y1 - 91), "three rows of 30 px")
+T.check(menu().contains(1100, Y1 + BG - 1) and not menu().contains(1100, Y1 + BG), "bottom 12 px above the row, panel 6 px more")
+T.check(menu().contains(1100, Y1 - 90 - BG) and not menu().contains(1100, Y1 - 91 - BG), "three rows of 30 px")
 menu().close(true)
 ctx_of("more").open_menu({ type = "x", title = "A title", items = items(3) }, box_of("more"))
-T.check(menu().contains(1050, Y1 - 116) and not menu().contains(1050, Y1 - 117), "a title adds 26 px on top")
+T.check(menu().contains(1050, Y1 - 116 - BG) and not menu().contains(1050, Y1 - 117 - BG), "a title adds 26 px on top")
 T.check(painted() ~= "" and true, "drawn")
 mp.advance(1)
 T.check(painted():find("}A title", 1, true) ~= nil, "the title is shown")
+T.check(painted():find("\\1c&H000000&\\1a&H66&\\p3}m [^{]* b ") ~= nil, "a black panel at 60% with round corners")
+T.check(painted():find("\\1c&H000000&\\1a&H66&", 1, true) < painted():find("}A title", 1, true), "drawn behind the text")
 T.check(painted():find("\\1a&H66&\\3a&H94&\\4a&HC2&}A title", 1, true) ~= nil, "dimmed")
 menu().close(true)
 start(nil, { scale = 2 })
 ctx_of("more").open_menu({ type = "x", items = items(3) }, { x0 = 100, y0 = 600, x1 = 188, y1 = 688 })
 T.check(menu().contains(100, 600 - 24 - 1) and not menu().contains(99, 575), "scale 2: aligned with the button")
 T.check(menu().contains(459, 575) and not menu().contains(460, 575), "scale 2: 360 px wide")
-T.check(menu().contains(100, 576 - 180) and not menu().contains(100, 576 - 181), "scale 2: rows of 60 px")
+T.check(menu().contains(100, 576 - 180 - 2 * BG) and not menu().contains(100, 576 - 181 - 2 * BG), "scale 2: rows of 60 px")
 
 -- Height, the wheel and only what is on screen -------------------------------------------------
 start()
 ctx_of("more").open_menu({ type = "x", items = items(100) }, box_of("more"))
 mp.advance(1)
-T.check(menu().contains(1050, 646 - 600) and not menu().contains(1050, 645 - 600), "20 rows fit above the row")
+T.check(menu().contains(1050, 646 - 600 - BG) and not menu().contains(1050, 645 - 600 - BG), "20 rows fit above the row")
 T.check(shown(1) and shown(20) and not shown(21), "the first 20 are drawn")
 T.check(painted():find("\\p3}m 4532 2594 l 4552 2614 l 4572 2594", 1, true) ~= nil, "a chevron says there is more below")
 mp.mouse(row("more", 5, 100))
