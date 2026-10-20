@@ -1,5 +1,4 @@
--- Everything suji knows about the player, in one place. Property observers
--- only write here; drawing code only reads from here.
+-- Everything suji knows about the player: observers write, drawing reads.
 
 local M = {
     w = 0, h = 0,     -- window size in OSD pixels (osd-dimensions)

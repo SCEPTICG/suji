@@ -1,6 +1,5 @@
--- Vector icons, drawn for suji on a 24x24 grid and scaled to the size
--- asked for: open lines about 2 px wide, drawn with draw.stroke. No mpv
--- dependencies.
+-- Vector icons on a 24x24 grid, scaled to the size asked for: open lines
+-- about 2 px wide, drawn with draw.stroke. No mpv dependencies.
 
 local M = {}
 

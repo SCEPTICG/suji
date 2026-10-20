@@ -1,9 +1,6 @@
 -- The row of controls above the timeline (play/pause, time, volume,
--- fullscreen) and the title above it.
---
--- Pure functions, tested outside mpv. Text widths come from the caller's
--- measure(ass, guess) function, so libass does the measuring in mpv and the
--- tests can use a fake.
+-- fullscreen) and the title above it. Pure functions: text widths come from
+-- the caller's measure(ass, guess), libass in mpv and a fake in the tests.
 
 local draw = require "draw"
 local icons = require "icons"
@@ -36,10 +33,8 @@ function M.format_time(t, long)
     return ("%s%02d:%02d"):format(sign, math.floor(n / 60), n % 60)
 end
 
--- The time in two parts: "09:48" and " / 23:40" (or " / -13:52" with
--- remaining). Both use the long form when the file lasts an hour or more.
--- shown, when set, replaces the position in the first part only (the time
--- under the cursor).
+-- The time in two parts: "09:48" and " / 23:40" (" / -13:52" with
+-- remaining), long form from an hour on. shown replaces the first part.
 function M.time_text(time, duration, remaining, shown)
     local known = type(time) == "number" and time == time
     local long = math.max(known and time or 0, valid(duration) and duration or 0) >= 3600
@@ -52,10 +47,9 @@ function M.time_text(time, duration, remaining, shown)
     return M.format_time(shown or time, long), " / " .. right
 end
 
--- Byte after the character that starts at byte i. A lead byte takes up to
--- three continuation bytes; any other byte, stray ones included, is a
--- character by itself. So a character is never split, and n characters
--- are never more than 4n bytes.
+-- Byte after the character at byte i: a lead byte takes up to three
+-- continuation bytes, any other byte (stray ones too) stands alone. So a
+-- character is never split, and n characters are at most 4n bytes.
 local function next_char(s, i)
     local j = i + 1
     if s:byte(i) >= 192 then

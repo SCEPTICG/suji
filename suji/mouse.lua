@@ -1,16 +1,9 @@
--- Mouse position, distance to the bar, the active zone and the click
--- bindings.
---
--- MBTN_LEFT is only bound while the cursor is over a visible zone (the bar,
--- a button, the time or the volume slider) or a drag is in progress; the
--- wheel only over the volume icon and slider. Everywhere else input goes
--- through, so double click for fullscreen and window dragging keep working.
---
--- Forced bindings still allow mpv's built-in window dragging: moving a few
--- pixels with the button held would start moving the window and cancel our
--- drag. So while the bindings are on, input-builtin-dragging is switched
--- off, and put back afterwards only if suji was the one that changed it and
--- it is still off.
+-- Mouse position, distance to the bar, the active zone and the bindings.
+-- MBTN_LEFT is only bound over a visible zone (bar, button, time, volume
+-- slider) or while dragging, the wheel only over the volume; elsewhere input
+-- goes through, so double click and window dragging keep working. Forced
+-- bindings still let mpv start a window drag that cancels ours, so
+-- input-builtin-dragging is off while they are on (see restore_dragging).
 
 local msg = require "mp.msg"
 local opts = require "options"
@@ -31,9 +24,7 @@ local bound, wheel_bound = false, false
 local took_dragging = false -- suji set input-builtin-dragging=no
 local reported_error = false
 
--- Fires once, hide_delay seconds after the last movement, so a
--- visibility rule based on idle_time gets evaluated at the right moment.
--- The small margin covers the timer resolution.
+-- Re-evaluates visibility once the mouse has been still hide_delay (M.rearm).
 local idle_timer = mp.add_timeout(1, function() M.refresh() end, true)
 
 function M.input(now)
@@ -152,7 +143,6 @@ function M.shutdown()
     restore_dragging()
 end
 
-
 -- Re-evaluate the bindings and ask for a paint. Bindings are switched on as
 -- soon as the cursor enters the zone, never on the click itself, because
 -- mpv applies them asynchronously and the first click would be lost.
@@ -187,13 +177,21 @@ function M.on_mouse_pos(_, p)
             last_move = mp.get_time()
             bar.move(p.x, state)
             if volume_drag then set_volume(p.x) end
-            idle_timer.timeout = opts.hide_delay + 0.05
-            idle_timer:kill()
-            idle_timer:resume()
+            M.rearm()
         end
     end
     update_zone()
     M.refresh()
+end
+
+-- Idle timer to hide_delay after the last move (+ margin for its resolution).
+function M.rearm()
+    idle_timer:kill()
+    local left = last_move + opts.hide_delay + 0.05 - mp.get_time()
+    if pos and left > 0 then
+        idle_timer.timeout = left
+        idle_timer:resume()
+    end
 end
 
 -- The window changed size: the zone moved with it.

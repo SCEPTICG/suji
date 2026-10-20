@@ -1,8 +1,6 @@
--- The only module that calls overlay:update().
---
--- Paint requests are grouped by a single timer and capped at the display
--- frame rate. A frame is only sent to mpv when its ASS text or the overlay
--- size changed. While nothing is animating, no timer is left running.
+-- The only module that calls overlay:update(). Paint requests are grouped
+-- by one timer, capped at the display frame rate, and only sent when the
+-- ASS text or the size changed. No timer runs while nothing animates.
 
 local state = require "state"
 
@@ -51,9 +49,8 @@ function M.request()
     timer:resume()
 end
 
--- Width in px of one event of ASS text, measured by libass in a hidden
--- overlay. That is slow, so results are cached; guess is used (and not
--- cached) when mpv cannot tell.
+-- Width in px of one ASS event, measured by libass in a hidden overlay and
+-- cached (it is slow); guess, not cached, when mpv cannot tell.
 local probe = mp.create_osd_overlay("ass-events")
 probe.hidden, probe.compute_bounds = true, true
 local widths, cached = {}, 0

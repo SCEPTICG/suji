@@ -1,8 +1,6 @@
--- The timeline: a thin progress line along the bottom edge that grows into
--- a seek bar with a knob as the cursor gets closer.
---
--- Geometry and rendering are pure functions (tested outside mpv). Seeking
--- uses the global `mp` only when called, so tests can load this file.
+-- The timeline: a thin line along the bottom edge that grows into a seek
+-- bar with a knob. Geometry and rendering are pure; seeking uses the global
+-- `mp` only when called, so tests can load this file.
 
 local draw = require "draw"
 local valid = require("state").valid_duration
@@ -104,10 +102,8 @@ function M.chapter_xs(chapters, duration, w)
     return xs
 end
 
--- ASS text for the bar. st: { w, h, scale, time, duration, cache_ranges,
--- chapters }.
--- drag_time, when set, replaces the playback time (the knob follows the
--- cursor while dragging, before the seek lands).
+-- ASS text for the bar. st: suji's state. drag_time, when set, replaces the
+-- playback time (the knob follows the cursor before the seek lands).
 function M.render(st, v, opts, drag_time)
     if not valid(st.duration) or st.w <= 0 or st.h <= 0 then return "" end
     v = clamp(v, 0, 1)

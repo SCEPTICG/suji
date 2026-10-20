@@ -48,9 +48,8 @@ function M.outline(scale, opacity)
 end
 
 local function tags(style)
-    local edge = style.outline or ("\\bord0\\shad0\\blur%s"):format(style.blur or 0)
-    return ("{\\an7\\pos(0,0)%s\\1c%s\\1a%s\\p3}"):format(
-        edge, style.color or "&HFFFFFF&", M.alpha(style.opacity or 1))
+    return ("{\\an7\\pos(0,0)\\bord0\\shad0\\blur%s\\1c%s\\1a%s\\p3}"):format(
+        style.blur or 0, style.color or "&HFFFFFF&", M.alpha(style.opacity or 1))
 end
 
 -- Filled rectangle from (x0, y0) to (x1, y1).
@@ -62,8 +61,7 @@ function M.rect(x0, y0, x1, y1, style)
 end
 
 -- Filled polygons, all in one event: { {x1, y1, x2, y2, ...}, ... }.
--- style as for rect, plus `outline` (see M.outline) to replace the plain
--- edge.
+-- style as for rect.
 function M.poly(polys, style)
     local out = { tags(style) }
     for _, p in ipairs(polys) do
@@ -75,10 +73,9 @@ function M.poly(polys, style)
     return table.concat(out)
 end
 
--- Lines `width` px wide with round ends and joins, for line icons:
--- { {x1, y1, x2, y2, ...}, ... }. ASS only fills shapes, so each line is
--- drawn there and back (no area) and libass's border draws the stroke.
--- A thicker dark copy underneath gives the halo and shadow of M.outline.
+-- Lines `width` px wide with round ends, for icons: { {x1, y1, ...}, ... }.
+-- Each line is drawn there and back (no area) and libass's border draws
+-- the stroke; a thicker dark copy underneath gives the halo and shadow.
 function M.stroke(lines, width, opacity, scale)
     local d = {}
     for _, p in ipairs(lines) do
@@ -92,6 +89,19 @@ function M.stroke(lines, width, opacity, scale)
         M.outline(scale, opacity), width / 2 + 1.2 * scale, path, width / 2, M.alpha(opacity), path)
 end
 
+-- Outside text made safe for a terminal, at most max bytes: control
+-- characters (C1 too, which some terminals take as escapes) and broken
+-- UTF-8 become "?". Independent of the locale.
+function M.printable(s, max)
+    s = tostring(s):sub(1, max)
+    return (s:gsub("[%z\1-\31\127]", "?"):gsub("[\128-\255][\128-\191]*", function(c)
+        local b = c:byte(1)
+        local n = b >= 240 and 4 or b >= 224 and 3 or 2
+        if b < 194 or b >= 245 or #c < n or c:find("^\194[\128-\159]") then return ("?"):rep(#c) end
+        return c:sub(1, n) .. ("?"):rep(#c - n)
+    end))
+end
+
 -- Make outside text safe inside ASS: braces would open override blocks
 -- and a backslash would start an escape (\N, \h...). A zero-width space
 -- after the backslash keeps it literal. Line breaks become spaces.
@@ -99,12 +109,9 @@ function M.escape(text)
     return (tostring(text):gsub("\\", "\\\226\128\139"):gsub("[{}]", "\\%0"):gsub("[\r\n]", " "))
 end
 
--- One line of white text. t: { font, size, opacity, scale, bold, spacing }.
--- bold is plain bold: a semibold weight falls back to regular in fonts
--- without that face.
--- an is the ASS alignment (1 = bottom left, 4 = middle left). text is a
--- string, or a list of { string, opacity } parts drawn one after another.
--- It is escaped here.
+-- One line of white text, escaped here. t: { font, size, opacity, scale,
+-- bold (plain bold: semibold falls back to regular in many fonts), spacing }.
+-- an: ASS alignment. text: a string, or a list of { string, opacity } parts.
 function M.text(x, y, an, text, t)
     if type(text) ~= "table" then text = { { text, t.opacity } } end
     local parts = {}

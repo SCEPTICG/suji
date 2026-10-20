@@ -410,6 +410,40 @@ T.eq(#mp.updates, n + 1, "idle_line on at run time repaints")
 T.check(painted() ~= "", "rest line back")
 T.eq(mp.active_timers(), 0, "reload leaves no timers")
 
+-- An invalid accent from outside: cut, no control characters, warned once
+start()
+local function warns()
+    local w = {}
+    for _, l in ipairs(mp.logs) do if l[1] == "warn" then w[#w + 1] = l[2] end end
+    return w
+end
+mp.set_opts({ accent = "\27[31m\7\194\155x\155" .. string.rep("z", 100) })
+local w = warns()
+T.eq(#w, 1, "invalid accent warned")
+T.check(not w[1]:find("[%z\1-\31\127]") and not w[1]:find("\194[\128-\159]") and not w[1]:find("\155"),
+    "accent warning has no control characters")
+T.check(#w[1] < 80, "accent warning is cut")
+mp.set_opts({ scale = 2 })
+T.eq(#warns(), 1, "the same invalid accent is not warned again")
+
+-- hide_delay changed while the idle timer runs
+start({ hide_delay = 1 })
+mp.mouse(640, 400)
+mp.advance(0.5)
+mp.set_opts({ hide_delay = 3 })
+mp.advance(1)
+T.check(mp.active_timers() > 0, "longer hide_delay: idle timer still pending")
+mp.advance(2)
+T.eq(mp.active_timers(), 0, "longer hide_delay: idle timer fired")
+T.eq(package.loaded["mouse"].target(mp.now), 0, "hidden after the new hide_delay")
+start({ hide_delay = 3 })
+mp.mouse(640, 400)
+mp.advance(0.5)
+mp.set_opts({ hide_delay = 1 })
+mp.advance(0.6)
+T.eq(package.loaded["mouse"].target(mp.now), 0, "shorter hide_delay hides on time")
+T.eq(mp.active_timers(), 0, "shorter hide_delay: no timer left")
+
 -- enabled and mpv's OSC -------------------------------------------------
 start(nil, { osc = true })
 T.eq(mp.props.osc, false, "OSC turned off at start")
@@ -432,10 +466,18 @@ T.eq(mp.bindings["suji-bar"], nil, "disabled: the bar takes no clicks")
 T.eq(mp.active_timers(), 0, "disabled: no timers")
 mp.set_opts({ enabled = true })
 T.eq(mp.props.osc, false, "enabled again: OSC off")
+T.check(mp.bindings["suji-bar"] ~= nil, "enabled again: a still cursor on the bar is seen")
 mp.advance(1)
 T.check(painted() ~= "", "enabled again: painted")
-mp.mouse(640, 711)
-T.check(mp.bindings["suji-bar"] ~= nil, "enabled again: bar clickable")
+start()
+mp.fire("pause", true)
+mp.advance(1)
+mp.set_opts({ enabled = false })
+mp.fire("pause", false)
+mp.mouse(640, 100)
+mp.set_opts({ enabled = true })
+mp.advance(0.01)
+T.check(painted():find("}00:50", 1, true) == nil, "enabled again: no fade out of old controls")
 
 start({ enabled = false }, { osc = true })
 T.eq(mp.props.osc, true, "disabled from the start: OSC untouched")
@@ -461,13 +503,20 @@ T.eq(package.loaded["state"].title, string.rep("b", 200), "a title tag is cut, n
 
 -- set-title: one part, and a clean debug log -------------------------------
 start({ debug = true })
+mp.messages["set-title"]("Episode 5")
+T.eq(package.loaded["state"].series, "Episode 5", "a single argument")
+T.eq(package.loaded["state"].episode, nil, "no second argument")
+mp.fire("pause", true)
+mp.advance(1)
+T.check(painted():find("}Episode 5", 1, true) ~= nil and painted():find("}EPISODE 5", 1, true) == nil,
+    "a single argument: one line")
 mp.messages["set-title"]("", "Episode 5")
 T.eq(package.loaded["state"].episode, "Episode 5", "episode alone")
 T.eq(package.loaded["state"].series, nil, "no series")
 mp.messages["set-title"]("a\27[31mb\194\155c", "\7")
 local line = mp.logs[#mp.logs][2]
 T.check(not line:find("%c") and not line:find("\194[\128-\159]"), "no control characters in the log")
-T.check(line:find("a?[31mb?c", 1, true) ~= nil, "the rest of the text is kept")
+T.check(line:find("a?[31mb??c", 1, true) ~= nil, "the rest of the text is kept")
 
 -- Old mpv -----------------------------------------------------------------
 T.unload()

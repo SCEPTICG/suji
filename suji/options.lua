@@ -1,7 +1,5 @@
--- Options, read from script-opts/suji.conf and --script-opts=suji-<option>=<value>.
--- They can change while mpv runs (through the script-opts property); the
--- file itself is only read at start-up. The type of each default decides
--- how mpv converts the value, so none of them may be nil.
+-- Options from script-opts/suji.conf (read at start) and script-opts (also
+-- at run time). Defaults decide each type, so none of them may be nil.
 
 local msg = require "mp.msg"
 local draw = require "draw"
@@ -23,6 +21,8 @@ local LIMITS = { hide_delay = { 0, 3600 }, proximity = { 1, 10000 }, scale = { 0
 
 local M = {}
 
+local warned -- last invalid accent warned about, not to repeat it
+
 -- The usable value of every option in raw (left untouched), with warnings.
 function M.validate(raw)
     local out = {}
@@ -31,8 +31,10 @@ function M.validate(raw)
         if type(out[k]) ~= type(v) then out[k] = v end
     end
     if not draw.color(out.accent) then
-        msg.warn(("invalid accent '%s', using ffffff"):format(out.accent))
-        out.accent = DEFAULTS.accent
+        if out.accent ~= warned then
+            msg.warn(("invalid accent '%s', using ffffff"):format(draw.printable(out.accent, 32)))
+        end
+        warned, out.accent = out.accent, DEFAULTS.accent
     end
     for k, r in pairs(LIMITS) do
         local v = out[k]

@@ -49,7 +49,7 @@ All options, with their defaults and what they do, are in [`docs/suji.conf`](doc
 
 | Option | Default | |
 | --- | --- | --- |
-| `enabled` | `yes` | `no` turns suji off and gives the OSC back |
+| `enabled` | `yes` | `no` turns suji off; the OSC comes back only if suji turned it off |
 | `idle_line` | `yes` | thin progress line while hidden |
 | `accent` | `ffffff` | colour of the progress (rrggbb) |
 | `pause_on_drag` | `no` | pause while dragging the timeline |

@@ -45,9 +45,8 @@ local function bar_shown()
     return (opts.enabled and opts.idle_line) or grown()
 end
 
--- Repaint only when the end of the progress line moves by a whole pixel
--- and the line is on screen, or when the time shown or the end of the
--- cached range changes while the controls are on screen.
+-- Repaint when the shown line's end moves a whole pixel, or when the time
+-- shown or the end of the cached range changes with the controls up.
 local function update_progress()
     local px = bar.progress_px(state.time, state.duration, state.w)
     if px ~= state.progress_px then
@@ -120,8 +119,7 @@ end)
 
 mp.observe_property("duration", "number", function(_, d)
     if state.set("duration", d) then
-        -- The duration can grow while playing (streams, files being
-        -- written); only a duration that is no longer usable ends a drag.
+        -- A growing duration (streams) keeps a drag; an unusable one ends it.
         if not state.has_timeline() then bar.release(false) end
         update_progress()
     end
@@ -133,8 +131,7 @@ mp.observe_property("pause", "bool", function(_, paused)
     mouse.refresh()
 end)
 
--- Outside text, kept to a sane size: a file's metadata can hold a title
--- of megabytes.
+-- Outside text, cut to a sane size (metadata can hold megabytes).
 local function clean(s)
     if type(s) ~= "string" then return nil end
     s = controls.prefix(s, MAX_TITLE)
@@ -172,22 +169,15 @@ mp.observe_property("demuxer-cache-state", "native", function(_, c)
     update_progress()
 end)
 
--- Outside text, safe for a terminal: no control characters, C1 ones
--- (U+0080..U+009F) included, which some terminals take as escapes.
-local function printable(s) return (tostring(s):gsub("%c", "?"):gsub("\194[\128-\159]", "?")) end
-
--- set-title <series> <episode>: a two-line title until the file ends.
--- Only one of them: a one-line title. Both empty (or missing) go back to
--- media-title. See the README.
+-- set-title <series> <episode>: two lines until the file ends, one with
+-- only one of them, media-title with neither. See the README.
 mp.register_script_message("set-title", function(series, episode)
     state.series, state.episode = clean(series), clean(episode)
-    if opts.debug then msg.info(("set-title: %s / %s"):format(printable(state.series), printable(state.episode))) end
+    if opts.debug then msg.info(("set-title: %s / %s"):format(draw.printable(state.series), draw.printable(state.episode))) end
     request_if_grown()
 end)
 
-mp.observe_property("display-fps", "number", function(_, fps)
-    painter.set_fps(fps)
-end)
+mp.observe_property("display-fps", "number", function(_, fps) painter.set_fps(fps) end)
 
 mp.observe_property("mouse-pos", "native", mouse.on_mouse_pos)
 
@@ -203,9 +193,8 @@ end)
 mp.register_event("file-loaded", drop_drag)
 mp.register_event("shutdown", mouse.shutdown)
 
--- Only one interface at a time: suji turns mpv's own OSC off while it is
--- enabled (setting the osc option at run time unloads the OSC script), and
--- turns it back on when disabled, if suji was the one that turned it off.
+-- One interface at a time: osc=no at run time unloads mpv's OSC. It is
+-- turned back on when disabled only if suji turned it off.
 local took_osc = false
 local function set_enabled(on)
     if on and mp.get_property_bool("osc") == true then
@@ -215,17 +204,19 @@ local function set_enabled(on)
         mouse.release(false)
         if took_osc and mp.get_property_bool("osc") == false then mp.set_property_bool("osc", true) end
         took_osc = false
+        tween = animation.new(0.15) -- no fade out when enabled again
     end
     if opts.debug then msg.info(on and "enabled" or "disabled") end
-    mouse.refresh() -- bindings on or off, and a paint (empty when disabled)
+    -- Bindings and a paint (empty when disabled); a still cursor is read now.
+    if on then mouse.on_mouse_pos(nil, mp.get_property_native("mouse-pos")) else mouse.refresh() end
 end
 
--- Options changed at run time (script-opts). The rest is read where it
--- is used; rescale also asks for a paint.
+-- Options changed at run time; the rest is read where it is used.
 opts.on_update(function(changed)
     if changed.remaining_time then state.remaining = opts.remaining_time end
     if changed.enabled then set_enabled(opts.enabled) end
-    rescale(changed.scale and "options" or nil)
+    if changed.hide_delay then mouse.rearm() end
+    rescale(changed.scale and "options" or nil) -- and a paint
 end)
 
 state.remaining = opts.remaining_time

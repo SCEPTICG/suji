@@ -1,6 +1,5 @@
--- Clock-based transitions. A tween moves a value towards a target over a
--- fixed duration, so it takes the same time at 30 Hz or at 144 Hz.
--- No mpv dependencies: the caller passes the current time in seconds.
+-- Clock-based transitions: a value moves to a target over a fixed time, the
+-- same at 30 or 144 Hz. No mpv dependencies: the caller passes the time.
 
 local M = {}
 

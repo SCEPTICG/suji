@@ -34,6 +34,7 @@ function T.fake_mp(props)
     function mp.get_time() return mp.now end
     function mp.get_property(name, def) return mp.props[name] or def end
     function mp.get_property_number(name, def) return tonumber(mp.props[name]) or def end
+    function mp.get_property_native(name, def) return mp.props[name] or def end
     function mp.get_property_bool(name, def)
         local v = mp.props[name]
         if v == nil then return def end
@@ -57,7 +58,8 @@ function T.fake_mp(props)
     local held
     function mp.mouse(x, y, hover)
         if hover == nil then hover = true end
-        mp.fire("mouse-pos", { x = x, y = y, hover = hover })
+        mp.props["mouse-pos"] = { x = x, y = y, hover = hover }
+        mp.fire("mouse-pos", mp.props["mouse-pos"])
         if held and mp.props["input-builtin-dragging"] ~= false and
             (math.abs(x - held.x) > 3 or math.abs(y - held.y) > 3) then
             held = nil
