@@ -5,7 +5,7 @@
 -- watches user-data/suji/menu/type. Then it sets a button of its own with
 -- set-button and clicks it. On the way it probes suji with a message it
 -- does not know (suji must not warn: run.sh fails on any warning) and
--- reads user-data/suji/margins.
+-- reads user-data/suji/margins and user-data/suji/version.
 --
 -- Window: 640x480. The row is centred on y 440: pause (20-64), the command
 -- button (72-116), button:fake (124-168). A menu of three items from the
@@ -21,10 +21,14 @@ local started, done = false, false
 local version, picked, clicked
 local types = {} -- every value of user-data/suji/menu/type, in order
 -- user-data/suji/enabled when this script loads (before suji) and on the
--- first file-loaded, when suji must have set it.
+-- first file-loaded, when suji must have set it; user-data/suji/version too
+-- on that first file-loaded.
 local at_load, at_file = tostring(mp.get_property_native("user-data/suji/enabled")), nil
+local version_prop
 mp.register_event("file-loaded", function()
-    if at_file == nil then at_file = tostring(mp.get_property_native("user-data/suji/enabled")) end
+    if at_file ~= nil then return end
+    at_file = tostring(mp.get_property_native("user-data/suji/enabled"))
+    version_prop = mp.get_property_native("user-data/suji/version")
 end)
 
 local function finish(ok, text)
@@ -88,10 +92,12 @@ after(0.4, function()
     local probe = mp.commandv("script-message-to", "suji", "hikari-probe")
     local margins = mp.get_property_native("user-data/suji/margins")
     local bottom = type(margins) == "table" and margins.bottom
-    finish(version == "0.3.0" and missing == nil and probe == true and bottom == 62 and at_file == "true",
-        ("suji-version %s, picked %s, types %s, button clicked, a message to no script gives %s, to suji %s,"
-            .. " margins.bottom %s, enabled %s at load and %s on the first file-loaded"):format(tostring(version),
-            picked, table.concat(types, ","), tostring(missing), tostring(probe), tostring(bottom), at_load,
+    finish(version == "0.3.0" and version_prop == version and missing == nil and probe == true and bottom == 62
+        and at_file == "true",
+        ("suji-version %s, user-data/suji/version %s on the first file-loaded, picked %s, types %s, button clicked,"
+            .. " a message to no script gives %s, to suji %s, margins.bottom %s, enabled %s at load and %s on the"
+            .. " first file-loaded"):format(tostring(version), tostring(version_prop), picked,
+            table.concat(types, ","), tostring(missing), tostring(probe), tostring(bottom), at_load,
             tostring(at_file)))
 end)
 

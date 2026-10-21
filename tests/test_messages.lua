@@ -471,21 +471,29 @@ T.eq(mp.props[MARGINS] and mp.props[MARGINS].bottom, 93, "back")
 -- user-data/suji/enabled ------------------------------------------------------
 start()
 local ENABLED = "user-data/suji/enabled"
+local VERSION = "user-data/suji/version"
 T.eq(mp.props[ENABLED], true, "true from the start")
+T.eq(mp.props[VERSION], "0.3.0", "the version from the start")
 mp.set_opts({ enabled = false })
 T.eq(mp.props[ENABLED], false, "enabled=no: false")
+T.eq(mp.props[VERSION], "0.3.0", "enabled=no: the version stays")
 mp.set_opts({ enabled = true })
 T.eq(mp.props[ENABLED], true, "on again: true")
 mp.writes = {}
 mp.emit("shutdown")
-local deleted = false
-for _, w in ipairs(mp.writes) do if w[1] == ENABLED and w[2] == nil then deleted = true end end
+local deleted, version_deleted = false, false
+for _, w in ipairs(mp.writes) do
+    if w[1] == ENABLED and w[2] == nil then deleted = true end
+    if w[1] == VERSION and w[2] == nil then version_deleted = true end
+end
 T.check(deleted and mp.props[ENABLED] == nil, "deleted on shutdown, by writing nil")
+T.check(version_deleted and mp.props[VERSION] == nil, "the version deleted on shutdown, by writing nil")
 T.unload()
 mp = T.fake_mp({ ["mpv-version"] = "mpv v0.40.0" })
 mp.script_opts = { enabled = false }
 dofile("suji/main.lua")
 T.eq(mp.props[ENABLED], false, "started with enabled=no: false")
+T.eq(mp.props[VERSION], "0.3.0", "started with enabled=no: the version is there")
 
 -- user-data/suji/menu/type goes with every way a menu closes --------------------
 start()

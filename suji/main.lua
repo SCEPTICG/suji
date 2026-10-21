@@ -24,6 +24,7 @@ local watch, ctx, timeline = modules.watch, modules.ctx, modules.timeline
 
 local VERSION = "0.3.0" -- sent to every script at start, as suji-version
 local ENABLED = "user-data/suji/enabled" -- true while suji is on (docs/api.md)
+local VERSION_PROP = "user-data/suji/version" -- VERSION while suji is loaded
 local MIN_MAJOR, MIN_MINOR = 0, 39
 local MAX_TITLE = 200 -- characters kept from a title (at most 4 bytes each)
 
@@ -211,6 +212,7 @@ end)
 mp.register_event("shutdown", function()
     mouse.shutdown()
     mp.set_property_native(ENABLED, nil) -- nil: observers hear it too
+    mp.set_property_native(VERSION_PROP, nil)
 end)
 
 -- One interface at a time: osc=no at run time unloads mpv's OSC. It is
@@ -257,8 +259,10 @@ rescale("start")
 
 -- Last, so a start that failed leaves no true behind. Still while the
 -- script loads: mpv plays nothing until every script has, so a script
--- loaded before suji already sees it on its first file-loaded.
+-- loaded before suji already sees it on its first file-loaded. The
+-- version stays with enabled=no: suji is still there and still listens.
 mp.set_property_native(ENABLED, opts.enabled)
+mp.set_property_native(VERSION_PROP, VERSION)
 
 -- Tell the scripts already running that suji is here (see docs/api.md).
 mp.commandv("script-message", "suji-version", VERSION)
