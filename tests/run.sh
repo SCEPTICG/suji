@@ -213,8 +213,14 @@ else
     elif grep -q '^\[xvfb_actions\] clicked 2' "$tmp/act.log"; then
         printf 'xvfb-actions: FAIL (hide-action did not remove the button)\n%s\n' "$(cat "$tmp/act.log")"
         status=1
+    elif ! grep -q '^\[xvfb_actions\] stayed 1' "$tmp/act.log"; then
+        printf 'xvfb-actions: FAIL (the double click did not run the command)\n%s\n' "$(cat "$tmp/act.log")"
+        status=1
+    elif grep -q '^\[xvfb_actions\] stayed 2' "$tmp/act.log"; then
+        printf 'xvfb-actions: FAIL (the double click ran the command twice)\n%s\n' "$(cat "$tmp/act.log")"
+        status=1
     else
-        echo "xvfb-actions: ok the click ran the command once, hide-action removed the button"
+        echo "xvfb-actions: ok the click ran the command once, hide-action removed the button, a double click ran it once"
     fi
 fi
 

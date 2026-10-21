@@ -6,7 +6,8 @@
 # button goes from y 370 to 406, its right edge at x 620. The cursor goes
 # straight to it and clicks: the command must arrive once, and the script
 # hides the button. A second click there, once mpv's double-click time is
-# over, must find nothing.
+# over, must find nothing. Then the script shows a button it never hides,
+# in the same place: a double click on it must run its command once.
 file=$1
 log=$2
 mpv --no-config --vo=x11 --ao=null --geometry=640x480+0+0 --pause --keep-open=yes \
@@ -32,6 +33,12 @@ sleep 0.5
 xdotool click 1
 sleep 1
 xdotool click 1
+for _ in $(seq 25); do
+    grep -q '^\[xvfb_actions\] stay shown' "$log" && break
+    sleep 0.2
+done
+sleep 0.5
+xdotool click --repeat 2 --delay 100 1
 sleep 1
 kill "$pid" 2>/dev/null
 wait "$pid" 2>/dev/null

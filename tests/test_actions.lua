@@ -100,6 +100,17 @@ show("next", "Next episode ›", "playlist-next")
 T.eq(click(RIGHT - 10, CY), "playlist-next", "a string runs with mp.command")
 T.eq(click(RIGHT - 10, CY - 30), "", "a click above it is not its")
 T.eq(click(RIGHT + 10, CY), "", "nor one right of it")
+mp.advance(1)
+mp.mouse(RIGHT - 10, CY)
+mp.commands = {}
+mp.button("press")
+mp.button("press")
+T.eq(#mp.commands, 1, "a double click on a button that stays runs it once")
+T.check(mp.bindings["suji-bar"] ~= nil, "and suji keeps the second click")
+mp.advance(1)
+mp.commands = {}
+mp.button("press")
+T.eq(#mp.commands, 1, "after the double-click time, a click runs it again")
 mp.mouse(640, 100)
 mp.advance(5)
 T.eq(mp.bindings["suji-bar"], nil, "away from it: no bindings")
@@ -151,6 +162,30 @@ T.check(not has("Id 17"), "the 17th was not kept")
 show("id17", "Id 17")
 T.check(has("Id 17"), "with room again, it is kept")
 send("hide-action")
+
+-- Hiding and showing in a loop does not pile up fading buttons: one per
+-- place, at most 4, and a show of the same id takes its fade back.
+local function loop(n, id)
+    local most, longest = 0, 0
+    for i = 1, n do
+        mp.send("hide-action")
+        for k = 1, 4 do mp.send("show-action", id(i, k), T.json({ text = "Ghost", command = "quit" })) end
+        mp.advance(0.0001)
+        local d = painted()
+        most, longest = math.max(most, select(2, d:gsub("}Ghost", ""))), math.max(longest, #d)
+    end
+    return most, longest
+end
+local most, longest = loop(1000, function(i, k) return "g" .. (i * 4 + k) % 16 end)
+T.check(most <= 8, ("new ids in a loop: at most 8 buttons in a frame (%d)"):format(most))
+T.check(longest <= 8 * 600, ("and a frame of bounded size (%d bytes)"):format(longest))
+send("hide-action")
+most, longest = loop(1000, function(_, k) return "g" .. k end)
+T.check(most <= 4, ("the same ids in a loop: at most 4 buttons in a frame (%d)"):format(most))
+send("hide-action")
+mp.advance(1)
+T.check(not has("Ghost"), "all gone after the loops")
+T.eq(mp.active_timers(), 0, "no timers after the loops")
 
 -- Hostile input -------------------------------------------------------------------
 start()

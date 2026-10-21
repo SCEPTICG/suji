@@ -149,9 +149,9 @@ script-message-to suji hide-action [id]
 - **Where:** its bottom 12 px above `user-data/suji/margins.bottom`, its right edge at the right margin of the row. Several go in a line from right to left, in the order they were first shown. At most 4 are on screen at a time; the others wait until one of those is hidden.
 - **Always on screen**, also while the controls are hidden: a skip should not need a mouse move first.
 - **Not while a menu is open.** The buttons fade out and come back when the menu closes.
-- **A click** runs the command. The button stays: hide it with `hide-action` once the action is done, since only your script knows when that is.
+- **A click** runs the command, once: the second click of a double click runs nothing. The button stays: hide it with `hide-action` once the action is done, since only your script knows when that is.
 - **A new file** removes them all, as with menus opened by `open-menu`.
-- **While suji is turned off** (`enabled=no`), `show-action` does nothing, and turning suji off removes the buttons it had.
+- **While suji is turned off** (`enabled=no`), `show-action` does nothing, and turning suji off removes the buttons it had. They do not come back when suji is turned on again: when `user-data/suji/enabled` turns `true`, send `show-action` again for each button that is still needed.
 - **The mouse:** suji only takes the clicks that land on a button on screen.
 
 Each `show-action` replaces all the fields of that button: send all of them each time. A `show-action` that changes nothing does not redraw anything. The id follows the rules of a `set-button` name: letters, digits, `_` and `-`, at most 64 of them. suji keeps at most 16 action buttons; a `show-action` for a 17th id is ignored with a warning, and so is one without a text.
@@ -178,7 +178,7 @@ For a script that draws its own things near the bottom of the window, suji publi
 
 `bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the row of controls (to the top of the timeline's strip, 24 px at scale 1, when the row is empty). It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale or the row (the `controls` option, a button that appears or goes), and it is deleted while suji is turned off.
 
-suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen, and on the [action buttons](#action-buttons). Elsewhere above `bottom`, clicks are left to mpv and to other scripts, with one exception: while a menu of suji is open, any menu, a click anywhere in the window is suji's. On the menu it chooses; anywhere else it only closes the menu, and nothing else gets it. Right after a click on a menu, suji also keeps the second click of a double click, for mpv's double-click time or until the mouse moves away.
+suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen, and on the [action buttons](#action-buttons). Elsewhere above `bottom`, clicks are left to mpv and to other scripts, with one exception: while a menu of suji is open, any menu, a click anywhere in the window is suji's. On the menu it chooses; anywhere else it only closes the menu, and nothing else gets it. Right after a click on a menu or on an action button, suji also keeps the second click of a double click, for mpv's double-click time or until the mouse moves away; on an action button, that second click runs nothing.
 
 ## Knowing that suji is there
 
@@ -296,4 +296,4 @@ local function skip_button(on)
 end
 ```
 
-`skip` runs on a click, and suji keeps the button until the script hides it, so once the seek has left the opening behind, the same code that ends the opening calls `skip_button(false)`. A new file removes the button anyway. If suji is turned off while the button is up, it goes; a script that wants to draw its own then can watch `user-data/suji/enabled`.
+`skip` runs on a click, and suji keeps the button until the script hides it, so once the seek has left the opening behind, the same code that ends the opening calls `skip_button(false)`. A new file removes the button anyway. If suji is turned off while the button is up, it goes, and it does not come back by itself when suji is turned on again. A script can watch `user-data/suji/enabled` for both: draw its own button when it turns `false`, and send `show-action` again when it turns `true`, if the opening is still playing.

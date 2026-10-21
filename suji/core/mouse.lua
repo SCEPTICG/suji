@@ -34,7 +34,8 @@ local captured      -- module holding the mouse, or nil
 -- hidden by its script), and with it the reason to bind the mouse;
 -- the second click of a double click would then reach mpv (fullscreen).
 -- So the bindings stay until the cursor goes away or mpv's double-click
--- time is over, whichever comes first: { x, y } of that click, or nil.
+-- time is over, whichever comes first: { x, y } of that click, and the
+-- action button it ran (it does not run again on that second click), or nil.
 local held
 local HELD_DISTANCE = 16 -- px at scale 1
 local bound, wheel_bound = false, false
@@ -127,7 +128,10 @@ local function press(x, y)
     end
     local action = actions.at(x, y)
     if action then
+        -- The second click of a double click runs nothing: once is enough.
+        if held and held.action == action then return end
         hold(x, y)
+        held.action = action
         return actions.press(action)
     end
     if hit and modules.call(hit.mod, "press", hit, x, y) == true then captured = hit.mod end

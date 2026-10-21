@@ -40,7 +40,10 @@ local BG_OPACITY = 0.6
 local RADIUS = 8
 
 local list = {}      -- { id, text, command, tween }, in the order they came
-local ghosts = {}    -- hidden ones fading out where they were: { box, text, tween }
+-- Hidden ones fading out where they were: { id, box, text, tween }. One
+-- per place and at most MAX_SHOWN, so hiding and showing in a loop cannot
+-- pile them up.
+local ghosts = {}
 local group = animation.new(0.15, 1) -- all of them: 0 while a menu is open
 local placed         -- the boxes of the shown ones (see place), nil: to work out
 local key            -- window, scale and font placed was worked out for
@@ -114,7 +117,16 @@ function M.set(id, f)
         a.text, a.command = f.text, f.command
     else
         if #list >= M.MAX then return false, ("more than %d action buttons"):format(M.MAX) end
-        list[#list + 1] = { id = id, text = f.text, command = f.command, tween = animation.new(0.15) }
+        -- Shown again while it fades out: it fades back in from there.
+        local tween = animation.new(0.15)
+        for k, gh in ipairs(ghosts) do
+            if gh.id == id then
+                tween = gh.tween
+                table.remove(ghosts, k)
+                break
+            end
+        end
+        list[#list + 1] = { id = id, text = f.text, command = f.command, tween = tween }
     end
     changed()
     return true
@@ -134,7 +146,12 @@ function M.hide(id, instant)
             local b = shown[a]
             if b then
                 animation.set_target(a.tween, 0, now)
-                ghosts[#ghosts + 1] = { box = b, text = b.text, tween = a.tween }
+                for k = #ghosts, 1, -1 do
+                    local old = ghosts[k].box
+                    if old.x0 == b.x0 and old.x1 == b.x1 then table.remove(ghosts, k) end
+                end
+                ghosts[#ghosts + 1] = { id = a.id, box = b, text = b.text, tween = a.tween }
+                if #ghosts > M.MAX_SHOWN then table.remove(ghosts, 1) end -- the oldest
             end
         else
             keep[#keep + 1] = a
