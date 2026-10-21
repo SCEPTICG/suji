@@ -32,9 +32,17 @@ end
 -- Whether path is something to play: a URL (with a scheme, ://), or a
 -- file with a video or audio extension, in any case (.mkv, .MKV, .flac).
 -- Folders and files with no extension are not.
+local MEDIA = {}
+for ext in ([[3gp avi flv m2ts m4v mkv mov mp4 mpeg mpg mts ogv ts vob webm wmv
+             aac ac3 aiff alac ape dts flac m4a mka mp3 ogg opus wav wma wv]]):gmatch("%S+") do
+    MEDIA[ext] = true
+end
+
 local function is_media(path)
-    -- TODO(SCEPTICG): write the check described above.
-    return true
+    if path:find("^%a[%w+.-]*://") then return true end
+    -- The extension of the last part only: a folder "show.2024" has none.
+    local ext = path:match("%.([^./\\]+)$")
+    return ext ~= nil and MEDIA[ext:lower()] == true
 end
 
 -- Whether the menu lists entry e: media, or the current one.
