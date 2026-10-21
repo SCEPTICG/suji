@@ -31,8 +31,12 @@ out=$(timeout 60 mpv --no-config --vo=null --ao=null --script=./suji \
     --script=tests/smoke_title.lua --script-opts=suji-debug=yes --length=5 \
     --msg-level=all=no,suji=info,smoke_title=info \
     'av://lavfi:testsrc=duration=10' 2>&1)
+rc=$?
 if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
     printf 'smoke: FAIL\n%s\n' "$out"
+    status=1
+elif [ "$rc" -ne 0 ]; then
+    printf 'smoke: FAIL (exit code %s)\n%s\n' "$rc" "$out"
     status=1
 elif ! printf '%s\n' "$out" | grep -q '^\[suji\] start:'; then
     printf 'smoke: FAIL (suji did not start)\n%s\n' "$out"

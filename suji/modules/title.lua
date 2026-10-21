@@ -11,6 +11,10 @@ local SIZE, TOP_SIZE, TOP_SPACING, TOP_LIFT = 20, 13, 1.5, 22
 
 local width -- of the text last drawn, in px; nil before the first time
 
+-- Counts the changes of that width, so whoever keeps a zone knows when it
+-- is out of date without asking for it on every paint.
+M.measured = 0
+
 -- box.x1: where the right part of the row starts.
 function M.render(ctx, box, v)
     local st, text, draw = ctx.state, ctx.text, ctx.draw
@@ -21,6 +25,7 @@ function M.render(ctx, box, v)
     else main = st.episode or st.series or st.title or "" end
     local main_w = function(t) return ctx.text_width(t, SIZE, true) end
     main = text.fit(main, max_w, main_w)
+    local was = width
     width = main ~= "" and main_w(main) or 0
     local out = draw.text(x, y, 1, main, ctx.style(SIZE, v, true))
     if top then
@@ -29,12 +34,15 @@ function M.render(ctx, box, v)
         width = math.max(width, top ~= "" and top_w(top) or 0)
         out = out .. "\n" .. draw.text(x, y - TOP_LIFT * s, 1, top, ctx.style(TOP_SIZE, 0.8 * v, false, TOP_SPACING))
     end
+    if width ~= was then M.measured = M.measured + 1 end
     return out
 end
 
--- The box the title takes, both lines, for a window st and the row's right
--- part starting at right_x0: as wide as the text last drawn (measured
--- then, so this costs nothing), or all the room it has before that.
+-- The box the title takes for a window st and the row's right part
+-- starting at right_x0: always as tall as two lines, series or not, so a
+-- title that grows a line is already inside it; as wide as the text last
+-- drawn (measured then, so this costs nothing), or all the room it has
+-- before that.
 function M.zone(st, right_x0)
     local s = st.scale
     local x0 = X * s

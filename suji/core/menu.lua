@@ -295,11 +295,12 @@ end
 local function copy(box) return { x0 = box.x0, y0 = box.y0, x1 = box.x1, y1 = box.y1 } end
 
 -- Whether the menu's panel covers the title's box (cur.over_title). Only
--- when the menu opens, changes or moves, never per frame; nil: to work out
--- at the next paint.
+-- when the menu opens, changes or moves, or the title's width changes,
+-- never per frame; nil: to work out at the next paint.
 local function cover()
     local g, pad = geometry(), BG_PAD * state.scale
     local t = modules.title.zone(state, layout.current().right_x0)
+    cur.title_measured = modules.title.measured
     cur.over_title = t.x1 > t.x0 and g.x0 < t.x1 and g.x1 > t.x0 and g.y0 - pad < t.y1 and g.y1 + pad > t.y0
 end
 
@@ -307,6 +308,7 @@ end
 -- it, with the menu's own fade in and out.
 function M.title_opacity(now)
     if not cur then return 1 end
+    if cur.title_measured ~= modules.title.measured then cur.over_title = nil end -- a new title
     if cur.over_title == nil then cover() end
     if not cur.over_title then return 1 end
     return 1 - (1 - TITLE_DIM) * animation.value(tween, now)

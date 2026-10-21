@@ -626,6 +626,25 @@ local mid = tonumber(title_alpha() or "0", 16)
 T.check(mid > 0 and mid < 0xB3, "it comes back with the menu's fade")
 mp.advance(1)
 T.eq(title_alpha(), "00", "closed: full opacity")
+-- A new title under the open menu (hikari picks an episode in its menu).
+local function alpha_of(t) return (painted() .. "\n"):match("\\1a&H(%x%x)&[^}]*}" .. t .. "\n") end
+mp.send("set-title", "", "A")
+mp.advance(1)
+open({ type = "pick", keep_open = true, items = items(3) })
+T.eq(alpha_of("A"), "00", "a short title beside the menu: full opacity")
+mp.send("set-title", "Mononoke Hime", "The Forest Spirit")
+mp.advance(1)
+T.eq(alpha_of("The Forest Spirit"), "B3", "it grows under the menu: down to 30 %")
+zones = 0
+for _ = 1, 5 do mp.mouse(200 + _, 370); mp.advance(0.2) end
+T.eq(zones, 0, "the same title: not worked out again on every paint")
+send("close-menu")
+open({ type = "pick", keep_open = true, items = items(3) })
+T.eq(alpha_of("The Forest Spirit"), "B3", "a long title under a new menu: down to 30 %")
+mp.send("set-title", "", "A")
+mp.advance(1)
+T.eq(alpha_of("A"), "00", "it shrinks beside the menu: full opacity again")
+send("close-menu")
 title.zone = zone
 
 -- Icons ------------------------------------------------------------------------

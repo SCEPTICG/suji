@@ -1,8 +1,9 @@
 -- button:name in the controls option: a button another script defines with
 -- the set-button message (core/messages.lua, docs/api.md). One instance per
 -- name, a command button (modules/command.lua) made by the first
--- set-button and kept until mpv quits. Until then, or while hidden, it
--- takes no room in the row.
+-- set-button and kept until mpv quits, unless it fails: then it is
+-- dropped and the next set-button makes it again. Until then, or while
+-- hidden, it takes no room in the row.
 
 local command = require "modules.command"
 

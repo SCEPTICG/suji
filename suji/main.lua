@@ -88,19 +88,22 @@ painter.set_renderer(function()
     local now = mp.get_time()
     animation.set_target(tween, mouse.target(now), now)
     local v = animation.value(tween, now)
-    local out = {}
+    local out, remeasured = {}, false
     local function add(ass) if ass and ass ~= "" then out[#out + 1] = ass end end
     add(modules.call(timeline, "render", layout.bar_zone(), v))
     if v > 0 then
         local placed = layout.current()
         for _, box in ipairs(placed.boxes) do add(modules.call(box.mod, "render", box, v)) end
         local row_top = state.h - (layout.ROW_LIFT + layout.HEIGHT / 2) * state.scale
+        local measured = modules.title.measured
         add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = row_top },
             v * menu.title_opacity(now)))
+        -- Its opacity came from the old width: once more under an open menu.
+        remeasured = modules.title.measured ~= measured and menu.is_open()
     end
     local menu_ass, menu_running = menu.render(now) -- on top of everything
     add(menu_ass)
-    return table.concat(out, "\n"), animation.running(tween, now) or menu_running
+    return table.concat(out, "\n"), animation.running(tween, now) or menu_running or remeasured
 end)
 
 check_version()
