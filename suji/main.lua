@@ -260,9 +260,10 @@ rescale("start")
 -- Last, so a start that failed leaves no true behind. Still while the
 -- script loads: mpv plays nothing until every script has, so a script
 -- loaded before suji already sees it on its first file-loaded. The
--- version stays with enabled=no: suji is still there and still listens.
-mp.set_property_native(ENABLED, opts.enabled)
+-- version goes first, so enabled set means version set too, and it stays
+-- with enabled=no: suji is still there and still listens.
 mp.set_property_native(VERSION_PROP, VERSION)
+mp.set_property_native(ENABLED, opts.enabled)
 
 -- Tell the scripts already running that suji is here (see docs/api.md).
 mp.commandv("script-message", "suji-version", VERSION)
