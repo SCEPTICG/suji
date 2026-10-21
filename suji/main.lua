@@ -95,7 +95,8 @@ painter.set_renderer(function()
         local placed = layout.current()
         for _, box in ipairs(placed.boxes) do add(modules.call(box.mod, "render", box, v)) end
         local row_top = state.h - (layout.ROW_LIFT + layout.HEIGHT / 2) * state.scale
-        add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = row_top }, v))
+        add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = row_top },
+            v * menu.title_opacity(now)))
     end
     local menu_ass, menu_running = menu.render(now) -- on top of everything
     add(menu_ass)
@@ -206,6 +207,12 @@ end)
 -- One interface at a time: osc=no at run time unloads mpv's OSC. It is
 -- turned back on when disabled only if suji turned it off.
 local took_osc = false
+-- osc turned on by someone else after suji took it: it is theirs now, and
+-- suji leaves it as it is when turned off. suji itself only writes yes
+-- when it gives the OSC back, and stops holding it then.
+watch("osc", "bool", function(on)
+    if took_osc and on == true then took_osc = false end
+end)
 local function set_enabled(on)
     if on and mp.get_property_bool("osc") == true then
         mp.set_property_bool("osc", false)

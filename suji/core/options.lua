@@ -54,6 +54,8 @@ function M.validate(raw)
             msg.warn(("invalid accent '%s', using ffffff"):format(draw.printable(out.accent, 32)))
         end
         warned, out.accent = out.accent, DEFAULTS.accent
+    else
+        warned = nil -- a bad value set again later is warned about again
     end
     for k, r in pairs(LIMITS) do
         local v = out[k]

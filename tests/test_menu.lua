@@ -310,6 +310,17 @@ mp.advance(0.4)
 T.check(mp.bindings["suji-bar-dbl"] ~= nil, "it follows input-doubleclick-time")
 mp.advance(0.11)
 T.eq(suji_bindings(), "", "and ends with it")
+-- Nonsense double-click times: the usual 300 ms
+for _, bad in ipairs({ 0 / 0, -50, 1e9, "x" }) do
+    mp.props["input-doubleclick-time"] = bad
+    open("subtitles")
+    mp.mouse(dx, dy)
+    mp.button("press")
+    mp.advance(0.29)
+    local held = mp.bindings["suji-bar-dbl"] ~= nil
+    mp.advance(0.02)
+    T.check(held and suji_bindings() == "", "double-click time " .. tostring(bad) .. ": 300 ms")
+end
 mp.props["input-doubleclick-time"] = nil
 -- The row changes, or a module fails, right after the click: the same
 open("subtitles")

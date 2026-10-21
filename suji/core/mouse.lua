@@ -94,13 +94,21 @@ function M.release(commit)
 end
 local release = M.release
 
+-- mpv's double-click time in seconds: 300 ms when it is not a number
+-- from 0 to 1000 ms (NaN and negative values too), as mpv's option is.
+local function doubleclick_time()
+    local ms = mp.get_property_number("input-doubleclick-time")
+    if type(ms) ~= "number" or not (ms >= 0 and ms <= 1000) then ms = 300 end
+    return ms / 1000
+end
+
 local function press(x, y)
     if captured then release(false) end -- its button up was lost
     if menu.is_open() then
         if menu.contains(x, y) then
             held = { x = x, y = y }
             held_timer:kill()
-            held_timer.timeout = (mp.get_property_number("input-doubleclick-time") or 300) / 1000
+            held_timer.timeout = doubleclick_time()
             held_timer:resume()
             menu.press(x, y)
         else

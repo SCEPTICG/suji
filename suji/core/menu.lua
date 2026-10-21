@@ -75,6 +75,7 @@ local WHEEL_STEP = 2 -- items per wheel step
 local BG_OPACITY = 0.6 -- the black panel behind the menu
 local RADIUS = 8     -- its corners
 local BG_PAD = 6     -- the panel's room above and below the items
+local TITLE_DIM = 0.3 -- the title's opacity while a menu covers it
 
 -- What a menu may hold: longer texts are cut, more items are left out.
 M.MAX_ITEMS = 50000
@@ -293,6 +294,24 @@ end
 
 local function copy(box) return { x0 = box.x0, y0 = box.y0, x1 = box.x1, y1 = box.y1 } end
 
+-- Whether the menu's panel covers the title's box (cur.over_title). Only
+-- when the menu opens, changes or moves, never per frame; nil: to work out
+-- at the next paint.
+local function cover()
+    local g, pad = geometry(), BG_PAD * state.scale
+    local t = modules.title.zone(state, layout.current().right_x0)
+    cur.over_title = t.x1 > t.x0 and g.x0 < t.x1 and g.x1 > t.x0 and g.y0 - pad < t.y1 and g.y1 + pad > t.y0
+end
+
+-- The title's opacity, 0..1: down to TITLE_DIM while an open menu covers
+-- it, with the menu's own fade in and out.
+function M.title_opacity(now)
+    if not cur then return 1 end
+    if cur.over_title == nil then cover() end
+    if not cur.over_title then return 1 end
+    return 1 - (1 - TITLE_DIM) * animation.value(tween, now)
+end
+
 -- Put the clean menu m on screen for owner (nil: a message's), from
 -- anchor (see place), following the row's module follow when it moves.
 local function start(owner, m, follow, anchor)
@@ -300,6 +319,7 @@ local function start(owner, m, follow, anchor)
     cur = { def = m, owner = owner, follow = follow, anchor = anchor, scroll = 0,
             name = not owner and follow and modules.name_of(follow) or nil }
     show(m.selected, geometry())
+    cover()
     tween = animation.new(0.15)
     animation.set_target(tween, 1, mp.get_time())
     bind_keys(true)
@@ -313,6 +333,7 @@ local function replace(m)
     cur.def = m
     if cur.cursor and not m.items[cur.cursor] then cur.cursor = nil end
     clamp_scroll(geometry())
+    cover() -- its size may have changed
     painter.request()
     return true
 end
@@ -397,16 +418,19 @@ modules.bind("menu_open", M.is_open)
 -- button is gone (hidden, failed, or out of the controls option), a
 -- module's menu closes and a message's moves to the middle.
 function M.on_layout()
-    if not M.is_open() or not cur.follow then return end
-    local placed = layout.current()
-    local box = layout.find(placed, cur.follow) or cur.name and layout.named(placed, cur.name)
-    if box then
-        cur.follow, cur.anchor = box.mod, copy(box)
-    elseif cur.owner then
-        M.close()
-    else
-        cur.follow, cur.anchor = nil, { center = true }
+    if not M.is_open() then return end
+    if cur.follow then
+        local placed = layout.current()
+        local box = layout.find(placed, cur.follow) or cur.name and layout.named(placed, cur.name)
+        if box then
+            cur.follow, cur.anchor = box.mod, copy(box)
+        elseif cur.owner then
+            return M.close()
+        else
+            cur.follow, cur.anchor = nil, { center = true }
+        end
     end
+    cover()
 end
 
 -- A new file: a menu from a message was about the old one, so it closes.
@@ -420,7 +444,8 @@ modules.on_failure(function(mod)
     if cur.owner == mod then
         M.close()
     elseif cur.follow == mod then
-        cur.follow, cur.anchor = nil, { center = true }
+        -- Not laid out from here (this runs inside a module call).
+        cur.follow, cur.anchor, cur.over_title = nil, { center = true }, nil
     end
 end)
 

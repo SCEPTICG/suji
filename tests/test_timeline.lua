@@ -97,6 +97,18 @@ for _, g in ipairs({ { 1920, 1 }, { 3840, 1 }, { 3840, 2 } }) do
 end
 T.eq(#bar.chapter_xs(nil, 100, 1000), 0, "no list")
 T.eq(#bar.chapter_xs({ { time = 5 } }, nil, 1000), 0, "no duration")
+local NAN = 0 / 0
+local function finite(xs)
+    for _, x in ipairs(xs) do if x ~= x or x == math.huge or x == -math.huge then return false end end
+    return true
+end
+T.eq(#bar.chapter_xs({ { time = 5 } }, 0, 1000), 0, "duration 0")
+T.eq(#bar.chapter_xs({ { time = 5 } }, NAN, 1000), 0, "duration NaN")
+T.check(finite(bar.chapter_xs({ { time = NAN }, { time = "nan" }, { time = 5 } }, 100, 1000)), "a NaN chapter time")
+T.eq(#bar.chapter_xs({ { time = NAN }, { time = 5 } }, 100, 1000), 1, "is left out")
+T.eq(#bar.chapter_xs({ { time = 5 } }, 100, NAN), 0, "a NaN width: no marks")
+T.check(finite(bar.chapter_xs({ { time = 5 }, { time = 50 } }, 100, 1000, NAN)), "a NaN spacing")
+T.eq(#bar.chapter_xs({ { time = 5 }, { time = 50 } }, 100, 1000, NAN), 2, "keeps the marks")
 
 local full = { w = 1280, h = 720, scale = 1, time = 50, duration = 100,
                cache_ranges = { { start = 40, ["end"] = 80 } }, chapters = { { time = 0 }, { time = 30 } } }

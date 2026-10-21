@@ -130,6 +130,9 @@ on("set-button", function(name, json)
     end
     local def = decode("set-button " .. name, json)
     if not def then return end
+    -- A button that failed stays off for good: a set-button makes it anew.
+    local old = button.get(name)
+    if old and not modules.alive(old) then button.drop(name) end
     local changed, why = button.set(name, clean_button(name, def))
     if changed == false then
         warn(("set-button %s: %s, ignored"):format(name, why))

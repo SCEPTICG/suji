@@ -92,7 +92,8 @@ end
 -- result is kept: the list is only walked again when something changed.
 local last_marks = {}
 function M.chapter_xs(chapters, duration, w, spacing)
-    spacing = math.max(spacing or 1, w / M.MAX_MARKS)
+    if not (w > 0 and w < math.huge) then return {} end -- NaN too
+    spacing = math.max(spacing == spacing and spacing or 1, w / M.MAX_MARKS)
     local m = last_marks
     if m.chapters == chapters and m.duration == duration and m.w == w and m.spacing == spacing then return m.xs end
     local xs, seen = {}, {}
@@ -100,6 +101,7 @@ function M.chapter_xs(chapters, duration, w, spacing)
         for _, c in ipairs(chapters) do
             local t = type(c) == "table" and tonumber(c.time)
             local x = t and t > 0 and t < duration and M.time_to_x(t, duration, w)
+            if x ~= x then x = nil end -- NaN
             local slot = x and math.min(math.floor(x / spacing), M.MAX_MARKS - 1)
             if slot and not seen[slot] then
                 seen[slot] = true

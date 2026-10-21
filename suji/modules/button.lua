@@ -15,6 +15,11 @@ local buttons, count = {}, 0
 -- The button called name, or nil while no script has set it.
 function M.get(name) return buttons[name] end
 
+-- Forget button name (it failed): the next set-button makes a new one.
+function M.drop(name)
+    if buttons[name] then buttons[name], count = nil, count - 1 end
+end
+
 -- Give button name the clean fields f: { icon, command, active, hide,
 -- badge, tooltip } (see core/messages.lua). Returns what changed: "layout"
 -- (it was shown or hidden), "paint" (it looks different) or nil; or false

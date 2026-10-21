@@ -284,6 +284,19 @@ T.check(mods().call(nb.mod, "render", nb, 1):find("}N$") ~= nil, "an unknown ico
 send("set-button", "mine", "{}")
 T.check(mods().call(nb.mod, "render", nb, 1):find("}M$") ~= nil, "no icon: the initial of the name")
 T.eq(warnings(), 0, "no warnings so far")
+-- A button that fails is off; the next set-button brings it back
+local broken = box_of("button:mine").mod
+broken.render = function() error("broken") end
+mp.mouse(640, 690) -- a paint
+mp.advance(1)
+T.eq(box_of("button:mine"), nil, "a button that fails leaves the row")
+T.eq(#mp.logs > 0 and mp.logs[#mp.logs][1], "error", "logged once")
+local w_fail = warnings()
+set("mine", { icon = "check" })
+T.check(box_of("button:mine") ~= nil and box_of("button:mine").mod ~= broken, "set-button again: a new button in its place")
+mp.mouse(641, 690)
+mp.advance(1)
+T.check(painted():find("\\p3}", 1, true) ~= nil and warnings() == w_fail, "drawn, with no new warning")
 -- conditions work as for any element
 mp.set_opts({ controls = "pause,<user-data/fake/on>button:later,space,volume" })
 set("later", { icon = "check" })
@@ -583,6 +596,37 @@ key("enter")
 T.eq(cmd(mp.commands[#mp.commands]), "script-message-to fake pick 4", "the line under the mouse, too")
 T.check(menu().is_open(), "keep_open: still open")
 send("close-menu")
+
+-- The title under a menu ------------------------------------------------------
+start("pause,space,volume")
+mp.fire("media-title", "Some title")
+mp.mouse(640, 690)
+mp.advance(1)
+local function title_alpha() return painted():match("\\1a&H(%x%x)&[^}]*}Some title") end
+T.eq(title_alpha(), "00", "the title, at full opacity")
+local title = package.loaded["modules.title"]
+local zone, zones = title.zone, 0
+title.zone = function(...) zones = zones + 1; return zone(...) end
+open({ type = "wide", items = items(3) })
+T.eq(title_alpha(), "00", "a wide window: the centred menu is far from the text, the title stays")
+send("close-menu")
+mp.advance(1)
+mp.fire("osd-dimensions", { w = 400, h = 400 })
+mp.mouse(200, 370)
+mp.advance(1)
+T.eq(title_alpha(), "00", "a narrow window, no menu: full opacity")
+zones = 0
+open({ type = "narrow", items = items(3) })
+T.eq(title_alpha(), "B3", "a narrow window: the menu covers it, the title goes down to 30 %")
+for _ = 1, 5 do mp.mouse(200 + _, 370); mp.advance(0.2) end
+T.eq(zones, 1, "worked out once when the menu opened, not on every paint")
+mp.send("close-menu")
+mp.advance(0.07)
+local mid = tonumber(title_alpha() or "0", 16)
+T.check(mid > 0 and mid < 0xB3, "it comes back with the menu's fade")
+mp.advance(1)
+T.eq(title_alpha(), "00", "closed: full opacity")
+title.zone = zone
 
 -- Icons ------------------------------------------------------------------------
 local icons = require "core.icons"

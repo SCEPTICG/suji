@@ -52,4 +52,23 @@ local zero = animation.new(0)
 animation.set_target(zero, 1, 5)
 T.eq(animation.value(zero, 5), 1, "zero duration is instant")
 
+-- printable: only valid UTF-8 passes
+local P = draw.printable
+T.eq(P("a\195\169b"), "a\195\169b", "2 bytes: é")
+T.eq(P("\226\130\172"), "\226\130\172", "3 bytes: €")
+T.eq(P("\240\159\152\128"), "\240\159\152\128", "4 bytes: an emoji")
+T.eq(P("\244\143\191\191"), "\244\143\191\191", "U+10FFFF, the last one")
+T.eq(P("\237\159\191"), "\237\159\191", "U+D7FF, just before the surrogates")
+T.eq(P("\192\175"), "??", "overlong 2 bytes (C0)")
+T.eq(P("\224\128\175"), "???", "overlong 3 bytes (E0 80)")
+T.eq(P("\224\159\191"), "???", "overlong 3 bytes (E0 9F)")
+T.eq(P("\240\128\128\175"), "????", "overlong 4 bytes (F0 80)")
+T.eq(P("\240\143\191\191"), "????", "overlong 4 bytes (F0 8F)")
+T.eq(P("\237\160\128"), "???", "surrogate U+D800")
+T.eq(P("\237\191\191"), "???", "surrogate U+DFFF")
+T.eq(P("\244\144\128\128"), "????", "over U+10FFFF (F4 90)")
+T.eq(P("\245\128\128\128"), "????", "F5")
+T.eq(P("x\194\133y"), "x??y", "C1 control (U+0085)")
+T.eq(P("\128a"), "?a", "a stray continuation byte")
+
 T.done("test_draw")

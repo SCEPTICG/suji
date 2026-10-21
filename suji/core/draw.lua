@@ -110,14 +110,21 @@ function M.stroke(lines, width, opacity, scale)
 end
 
 -- Outside text made safe for a terminal, at most max bytes: control
--- characters (C1 too, which some terminals take as escapes) and broken
--- UTF-8 become "?". Independent of the locale.
+-- characters (C0, DEL and C1, which some terminals take as escapes) and
+-- anything that is not valid UTF-8 become "?", a "?" per byte: stray and
+-- missing continuation bytes, overlong forms (C0, C1, E0 80-9F, F0
+-- 80-8F), surrogates (ED A0-BF: U+D800-DFFF) and code points over
+-- U+10FFFF (F4 90-BF, F5-FF). Independent of the locale.
 function M.printable(s, max)
     s = tostring(s):sub(1, max)
     return (s:gsub("[%z\1-\31\127]", "?"):gsub("[\128-\255][\128-\191]*", function(c)
-        local b = c:byte(1)
+        local b, b2 = c:byte(1), c:byte(2) or 0
         local n = b >= 240 and 4 or b >= 224 and 3 or 2
-        if b < 194 or b >= 245 or #c < n or c:find("^\194[\128-\159]") then return ("?"):rep(#c) end
+        if b < 194 or b >= 245 or #c < n or c:find("^\194[\128-\159]")
+            or (b == 224 and b2 < 160) or (b == 237 and b2 >= 160)
+            or (b == 240 and b2 < 144) or (b == 244 and b2 >= 144) then
+            return ("?"):rep(#c)
+        end
         return c:sub(1, n) .. ("?"):rep(#c - n)
     end))
 end

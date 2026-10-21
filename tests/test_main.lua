@@ -395,6 +395,18 @@ local warned = false
 for _, l in ipairs(mp.logs) do warned = warned or (l[1] == "warn" and l[2]:find("accent") ~= nil) end
 T.check(warned, "reload: invalid accent warned")
 mp.set_opts({ scale = 1, hide_delay = 1.5, accent = "ff0000" })
+local function accent_warnings()
+    local n = 0
+    for _, l in ipairs(mp.logs) do if l[1] == "warn" and l[2]:find("accent") then n = n + 1 end end
+    return n
+end
+local before_bad = accent_warnings()
+mp.set_opts({ accent = "nope" })
+T.eq(accent_warnings(), before_bad + 1, "the same bad accent after a good one: warned again")
+mp.set_opts({ remaining_time = true })
+mp.set_opts({ remaining_time = false })
+T.eq(accent_warnings(), before_bad + 1, "but only once while it stays bad")
+mp.set_opts({ accent = "ff0000" })
 mp.fire("pause", true)
 mp.advance(1)
 T.check(painted():find("&H0000FF&", 1, true) ~= nil, "new accent painted")
@@ -489,6 +501,18 @@ start(nil, { osc = true })
 mp.set_property_bool("osc", true) -- turned back on by the user
 mp.set_opts({ enabled = false })
 T.eq(mp.props.osc, true, "OSC the user turned on stays on")
+start(nil, { osc = true })
+mp.set_property_bool("osc", true) -- the user turns it on
+mp.set_property_bool("osc", false) -- and off again, by hand
+mp.set_opts({ enabled = false })
+T.eq(mp.props.osc, false, "OSC set by hand after suji took it: suji no longer gives it back")
+mp.set_opts({ enabled = true })
+mp.set_opts({ enabled = false })
+T.eq(mp.props.osc, false, "nor later")
+start(nil, { osc = true })
+mp.advance(1)
+mp.set_opts({ enabled = false })
+T.eq(mp.props.osc, true, "suji's own write is not taken for the user's: the OSC comes back")
 
 -- File name without the extension -----------------------------------------
 start()

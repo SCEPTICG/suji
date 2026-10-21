@@ -32,6 +32,36 @@ local function click(x, y) mp.mouse(x, y); mp.commands = {}; mp.button("press");
 local mods = function() return package.loaded["core.modules"] end
 local function mouse() return package.loaded["core.mouse"] end
 
+-- revive: a module that watches and unwatches while it gets its values
+-- back. Each delivery drops its own watch (its key leaves the table of
+-- watches) and adds many (the table grows): walking that table live would
+-- break, or skip and repeat.
+start()
+do
+    local m = { render = function() error("off") end }
+    local ctx = mods().ctx_of(m)
+    local reviving, got, extra = false, 0, 0
+    local handles = {}
+    for i = 1, 20 do
+        local name = "user-data/r" .. i
+        handles[i] = ctx.watch(name, "native", function()
+            if not reviving then return end
+            got = got + 1
+            ctx.unwatch(handles[i])
+            for k = 1, 40 do ctx.watch(("user-data/n%d_%d"):format(i, k), "native", function() extra = extra + 1 end) end
+        end)
+        mp.fire(name, i)
+    end
+    mods().call(m, "render")
+    T.check(not mods().alive(m), "the module failed")
+    reviving = true
+    local ok, err = pcall(mods().revive, m)
+    T.check(ok, "revive with watches changing on the way: no error (" .. tostring(err) .. ")")
+    T.eq(got, 20, "each watch got its value once")
+    T.eq(extra, 0, "the new ones, of properties never seen, get nothing yet")
+    T.eq(mods().alive(m), true, "revived")
+end
+
 -- Shared observers: one per property, however many ask -------------------
 start()
 for prop, n in pairs(mp.observed) do T.eq(n, 1, "one observer for " .. prop) end

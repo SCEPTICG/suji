@@ -109,10 +109,16 @@ local deliver
 function M.revive(mod)
     if not dead[mod] then return end
     dead[mod] = nil
+    -- A delivery may watch or unwatch: walk copies, not the live tables.
+    local mine = {}
     for _, w in pairs(watched) do
         if w.seen then
-            for _, it in ipairs(w.list) do if it.owner == mod then deliver(it, w.value) end end
+            for _, it in ipairs(w.list) do if it.owner == mod then mine[#mine + 1] = { it, w } end end
         end
+    end
+    for _, p in ipairs(mine) do
+        local it, w = p[1], p[2]
+        if not it.gone then deliver(it, w.value) end
     end
 end
 
@@ -194,6 +200,7 @@ end
 
 -- Stop a watch. The last one of a property stops observing it.
 function M.unwatch(it)
+    it.gone = true
     local w = watched[it.key]
     if not w then return end
     local list = {} -- a new list: a delivery in progress keeps the old one

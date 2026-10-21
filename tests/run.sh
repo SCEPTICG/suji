@@ -11,6 +11,9 @@ LUA=${LUA:-lua5.1}
 export LUA_PATH="./suji/?.lua;./tests/?.lua;;"
 status=0
 tmp=
+# Each test in a virtual display fixes its row, so its coordinates hold
+# whatever the mpv: without a clipboard (0.39) the more button hides.
+MENU_ROW=pause,time,space,subtitles,audio,playlist,speed,volume,fullscreen
 
 for t in tests/test_*.lua; do
     "$LUA" "$t" || status=1
@@ -67,10 +70,15 @@ else
     out=$(timeout 60 xvfb-run -a mpv --no-config --vo=x11 --ao=null \
         --geometry=640x480 --pause --keep-open=yes --script=./suji \
         --script=tests/xvfb_drag.lua --script-opts=suji-debug=yes \
+        --script-opts-append=suji-controls=pause,time,space,volume,fullscreen \
         --msg-level=all=no,suji=info,xvfb_drag=info \
         "$tmp/t.mkv" 2>&1)
+    rc=$?
     if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
         printf 'xvfb-drag: FAIL\n%s\n' "$out"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-drag: FAIL (exit code %s)\n%s\n' "$rc" "$out"
         status=1
     elif ! printf '%s\n' "$out" | grep -q '^\[suji\] remaining time on'; then
         printf 'xvfb-drag: FAIL (click on the time)\n%s\n' "$out"
@@ -94,8 +102,12 @@ else
         --geometry=640x480 --pause --keep-open=yes --script=tests/xvfb_api.lua \
         --script=./suji --msg-level=all=no,suji=info,xvfb_api=info \
         "$tmp/t.mkv" 2>&1)
+    rc=$?
     if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
         printf 'xvfb-api: FAIL\n%s\n' "$out"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-api: FAIL (exit code %s)\n%s\n' "$rc" "$out"
         status=1
     elif printf '%s\n' "$out" | grep -q 'xvfb-api: ok'; then
         printf '%s\n' "$out" | grep 'xvfb-api:'
@@ -125,9 +137,14 @@ else
     out=$(timeout 60 xvfb-run -a mpv --no-config --vo=x11 --ao=null \
         --geometry=640x480 --pause --keep-open=yes --script=./suji \
         --script=tests/xvfb_menu.lua --msg-level=all=no,suji=info,xvfb_menu=info \
+        --script-opts-append=suji-controls=$MENU_ROW \
         "$tmp/m.mkv" 2>&1)
+    rc=$?
     if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
         printf 'xvfb-menu: FAIL\n%s\n' "$out"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-menu: FAIL (exit code %s)\n%s\n' "$rc" "$out"
         status=1
     elif printf '%s\n' "$out" | grep -q 'xvfb-menu: ok'; then
         printf '%s\n' "$out" | grep 'xvfb-menu:'
@@ -143,13 +160,17 @@ if [ -z "$tmp" ] || [ ! -s "$tmp/m.mkv" ]; then
 elif ! command -v xdotool >/dev/null 2>&1; then
     echo "xvfb-dblclick: skipped (no xdotool)"
 else
-    timeout 60 xvfb-run -a -s "-screen 0 1280x1024x24" sh tests/xvfb_dblclick.sh "$tmp/m.mkv" "$tmp/dbl.log"
+    timeout 60 xvfb-run -a -s "-screen 0 1280x1024x24" sh tests/xvfb_dblclick.sh "$tmp/m.mkv" "$tmp/dbl.log" "$MENU_ROW"
+    rc=$?
     # The speed set by the entry, then fullscreen from the second double
     # click only, at least a second later.
     sped=$(sed -n 's/^\[xvfb_dblclick\] speed 2\.0* at //p' "$tmp/dbl.log" | head -1)
     full=$(sed -n 's/^\[xvfb_dblclick\] fullscreen yes at //p' "$tmp/dbl.log" | head -1)
     if grep '^\[suji\]' "$tmp/dbl.log" | grep -qiE 'error|warn|traceback'; then
         printf 'xvfb-dblclick: FAIL\n%s\n' "$(cat "$tmp/dbl.log")"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-dblclick: FAIL (exit code %s)\n%s\n' "$rc" "$(cat "$tmp/dbl.log")"
         status=1
     elif [ -z "$sped" ]; then
         printf 'xvfb-dblclick: FAIL (the menu entry was not chosen)\n%s\n' "$(cat "$tmp/dbl.log")"
