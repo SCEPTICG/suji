@@ -487,7 +487,8 @@ T.eq(m.items[1].action, nil, "untrusted: no action")
 T.eq(menu().clean({ type = "x", items = { { title = "f", action = function() end } } }, true).items[1].action ~= nil, true,
     "trusted: kept")
 T.eq(menu().clean({ type = "x", items = { { value = { "a", 5 } } } }).items[1].value, nil, "a value with a number is dropped")
-T.eq(menu().clean({ items = {} }), nil, "a menu needs a type")
+T.eq(menu().clean({ items = {} }).type, "", "a menu with no type has the type \"\"")
+T.eq(menu().clean({ type = 5, items = {} }), nil, "a type that is not a string is refused")
 
 -- safe: the module of an open menu fails ------------------------------------------------------------
 start({ ["track-list"] = SUBS })

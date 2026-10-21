@@ -1,8 +1,9 @@
 #!/bin/sh
 # Runs the unit tests with Lua 5.1 (or $LUA), a smoke test with a windowless
-# mpv and, if xvfb-run is installed, a real drag and click test, a menu
-# test (which also needs ffmpeg and mkvmerge) and a double click test
-# (which also needs xdotool) in a virtual display.
+# mpv and, if xvfb-run is installed, a real drag and click test, a test of
+# the messages other scripts send, a menu test (which also needs ffmpeg and
+# mkvmerge) and a double click test (which also needs xdotool) in a
+# virtual display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -78,6 +79,28 @@ else
         printf '%s\n' "$out" | grep 'xvfb-drag:'
     else
         printf 'xvfb-drag: FAIL\n%s\n' "$out"
+        status=1
+    fi
+fi
+
+# Messages from another script that behaves like hikari: loaded first, so
+# it hears suji-version.
+if [ -z "$tmp" ]; then
+    echo "xvfb-api: skipped (no xvfb-run)"
+elif [ ! -s "$tmp/t.mkv" ]; then
+    echo "xvfb-api: skipped (could not make the test video)"
+else
+    out=$(timeout 60 xvfb-run -a mpv --no-config --vo=x11 --ao=null \
+        --geometry=640x480 --pause --keep-open=yes --script=tests/xvfb_api.lua \
+        --script=./suji --msg-level=all=no,suji=info,xvfb_api=info \
+        "$tmp/t.mkv" 2>&1)
+    if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-api: FAIL\n%s\n' "$out"
+        status=1
+    elif printf '%s\n' "$out" | grep -q 'xvfb-api: ok'; then
+        printf '%s\n' "$out" | grep 'xvfb-api:'
+    else
+        printf 'xvfb-api: FAIL\n%s\n' "$out"
         status=1
     fi
 fi

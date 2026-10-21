@@ -90,6 +90,7 @@ controls=pause,time,space,subtitles,audio,playlist,more,volume,fullscreen
 - The elements are `pause`, `time`, `volume`, `fullscreen` and the menus `subtitles`, `audio`, `playlist` and `more`.
 - `space` pushes what follows it to the right; `gap` leaves a small hole.
 - `command:icon:command` adds a button that runs an mpv command, for example `command:x:playlist-next`.
+- `button:name` places a button that another script defines (see [For script authors](#for-script-authors)).
 - A condition in `<...>` before an element shows it only when it holds, for example `<has_playlist>command:x:playlist-next`. A hidden element leaves no gap.
 
 The timeline and the title are always there. All the elements, conditions and limits are explained in [`docs/suji.conf`](docs/suji.conf). The option can be changed while mpv runs, and the row changes at once; use `append` so the commas stay in the value:
@@ -114,13 +115,17 @@ script-message-to suji set-title "<series>" "<episode>"
 
 The name and arguments of this message are meant to stay as they are, so scripts can rely on them.
 
+## For script authors
+
+Other scripts can open menus in suji (`open-menu`, `update-menu`, `close-menu`), put their own buttons in the row (`set-button` and `button:name` in `controls`), see which menu is open (`user-data/suji/menu/type`) and tell that suji is loaded. The messages, the JSON of a menu, the icon names and two examples are in [`docs/api.md`](docs/api.md). That API is at 0.x and may still change.
+
 ## Requirements
 
 mpv 0.39 or newer.
 
 ## Tests
 
-`tests/run.sh` runs the unit tests with Lua 5.1 (`LUA=luajit tests/run.sh` for another Lua), a smoke test with a windowless mpv and, if `xvfb-run` is installed, a drag and click test in a virtual display.
+`tests/run.sh` runs the unit tests with Lua 5.1 (`LUA=luajit tests/run.sh` for another Lua), a smoke test with a windowless mpv and, if `xvfb-run` is installed, tests with real clicks and messages in a virtual display.
 
 ## License
 

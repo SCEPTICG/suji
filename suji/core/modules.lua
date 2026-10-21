@@ -122,6 +122,10 @@ local CHECK = {
 
 function M.alive(mod) return mod ~= nil and not dead[mod] end
 
+-- The name of a module of the row as the controls option writes it
+-- ("more", "command:x", "button:name"), or nil.
+function M.name_of(mod) return names[mod] end
+
 -- True when the module is alive and has the function fname.
 function M.takes(mod, fname) return M.alive(mod) and mod[fname] ~= nil end
 
@@ -235,6 +239,7 @@ local ROW = {
     more = require "modules.more",
 }
 local command = require "modules.command"
+local button = require "modules.button"
 M.timeline = require "modules.timeline" -- always there, not part of the row
 M.title = require "modules.title"       -- background layer above the row
 
@@ -251,7 +256,7 @@ end
 
 -- The controls option --------------------------------------------------------
 
-local items = {}       -- the option, resolved: { mod | space | gap, cond }
+local items = {}       -- the option, resolved: { mod | button | space | gap, cond }
 local values = {}      -- last value of each property the conditions name
 local handles = {}     -- the watches of those properties
 local shown = ""       -- which conditions held at the last check
@@ -323,6 +328,14 @@ function M.set_controls(s)
         elseif e.kind == "command" then
             it.mod = command.new(e)
             names[it.mod] = "command:" .. e.icon
+        elseif e.kind == "button" then
+            -- Found when the row is laid out: the script may set it later.
+            if used["button:" .. e.name] then
+                warn(("controls: 'button:%s' is listed twice, only the first one is shown"):format(e.name))
+                it = nil
+            else
+                used["button:" .. e.name], it.button = true, e.name
+            end
         end
         list[#list + 1] = it
     end
@@ -332,16 +345,22 @@ function M.set_controls(s)
 end
 
 -- The elements of the row to lay out now, in order: { mod, width },
--- { gap = true } or { space = true }. Hidden and failed modules are left out.
+-- { gap = true } or { space = true }. Hidden and failed modules, and
+-- buttons no script has set yet, are left out.
 function M.row()
     local out = {}
     for _, it in ipairs(items) do
         if not it.cond or controls.eval(it.cond, values) then
+            local mod = it.mod
+            if it.button then
+                mod = button.get(it.button)
+                if mod then names[mod] = "button:" .. it.button end
+            end
             if it.space or it.gap then
                 out[#out + 1] = { space = it.space, gap = it.gap }
-            elseif M.call(it.mod, "available") ~= false and M.alive(it.mod) then
-                local w = M.call(it.mod, "width")
-                if w and M.alive(it.mod) then out[#out + 1] = { mod = it.mod, width = w } end
+            elseif mod and M.call(mod, "available") ~= false and M.alive(mod) then
+                local w = M.call(mod, "width")
+                if w and M.alive(mod) then out[#out + 1] = { mod = mod, width = w } end
             end
         end
     end

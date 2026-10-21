@@ -15,6 +15,7 @@ local M = {}
 
 M.MAX_BYTES = 4096 -- longer strings are cut (they may come from script-opts)
 M.MAX_ITEMS = 32
+M.MAX_NAME = 64 -- of a button:name
 
 -- Named conditions: the property behind each one and when it holds.
 local NAMED = {
@@ -76,7 +77,7 @@ function M.eval(cond, values)
     return false
 end
 
--- One element -> { kind = "space" | "gap" | "module" | "command", cond,
+-- One element -> { kind = "space" | "gap" | "module" | "command" | "button", cond,
 -- props, ... } or nil and the reason. props: the properties cond names.
 -- known[name] is true for the modules of the row.
 local function parse_item(raw, known)
@@ -100,7 +101,11 @@ local function parse_item(raw, known)
         if command == "" then return nil, "empty command" end
         return { kind = "command", icon = icon, command = command, text = text, cond = cond, props = props }
     end
-    if name == "button" then return nil, "button: is not supported yet" end
+    if name == "button" then
+        local button = rest:match("^:([%w_%-]+)$")
+        if not button or #button > M.MAX_NAME then return nil, "use button:name (letters, digits, _ and -)" end
+        return { kind = "button", name = button, cond = cond, props = props }
+    end
     if rest ~= "" then return nil, "unexpected '" .. rest .. "'" end
     if name == "space" or name == "gap" then return { kind = name, cond = cond, props = props } end
     if known[name] then return { kind = "module", name = name, cond = cond, props = props } end

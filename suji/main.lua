@@ -2,7 +2,8 @@
 -- Entry point: version check, the core's property observers, the modules,
 -- the controls option and the frame renderer. The core is in core/, the
 -- elements it draws in modules/ (see core/modules.lua). Menus are a service
--- of the core (core/menu.lua) that modules use.
+-- of the core (core/menu.lua) that modules use, and other scripts through
+-- messages (core/messages.lua).
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -15,9 +16,11 @@ local modules = require "core.modules"
 local layout = require "core.layout"
 local mouse = require "core.mouse"
 local menu = require "core.menu"
+require "core.messages"
 
 local watch, ctx, timeline = modules.watch, modules.ctx, modules.timeline
 
+local VERSION = "0.2.0" -- sent to every script at start, as suji-version
 local MIN_MAJOR, MIN_MINOR = 0, 39
 local MAX_TITLE = 200 -- characters kept from a title (at most 4 bytes each)
 
@@ -204,3 +207,6 @@ end)
 state.remaining = opts.remaining_time
 if opts.enabled then set_enabled(true) end
 rescale("start")
+
+-- Tell the scripts already running that suji is here (see docs/api.md).
+mp.commandv("script-message", "suji-version", VERSION)

@@ -35,13 +35,22 @@ T.eq(c.text, "", "an empty text")
 T.eq(kinds(parse("command:x:show-text a:b")), "command", "colons inside the command")
 T.eq(parse("command:x:show-text a:b")[1].command, "show-text a:b", "are kept")
 
+-- button:name
+local b = parse("<user-data/x>button:hikari_skip-1")[1]
+T.eq(b.kind, "button", "button element")
+T.eq(b.name, "hikari_skip-1", "its name")
+T.eq(b.props and b.props[1], "user-data/x", "with its conditions")
+T.eq(#parse("button:" .. ("n"):rep(64)), 1, "a name of 64 bytes")
+T.eq(#parse("button:" .. ("n"):rep(65)), 0, "a longer one is skipped")
+T.eq(#parse("button:x?tip"), 0, "no text after a button: name")
+
 -- Skipped, with one warning each, clean of control characters
-T.eq(kinds(parse("pause,bogus,command:x,command::cmd,command:x: ?t,button:hikari,time")), "pause,time",
+T.eq(kinds(parse("pause,bogus,command:x,command::cmd,command:x: ?t,button:a b,time")), "pause,time",
     "bad elements are skipped")
 T.eq(#warnings, 5, "one warning per skipped element")
 T.check(warnings[1]:find("'bogus'", 1, true) and warnings[1]:find("unknown", 1, true), "unknown element named")
 T.check(warnings[4]:find("empty command", 1, true) ~= nil, "empty command")
-T.check(warnings[5]:find("not supported yet", 1, true) ~= nil, "button: not yet")
+T.check(warnings[5]:find("use button:name", 1, true) ~= nil, "a bad button: name")
 parse("pause\27[31m,\7x,time")
 T.eq(#warnings, 2, "control characters in names")
 for _, w in ipairs(warnings) do

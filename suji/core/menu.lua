@@ -15,11 +15,17 @@
 -- and the module gets menu_closed(ctx) when its menu closes, whatever the
 -- reason (a choice, a click outside, Esc, another menu, its button gone).
 --
--- A menu, with the names of the open-menu message other scripts will send:
+-- Other scripts open menus too, with messages (core/messages.lua): those
+-- menus have no owner module. They come out of a button of the row and
+-- follow it, by its name in the controls option when the option changes
+-- (command: buttons are made again then); if it leaves the row, they move
+-- to the middle, above it.
+--
+-- A menu, with the names of the open-menu message (see docs/api.md):
 --   { type, title?, items, selected_index?, keep_open? }
 -- An item:
 --   { title, hint?, icon?, value?, active?, selectable?, muted?, italic?,
---     bold?, separator?, keep_open? }
+--     bold?, separator?, keep_open?, align? }
 -- value is the mpv command run on a choice: a list of strings goes to
 -- mp.commandv, a string to mp.command. An item with no value and
 -- selectable = false is a group header. Everything is checked and cut by
@@ -31,6 +37,9 @@
 -- example). M.clean keeps it only for a trusted caller, which ctx.open_menu
 -- is; a menu that comes from another script as JSON is cleaned untrusted,
 -- and JSON cannot hold a function anyway.
+--
+-- The type of the open menu, whoever opened it, is in the property
+-- user-data/suji/menu/type, which is deleted when it closes.
 --
 -- No timers: the fade in and out is the clock-based animation of
 -- core/animation.lua, painted while it runs, and the menu only repaints on
@@ -71,10 +80,13 @@ local BG_PAD = 6     -- the panel's room above and below the items
 M.MAX_ITEMS = 50000
 local MAX_TITLE, MAX_HINT, MAX_TYPE, MAX_ICON = 200, 64, 64, 32
 local MAX_ARGS, MAX_ARG = 64, 8192
+local ALIGN = { center = "center", right = "right" } -- left is the default
+local TYPE_PROP = "user-data/suji/menu/type"
 
-local cur          -- the menu on screen (see M.open), nil when none
+local cur          -- the menu on screen (see start), nil when none
 local tween = animation.new(0.15)
 local on_change    -- fn() when the bindings or the paint must be redone
+local published    -- the type in TYPE_PROP, nil when it is not set
 
 -- Cleaning -------------------------------------------------------------------
 
@@ -86,8 +98,10 @@ local function cut(s, n)
     return #s > 4 * n and s:sub(1, 4 * n) or s
 end
 
-local function clean_value(v)
-    if type(v) == "string" then return #v <= MAX_ARG and v or nil end
+-- A command for mp.command (a string) or mp.commandv (a list of strings),
+-- or nil when it is not one or is too long.
+function M.clean_value(v)
+    if type(v) == "string" then return v ~= "" and #v <= MAX_ARG and v or nil end
     if type(v) ~= "table" or #v == 0 or #v > MAX_ARGS then return nil end
     local out = {}
     for i = 1, #v do
@@ -102,12 +116,13 @@ local function clean_item(it, trusted)
         title = cut(it.title, MAX_TITLE) or "",
         hint = cut(it.hint, MAX_HINT),
         icon = type(it.icon) == "string" and #it.icon <= MAX_ICON and it.icon or nil,
-        value = clean_value(it.value),
+        value = M.clean_value(it.value),
         action = trusted and type(it.action) == "function" and it.action or nil,
-        active = it.active == true,
+        active = it.active == true or (type(it.active) == "number" and it.active ~= 0),
         selectable = it.selectable ~= false,
         muted = it.muted == true, italic = it.italic == true, bold = it.bold == true,
         separator = it.separator == true, keep_open = it.keep_open == true,
+        align = ALIGN[it.align],
     }
 end
 
@@ -127,16 +142,21 @@ local function estimate(m)
 end
 
 -- A menu as the service keeps it, or nil and the reason. trusted: the
--- caller is one of suji's modules, so items may carry an action.
-function M.clean(def, trusted)
+-- caller is one of suji's modules, so items may carry an action. A menu
+-- with no type has the type "". warn(text) gets the warnings (msg.warn
+-- when nil).
+function M.clean(def, trusted, warn)
     if type(def) ~= "table" then return nil, "not a table" end
-    if type(def.type) ~= "string" or def.type == "" or #def.type > MAX_TYPE then return nil, "bad type" end
-    local src = type(def.items) == "table" and def.items or {}
+    warn = warn or msg.warn
+    local mtype = def.type == nil and "" or def.type
+    if type(mtype) ~= "string" or #mtype > MAX_TYPE then return nil, "bad type" end
+    if def.items ~= nil and type(def.items) ~= "table" then return nil, "items is not a list" end
+    local src = def.items or {}
     local items, index = {}, {}
     local n = #src
     if n > M.MAX_ITEMS then
-        msg.warn(("menu %s: %d items, only the first %d are shown"):format(
-            draw.printable(def.type), n, M.MAX_ITEMS))
+        warn(("menu %s: %d items, only the first %d are shown"):format(
+            draw.printable(mtype), n, M.MAX_ITEMS))
         n = M.MAX_ITEMS
     end
     for i = 1, n do
@@ -147,7 +167,7 @@ function M.clean(def, trusted)
     end
     local title = cut(def.title, MAX_TITLE)
     title = title and draw.printable(text.prefix(title, MAX_TITLE))
-    local m = { type = def.type, title = title, items = items, keep_open = def.keep_open == true }
+    local m = { type = mtype, title = title, items = items, keep_open = def.keep_open == true }
     -- selected_index, else the first active item, else the first.
     local sel = tonumber(def.selected_index)
     m.selected = sel and index[math.floor(sel)]
@@ -163,15 +183,17 @@ end
 
 -- Where things go ------------------------------------------------------------
 
--- The menu's place for its anchor (the button's box) and the window now:
+-- The menu's place for its anchor (the button's box, or { center = true }:
+-- the middle of the window, above the row) and the window now:
 -- { x0, x1, y0 (top, title included), list_top, y1 (bottom), rows, row_h }.
 local function place(m, anchor)
     local s = state.scale
     local side = layout.SIDE * s
     local w = math.max(1, math.min(m.est * s, state.w - 2 * side))
     -- Aligned with the button; moved left when it would leave the window.
-    local x0 = math.max(side, math.min(anchor.x0, state.w - side - w))
-    local y1 = anchor.y0 - GAP * s
+    local x0 = anchor.center and (state.w - w) / 2 or math.max(side, math.min(anchor.x0, state.w - side - w))
+    local top = anchor.center and state.h - (layout.ROW_LIFT + layout.HEIGHT / 2) * s or anchor.y0
+    local y1 = top - GAP * s
     local row_h, title_h = ROW_H * s, m.title and TITLE_H * s or 0
     local fit = math.max(1, math.floor((y1 - TOP * s - title_h) / row_h))
     local rows = math.min(#m.items, fit)
@@ -229,8 +251,10 @@ local function bind_keys(on)
 end
 
 -- The owner hears that its menu closed. If it failed meanwhile it is
--- still told, protected, so it can stop the watches it started.
+-- still told, protected, so it can stop the watches it started. A menu
+-- from a message has no owner.
 local function tell_owner(owner)
+    if not owner then return end
     if modules.alive(owner) then
         modules.call(owner, "menu_closed")
     elseif type(owner.menu_closed) == "function" then
@@ -238,9 +262,18 @@ local function tell_owner(owner)
     end
 end
 
--- Close the open menu: it fades out, or goes at once when instant.
-function M.close(instant)
-    if not cur then return end
+-- Set or delete user-data/suji/menu/type when the open menu changed.
+-- Deleted by setting nil: mpv 0.40 deletes with del_property too, but
+-- then does not tell the observers.
+local function publish()
+    local t = M.is_open() and cur.def.type or nil
+    if t == published then return end
+    published = t
+    mp.set_property_native(TYPE_PROP, t)
+end
+
+-- The open menu starts closing: it fades out, or goes at once when instant.
+local function shut(instant)
     local m = cur
     if instant then cur = nil end
     if not m.closing then
@@ -249,7 +282,39 @@ function M.close(instant)
         animation.set_target(tween, 0, mp.get_time())
         tell_owner(m.owner)
     end
+end
+
+function M.close(instant)
+    if not cur then return end
+    shut(instant)
+    publish()
     changed()
+end
+
+local function copy(box) return { x0 = box.x0, y0 = box.y0, x1 = box.x1, y1 = box.y1 } end
+
+-- Put the clean menu m on screen for owner (nil: a message's), from
+-- anchor (see place), following the row's module follow when it moves.
+local function start(owner, m, follow, anchor)
+    if cur then shut(true) end -- one menu at a time
+    cur = { def = m, owner = owner, follow = follow, anchor = anchor, scroll = 0,
+            name = not owner and follow and modules.name_of(follow) or nil }
+    show(m.selected, geometry())
+    tween = animation.new(0.15)
+    animation.set_target(tween, 1, mp.get_time())
+    bind_keys(true)
+    publish()
+    changed()
+end
+
+-- The open menu shows m instead: at once, with the same scroll and cursor
+-- when they still fit.
+local function replace(m)
+    cur.def = m
+    if cur.cursor and not m.items[cur.cursor] then cur.cursor = nil end
+    clamp_scroll(geometry())
+    painter.request()
+    return true
 end
 
 -- Open def for owner from the button in box. Opening the menu that is
@@ -265,27 +330,49 @@ function M.open(owner, def, box)
         msg.warn("menu not opened: " .. why)
         return false
     end
-    if cur then M.close(true) end -- one menu at a time
-    cur = { def = m, owner = owner, anchor = { x0 = box.x0, y0 = box.y0, x1 = box.x1, y1 = box.y1 }, scroll = 0 }
-    show(m.selected, geometry())
-    tween = animation.new(0.15)
-    animation.set_target(tween, 1, mp.get_time())
-    bind_keys(true)
-    changed()
+    start(owner, m, owner, copy(box))
     return true
 end
 
--- New data for owner's open menu of the same type: shown at once, with the
--- same scroll and cursor when they still fit.
+-- New data for owner's open menu of the same type.
 function M.update(owner, def)
     if not M.is_open(owner) or type(def) ~= "table" or def.type ~= cur.def.type then return false end
     local m = M.clean(def, true)
-    if not m then return false end
-    cur.def = m
-    if cur.cursor and not m.items[cur.cursor] then cur.cursor = nil end
-    clamp_scroll(geometry())
-    painter.request()
+    return m ~= nil and replace(m)
+end
+
+-- The type of the open menu, or nil.
+function M.open_type() return M.is_open() and cur.def.type or nil end
+
+-- Messages (core/messages.lua): def is untrusted, warn(text) gets what is
+-- wrong with it.
+
+-- Open def from box, a box of the row (the menu follows its module), or
+-- centred above the row when box is nil. A menu of the same type opened
+-- by a message is replaced in place instead. True when it is on screen.
+function M.open_message(def, box, warn)
+    local m, why = M.clean(def, false, warn)
+    if not m then
+        warn("open-menu: " .. why)
+        return false
+    end
+    if M.is_open() and not cur.owner and m.type == cur.def.type then return replace(m) end
+    start(nil, m, box and box.mod, box and copy(box) or { center = true })
     return true
+end
+
+-- New data for the open menu of the same type, if a message opened it;
+-- else nothing happens (no menu opens, suji's own menus are left alone).
+function M.update_message(def, warn)
+    if not M.is_open() or cur.owner or type(def) ~= "table" or (def.type == nil and "" or def.type) ~= cur.def.type then
+        return false
+    end
+    local m, why = M.clean(def, false, warn)
+    if not m then
+        warn("update-menu: " .. why)
+        return false
+    end
+    return replace(m)
 end
 
 -- Item i of owner's open menu of type mtype becomes active (on) or not.
@@ -303,17 +390,29 @@ modules.bind("update_menu", M.update)
 modules.bind("close_menu", function(owner) if M.is_open(owner) then M.close() end end)
 modules.bind("menu_open", M.is_open)
 
--- The row was laid out again: the menu follows its button, and closes
--- when the button is gone (hidden, failed, or out of the controls option).
+-- The row was laid out again: the menu follows its button. When the
+-- button is gone (hidden, failed, or out of the controls option), a
+-- module's menu closes and a message's moves to the middle.
 function M.on_layout()
-    if not M.is_open() then return end
-    local box = layout.find(layout.current(), cur.owner)
-    if not box then return M.close() end
-    cur.anchor = { x0 = box.x0, y0 = box.y0, x1 = box.x1, y1 = box.y1 }
+    if not M.is_open() or not cur.follow then return end
+    local placed = layout.current()
+    local box = layout.find(placed, cur.follow) or cur.name and layout.named(placed, cur.name)
+    if box then
+        cur.follow, cur.anchor = box.mod, copy(box)
+    elseif cur.owner then
+        M.close()
+    else
+        cur.follow, cur.anchor = nil, { center = true }
+    end
 end
 
 modules.on_failure(function(mod)
-    if cur and cur.owner == mod then M.close() end
+    if not cur then return end
+    if cur.owner == mod then
+        M.close()
+    elseif cur.follow == mod then
+        cur.follow, cur.anchor = nil, { center = true }
+    end
 end)
 
 -- Choosing -----------------------------------------------------------------------
@@ -431,7 +530,7 @@ local function fitted(it, avail)
     local hint = it.hint and text.fit(it.hint, math.max(avail * 0.45, avail - title_w(it.title) - gap),
         function(t) return tw(t, HINT_SIZE) end)
     local used = hint and hint ~= "" and tw(hint, HINT_SIZE) + gap or 0
-    f = { avail = avail, font = state.font, hint = hint, title = text.fit(it.title, avail - used, title_w) }
+    f = { avail = avail, font = state.font, hint = hint, used = used, title = text.fit(it.title, avail - used, title_w) }
     it.fit = f
     return f
 end
@@ -463,7 +562,12 @@ local function draw_item(out, it, i, y0, g, p, s)
         x = x + (ICON + 8) * s
     end
     local f = fitted(it, g.x1 - PAD * s - x)
-    if f.title ~= "" then out[#out + 1] = draw.text(x, cy, 4, f.title, style(SIZE, op, it.bold, it.italic)) end
+    if f.title ~= "" then
+        -- Aligned in the room the hint leaves.
+        local right, an = g.x1 - PAD * s - f.used, 4
+        if it.align == "center" then x, an = (x + right) / 2, 5 elseif it.align == "right" then x, an = right, 6 end
+        out[#out + 1] = draw.text(x, cy, an, f.title, style(SIZE, op, it.bold, it.italic))
+    end
     if f.hint and f.hint ~= "" then
         out[#out + 1] = draw.text(g.x1 - PAD * s, cy, 6, f.hint, style(HINT_SIZE, 0.6 * op))
     end

@@ -81,6 +81,14 @@ function M.find(placed, mod)
     return first(placed, function(z) return z.mod == mod end)
 end
 
+-- The box of the row's element called name in the controls option
+-- ("more", "command:x", "button:name"; see modules.name_of), or nil.
+function M.named(placed, name)
+    for _, b in ipairs(placed.boxes) do
+        if modules.name_of(b.mod) == name then return b end
+    end
+end
+
 -- The timeline's zone: the whole width, along the bottom edge.
 function M.bar_zone()
     local tl = modules.timeline

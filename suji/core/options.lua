@@ -25,7 +25,8 @@ local DEFAULTS = {
     --   space        takes the free width: what follows goes to the right
     --   gap          a small fixed hole
     --   command:icon:command?text            a button that runs an mpv command
-    --   button:name  a button another script defines (not yet)
+    --   button:name  a button another script defines with set-button
+    --                (docs/api.md); no room until it exists
     -- Conditions go before an element, in <...>: video, audio, stream,
     -- has_chapter, has_playlist, idle, or any mpv property or user-data/...
     -- (true when it exists and is not false, no, 0 or empty). "," is OR,
