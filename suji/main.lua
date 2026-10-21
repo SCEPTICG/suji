@@ -22,7 +22,7 @@ require "core.messages"
 
 local watch, ctx, timeline = modules.watch, modules.ctx, modules.timeline
 
-local VERSION = "0.3.0" -- sent to every script at start, as suji-version
+local VERSION = "0.3.1" -- sent to every script at start, as suji-version
 local ENABLED = "user-data/suji/enabled" -- true while suji is on (docs/api.md)
 local VERSION_PROP = "user-data/suji/version" -- VERSION while suji is loaded
 local MIN_MAJOR, MIN_MINOR = 0, 39
