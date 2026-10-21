@@ -1,6 +1,6 @@
 # suji for script authors
 
-Other mpv scripts can open menus in suji and put their own buttons in its row, with script messages. This page lists what suji understands.
+Other mpv scripts can open menus in suji, put their own buttons in its row and show action buttons above it, with script messages. This page lists what suji understands.
 
 **The API is at 0.x and may still change.** The message and field names follow the ones uosc uses, so a script written for uosc needs few changes to work with suji too. That is the only link: suji is a separate project, written from scratch, and it understands a small part of what uosc does.
 
@@ -20,6 +20,8 @@ From Lua, `mp.commandv("script-message-to", "suji", ...)`.
 | `update-menu` | `<json>` | Replaces the open menu, if it has the same `type` and was opened with `open-menu`. Otherwise it does nothing: it never opens a menu, and it never touches suji's own menus. |
 | `close-menu` | `[type]` | Closes the open menu, any menu; with `type`, only if the open menu has that type. |
 | `set-button` | `<name> <json>` | Creates or changes a button (see [Buttons](#buttons)). |
+| `show-action` | `<id> <json>` | Shows an action button, or changes it (see [Action buttons](#action-buttons)). |
+| `hide-action` | `[id]` | Hides that action button; with no `id`, all of them. |
 | `set-title` | `<series> <episode>` | The title, see the README. |
 
 `open-menu` and `update-menu` differ in how the change looks: `open-menu` unfolds the menu from its button, `update-menu` swaps the items at once and keeps the scroll, so it suits a menu whose data changes while it is open. An `open-menu` with the type of a menu that a script opened and is still open works like `update-menu`.
@@ -126,6 +128,34 @@ A `button:` in `controls` takes no room until a script sets it, and conditions i
 
 The name is made of letters, digits, `_` and `-`, at most 64 of them. suji keeps at most 64 buttons; a `set-button` for a 65th name is ignored with a warning.
 
+## Action buttons
+
+A button with a text, above the row on the right, for as long as a script needs it: "Skip opening ›", "Next episode ›". suji draws it like its menus, and runs its command when it is clicked.
+
+```
+script-message-to suji show-action <id> <json>
+script-message-to suji hide-action [id]
+```
+
+```json
+{ "text": "Skip opening ›", "command": ["script-message-to", "myscript", "skip", "op"] }
+```
+
+| Field | Type | |
+| --- | --- | --- |
+| `text` | string | Required. One line of at most 64 bytes, cut between characters; control characters show as `?`. The arrow, if you want one, goes in the text. |
+| `command` | list or string | Run when the button is clicked, with the same rules as `value` in menus. |
+
+- **Where:** its bottom 12 px above `user-data/suji/margins.bottom`, its right edge at the right margin of the row. Several go in a line from right to left, in the order they were first shown. At most 4 are on screen at a time; the others wait until one of those is hidden.
+- **Always on screen**, also while the controls are hidden: a skip should not need a mouse move first.
+- **Not while a menu is open.** The buttons fade out and come back when the menu closes.
+- **A click** runs the command. The button stays: hide it with `hide-action` once the action is done, since only your script knows when that is.
+- **A new file** removes them all, as with menus opened by `open-menu`.
+- **While suji is turned off** (`enabled=no`), `show-action` does nothing, and turning suji off removes the buttons it had.
+- **The mouse:** suji only takes the clicks that land on a button on screen.
+
+Each `show-action` replaces all the fields of that button: send all of them each time. A `show-action` that changes nothing does not redraw anything. The id follows the rules of a `set-button` name: letters, digits, `_` and `-`, at most 64 of them. suji keeps at most 16 action buttons; a `show-action` for a 17th id is ignored with a warning, and so is one without a text.
+
 ## Knowing when a menu is open
 
 suji publishes the type of the open menu, any menu, in the property `user-data/suji/menu/type`, and deletes it when the menu closes, whatever closes it: a choice, Esc, a click outside, `close-menu`, turning suji off. When another menu takes its place, the property takes the new type, without being deleted in between. On a choice, the item's `value` runs first, and then the menu closes and the property is deleted.
@@ -148,7 +178,7 @@ For a script that draws its own things near the bottom of the window, suji publi
 
 `bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the row of controls (to the top of the timeline's strip, 24 px at scale 1, when the row is empty). It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale or the row (the `controls` option, a button that appears or goes), and it is deleted while suji is turned off.
 
-suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen. Above `bottom`, clicks are left to mpv and to other scripts, with one exception: while a menu of suji is open, any menu, a click anywhere in the window is suji's. On the menu it chooses; anywhere else it only closes the menu, and nothing else gets it. Right after a click on a menu, suji also keeps the second click of a double click, for mpv's double-click time or until the mouse moves away.
+suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen, and on the [action buttons](#action-buttons). Elsewhere above `bottom`, clicks are left to mpv and to other scripts, with one exception: while a menu of suji is open, any menu, a click anywhere in the window is suji's. On the menu it chooses; anywhere else it only closes the menu, and nothing else gets it. Right after a click on a menu, suji also keeps the second click of a double click, for mpv's double-click time or until the mouse moves away.
 
 ## Knowing that suji is there
 
@@ -179,10 +209,10 @@ They are suji's own drawings, thin lines on a 24 px grid; some names are the one
 Any script, and any program connected to mpv's IPC, can send these messages, so suji checks everything it gets:
 
 - A JSON text over 1 MiB is not read.
-- Broken JSON, JSON that is not an object (a list, a string...), a `type` that is not a string or is too long and `items` that is not a list are ignored with one warning in the mpv console. Other fields of the wrong type are left out silently (see [The menu](#the-menu)).
+- Broken JSON, JSON that is not an object (a list, a string...), a `type` that is not a string or is too long, `items` that is not a list and an action button without a `text` are ignored with one warning in the mpv console. Other fields of the wrong type are left out silently (see [The menu](#the-menu)).
 - An item never carries a function: only `value` runs anything.
 - Warnings are limited to 20 every 10 seconds, so a script that sends messages without stopping does not fill the log.
-- Scripts are not kept apart from each other: any of them can replace, update or close a menu another one opened, or change its button, by using the same `type` or button name.
+- Scripts are not kept apart from each other: any of them can replace, update or close a menu another one opened, or change its button or action button, by using the same `type`, name or id.
 
 ## Examples
 
@@ -236,3 +266,34 @@ mp.register_script_message("suji-version", button)
 ```
 
 The menu comes out of that button, because it opens right after the click.
+
+An action button while the opening plays, with a button of the script's own when suji is not there or is turned off:
+
+```lua
+local utils = require "mp.utils"
+local me = mp.get_script_name()
+
+local function skip() mp.commandv("seek", "90") end -- to the end of the opening
+mp.register_script_message("skip", skip)
+
+local function own_button(on)
+    -- The script's own drawing, for when suji is not there or is turned off.
+end
+
+-- Called when the opening starts (on = true) and when it ends.
+local function skip_button(on)
+    local suji = mp.get_property_native("user-data/suji/enabled") == true
+    if on and suji then
+        mp.commandv("script-message-to", "suji", "show-action", "skip-op", utils.format_json({
+            text = "Skip opening ›",
+            command = { "script-message-to", me, "skip" },
+        }))
+    else
+        -- Harmless without suji: the message reaches no one.
+        mp.commandv("script-message-to", "suji", "hide-action", "skip-op")
+    end
+    own_button(on and not suji)
+end
+```
+
+`skip` runs on a click, and suji keeps the button until the script hides it, so once the seek has left the opening behind, the same code that ends the opening calls `skip_button(false)`. A new file removes the button anyway. If suji is turned off while the button is up, it goes; a script that wants to draw its own then can watch `user-data/suji/enabled`.
