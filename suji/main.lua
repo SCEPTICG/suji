@@ -235,11 +235,13 @@ opts.on_update(function(changed)
 end)
 
 state.remaining = opts.remaining_time
--- While the script loads: mpv plays nothing until every script has, so a
--- script loaded before suji already sees it on its first file-loaded.
-mp.set_property_native(ENABLED, opts.enabled)
 if opts.enabled then set_enabled(true) end
 rescale("start")
+
+-- Last, so a start that failed leaves no true behind. Still while the
+-- script loads: mpv plays nothing until every script has, so a script
+-- loaded before suji already sees it on its first file-loaded.
+mp.set_property_native(ENABLED, opts.enabled)
 
 -- Tell the scripts already running that suji is here (see docs/api.md).
 mp.commandv("script-message", "suji-version", VERSION)

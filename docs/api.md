@@ -156,7 +156,7 @@ suji only takes clicks where it draws: on the row and on the timeline's strip, w
 - At any time, a message to suji tells: `mp.commandv("script-message-to", "suji", ...)` returns `nil` (and the error `"error running command"`) when no script called `suji` is loaded, and `true` when the message was delivered. mpv logs nothing in that case. suji ignores messages it does not know, without a word in the log, so a probe like `script-message-to suji hello` is harmless.
 - `user-data/suji/enabled` is `true` while suji is on and `false` while it is turned off (`enabled=no`); it is deleted when mpv quits. suji sets it as it loads, and mpv plays nothing until every script has loaded, so it is already there on the first `file-loaded`, also for a script loaded before suji.
 
-A message reaching suji does not mean that a menu opened: while suji is turned off, `open-menu` is delivered (`script-message-to` returns `true`) and does nothing. So check the property before sending `open-menu`, and keep a fallback of your own (mpv's `mp.input.select`, for example) for when it is not `true`:
+A message reaching suji does not mean that a menu opened: while suji is turned off, `open-menu` is delivered (`script-message-to` returns `true`) and does nothing. So check the property before sending `open-menu`, and keep a fallback of your own for when it is not `true`, for example mpv's selector (mpv 0.39 or newer): `local input = require "mp.input"` and then `input.select{...}`; `mp.input` is a module to require, not a field of `mp`, so `mp.input.select(...)` would fail:
 
 ```lua
 if mp.get_property_native("user-data/suji/enabled") == true then
