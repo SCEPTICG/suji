@@ -75,7 +75,7 @@ local function row_y(k, n) return 646 - n * 30 + (k - 0.5) * 30 end
 start()
 local announced = false
 for _, c in ipairs(mp.commands) do
-    if cmd(c) == "script-message suji-version 0.2.1" then announced = true end
+    if cmd(c) == "script-message suji-version 0.3.0" then announced = true end
 end
 T.check(announced, "suji-version sent to every script at start")
 T.eq(warnings(), 0, "a start with button:mine and no such button yet: no warning")
