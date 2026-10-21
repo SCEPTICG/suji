@@ -49,8 +49,8 @@ Above the controls suji shows the title: mpv's `media-title`, or the file name w
 Each menu opens upwards from its button. A button with nothing to offer is hidden.
 
 - **Subtitles:** Off, the subtitle tracks and *Load from clipboard* (a path or URL in the clipboard, mpv 0.40 or newer). Shown whenever a file is loaded.
-- **Audio:** the audio tracks and, below them, the audio devices. Shown when there is more than one track or more than one device.
-- **Playlist:** the chapters, then the playlist. Shown when the file has chapters or the playlist has more than one entry.
+- **Audio:** the audio tracks. Shown when there is more than one.
+- **Playlist:** the chapters, then the playlist. The playlist lists video and audio files and URLs, and the file playing; folders and files with no extension are left out. Shown when the file has chapters or the playlist has more than one entry to list.
 - **Speed:** the playback speeds from 0.25× to 4×. Away from 1×, the button shows the speed in its corner. Shown whenever a file is loaded.
 - **More:** the video track and the editions when there is a choice (a new edition restarts playback), and *Open from clipboard* (mpv 0.40 or newer). Hidden when it has none of them.
 

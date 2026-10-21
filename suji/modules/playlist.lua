@@ -1,13 +1,15 @@
 -- Playlist and chapters: the chapters on top and the playlist under them,
--- each with a header; with only one of the two, no headers. Shown when the
--- file has chapters or the playlist has more than one entry.
+-- each with a header; with only one of the two, no headers. The playlist
+-- lists only video, audio and URLs (mpv puts every entry of a folder in it,
+-- subfolders too), and the current entry whatever it is. Shown when the
+-- file has chapters or the playlist has more than one entry to list.
 
 local base = require "modules.menu_button"
 local time = require "modules.time"
 
 local TYPE = "suji-playlist"
 
-local chapters, count = 0, 0 -- the chapters property and playlist-count
+local chapters, count = 0, 0 -- the chapters property, and entries listed (up to 2)
 -- In the menu last built: the item of each chapter (by index from 0), and
 -- the chapter marked. A new chapter only moves the mark.
 local where, marked = {}, nil
@@ -27,6 +29,30 @@ local function file_name(s)
     return last ~= "" and last or s
 end
 
+-- Whether path is something to play: a URL (with a scheme, ://), or a
+-- file with a video or audio extension, in any case (.mkv, .MKV, .flac).
+-- Folders and files with no extension are not.
+local function is_media(path)
+    -- TODO(SCEPTICG): write the check described above.
+    return true
+end
+
+-- Whether the menu lists entry e: media, or the current one.
+local function listed(e)
+    return type(e) == "table" and (e.current == true or type(e.filename) == "string" and is_media(e.filename))
+end
+
+-- How many entries of list the menu lists, up to 2: the button only needs
+-- to know if there are two. At most base.MAX_ITEMS entries are looked at.
+local function count_listed(list)
+    local n = 0
+    for i, e in ipairs(type(list) == "table" and list or {}) do
+        if n >= 2 or i > base.MAX_ITEMS then break end
+        if listed(e) then n = n + 1 end
+    end
+    return n
+end
+
 local function chapter_items(list, items)
     local current = mp.get_property_number("chapter")
     local long = (mp.get_property_number("duration") or 0) >= 3600
@@ -42,15 +68,19 @@ local function chapter_items(list, items)
     end
 end
 
-local function playlist_items(list, items)
+-- The entries listed, with mpv's index of each; the first base.MAX_ITEMS
+-- entries are looked at.
+local function playlist_items(list)
+    local out = {}
     for i, e in ipairs(list) do
-        if #items >= base.MAX_ITEMS then break end
-        if type(e) == "table" then
+        if i > base.MAX_ITEMS then break end
+        if listed(e) then
             local title = type(e.title) == "string" and e.title ~= "" and e.title or file_name(e.filename)
-            items[#items + 1] = { title = title, value = { "playlist-play-index", ("%d"):format(i - 1) },
-                                  active = e.current == true }
+            out[#out + 1] = { title = title, value = { "playlist-play-index", ("%d"):format(i - 1) },
+                              active = e.current == true }
         end
     end
+    return out
 end
 
 local M = base.new({
@@ -73,7 +103,7 @@ local M = base.new({
             if (chapters > 0 or count > 1) ~= before then ctx.relayout() end
         end
         ctx.watch("chapters", "native", function(v) update(tonumber(v) or 0, nil) end)
-        ctx.watch("playlist-count", "native", function(v) update(nil, tonumber(v) or 0) end)
+        ctx.watch("playlist", "native", function(v) update(nil, count_listed(v)) end)
     end,
 
     available = function() return chapters > 0 or count > 1 end,
@@ -82,7 +112,8 @@ local M = base.new({
         local ch = mp.get_property_native("chapter-list")
         local pl = mp.get_property_native("playlist")
         ch = type(ch) == "table" and ch or {}
-        pl = type(pl) == "table" and #pl > 1 and pl or {}
+        pl = playlist_items(type(pl) == "table" and pl or {})
+        if #pl < 2 then pl = {} end
         local both, items = #ch > 0 and #pl > 0, {}
         if both then items[1] = base.header("Chapters") end
         chapter_items(ch, items)
@@ -90,7 +121,10 @@ local M = base.new({
             items[#items].separator = true
             items[#items + 1] = base.header("Playlist")
         end
-        playlist_items(pl, items)
+        for _, it in ipairs(pl) do
+            if #items >= base.MAX_ITEMS then break end
+            items[#items + 1] = it
+        end
         return { type = TYPE, items = items }
     end,
 })

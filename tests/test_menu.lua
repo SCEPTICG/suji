@@ -26,7 +26,7 @@ local function start(props, script_opts)
     mp.fire("pause", true)
     mp.fire("time-pos", 50)
     mp.fire("volume", 100)
-    for _, p in ipairs({ "track-list", "audio-device-list", "chapters", "playlist-count", "idle-active" }) do
+    for _, p in ipairs({ "track-list", "chapters", "playlist", "idle-active" }) do
         if props[p] ~= nil then mp.fire(p, props[p]) end
     end
     mp.mouse(640, 300)
@@ -112,7 +112,7 @@ local SUBS = {
 -- Subtitles: the list, the marks and the exact commands ------------------------
 start({ ["track-list"] = SUBS })
 T.check(box_of("subtitles") ~= nil and box_of("more") ~= nil, "subtitles and more in the default row")
-T.eq(box_of("audio"), nil, "one audio track, no devices: no audio button")
+T.eq(box_of("audio"), nil, "one audio track: no audio button")
 T.eq(box_of("playlist"), nil, "no chapters, one entry: no playlist button")
 T.eq(box_of("volume").x0, 1100, "the volume stays where it was")
 T.eq(open("subtitles"), "", "opening sends no command")
@@ -542,32 +542,28 @@ T.check(not menu().is_open(), "disabled: closed")
 T.eq(suji_bindings(), "", "no bindings")
 
 -- Audio --------------------------------------------------------------------------------------------------
-local DEVICES = { { name = "auto", description = "Autoselect device" }, { name = "alsa", description = "Default (alsa)" },
-                  { name = "pulse/x", description = "Speakers \27[31m{\\pos(0,0)}\n" .. ("\226\128\174"):rep(3) } }
-start({ ["track-list"] = SUBS, ["audio-device-list"] = { DEVICES[1], DEVICES[2] } })
-T.eq(box_of("audio"), nil, "one track and one device: no audio button")
-mp.fire("audio-device-list", DEVICES)
-T.check(box_of("audio") ~= nil, "two devices: shown at once")
-mp.props["audio-device-list"], mp.props["audio-device"] = DEVICES, "auto"
-local two = { SUBS[1], SUBS[2], { type = "audio", id = 2, title = "Commentary", lang = "eng" } }
+start({ ["track-list"] = SUBS })
+T.eq(box_of("audio"), nil, "one track: no audio button")
+local two = { SUBS[1], SUBS[2], { type = "audio", id = 2, title = "Commentary", lang = "eng" },
+              { type = "audio", id = 3, title = "Speakers \27[31m{\\pos(0,0)}\n" .. ("\226\128\174"):rep(3) } }
 mp.props["track-list"] = two
-mp.fire("audio-device-list", { DEVICES[1] })
 mp.fire("track-list", two)
-T.check(box_of("audio") ~= nil, "two tracks: shown")
+T.check(box_of("audio") ~= nil, "more than one track: shown at once")
 open("audio")
 p = painted()
 T.check(p:find("}jpn", 1, true) and p:find("}Commentary", 1, true), "the tracks")
-T.check(p:find("}Devices", 1, true) and p:find("}Auto", 1, true) and p:find("}Default (alsa)", 1, true), "header and devices")
-T.check(not p:find("\27", 1, true) and not p:find("{\\pos(0,0)}", 1, true), "a strange description is made harmless")
+T.check(not p:find("}Devices", 1, true) and not p:find("}Auto", 1, true), "no devices")
+T.check(not p:find("\27", 1, true) and not p:find("{\\pos(0,0)}", 1, true), "a strange title is made harmless")
 T.check(p:find("}Speakers ?[31m\\{\\\226\128\139pos(0,0)\\}?", 1, true) ~= nil, "control characters and braces shown as text")
-T.eq(#marks(p), 2, "the active track and Auto are marked")
-T.eq(click(row("audio", 2, 6)), "set aid 2", "a track")
-open("audio")
-T.eq(click(row("audio", 6, 6)), "set audio-device pulse/x", "a device by its name")
+T.eq(#marks(p), 1, "the active track is marked")
+T.eq(click(row("audio", 2, 3)), "set aid 2", "a track")
+T.eq(mp.observed["audio-device-list"], nil, "the devices are not watched")
+mp.fire("track-list", SUBS)
+T.eq(box_of("audio"), nil, "back to one track: hidden")
 
 -- Playlist and chapters ------------------------------------------------------------------------------------
 local CHAPTERS = { { time = 0, title = "Opening" }, { time = 20 }, { time = 70.5, title = "End" } }
-start({ chapters = 3, ["playlist-count"] = 1 })
+start({ chapters = 3 })
 T.check(box_of("playlist") ~= nil, "chapters: shown")
 mp.props["chapter-list"], mp.props.chapter = CHAPTERS, 1
 mp.props.playlist = { { filename = "a.mkv", current = true } }
@@ -582,8 +578,8 @@ mp.fire("chapters", 0)
 T.eq(box_of("playlist"), nil, "no chapters, one entry: hidden")
 mp.props.playlist = { { filename = "/a/b/One.mkv" }, { filename = "C:\\videos\\Two.mkv", title = "" },
                       { filename = "https://example.com/watch/Three.mp4?t=10&x=1#frag", current = true },
-                      { filename = "https://example.com?x=1" }, { filename = "x", title = "Titled" } }
-mp.fire("playlist-count", 5)
+                      { filename = "https://example.com?x=1" }, { filename = "x.mp3", title = "Titled" } }
+mp.fire("playlist", mp.props.playlist)
 T.check(box_of("playlist") ~= nil, "five entries: shown")
 open("playlist")
 p = painted()
@@ -603,11 +599,60 @@ T.eq(click(row("playlist", 4, 10)), "set chapter 2", "the chapters on top")
 T.eq(mod("playlist").file_name(("a/"):rep(300000) .. "end.mkv"), "end.mkv", "a huge path is cheap")
 T.eq(mod("playlist").file_name("https://h/" .. ("x"):rep(100) .. "?" .. ("q"):rep(1000000)), ("x"):rep(100), "a huge query")
 
+-- Playlist: only what can be played. mpv puts every entry of a folder in it, subfolders too.
+local MIXED = { { filename = "C:\\Users\\u\\AppData" }, { filename = "C:\\Users\\u\\a.mkv" }, { filename = "/home/u/Desktop" },
+                { filename = "/home/u/B.MKV" }, { filename = "/home/u/song.flac" }, { filename = "/home/u/README" },
+                { filename = "https://example.com/live" } }
+start({ playlist = MIXED })
+T.check(box_of("playlist") ~= nil, "four entries to list: shown")
+open("playlist")
+p = painted()
+T.check(p:find("}a.mkv", 1, true) and p:find("}B.MKV", 1, true) and p:find("}song.flac", 1, true) and p:find("}live", 1, true),
+    "video, audio in any case, and the URL")
+T.check(not p:find("}AppData", 1, true) and not p:find("}Desktop", 1, true), "no folders")
+T.check(not p:find("}README", 1, true), "no file without an extension")
+T.eq(click(row("playlist", 2, 4)), "playlist-play-index 3", "mpv's index of the entry, not its row")
+open("playlist")
+T.eq(click(row("playlist", 4, 4)), "playlist-play-index 6", "the URL, the last one")
+
+local FOLDERS = { { filename = "/home/u/a.mkv", current = true }, { filename = "/home/u/Desktop" }, { filename = "/home/u/Music" } }
+start({ playlist = FOLDERS, chapters = 3 })
+mp.props["chapter-list"], mp.props.chapter = CHAPTERS, 0
+open("playlist")
+p = painted()
+T.check(not p:find("}Chapters", 1, true) and not p:find("}Playlist", 1, true), "one entry to list: no headers")
+T.check(not p:find("}a.mkv", 1, true) and not p:find("}Desktop", 1, true), "and only the chapters")
+menu().close(true)
+mp.fire("chapters", 0)
+T.eq(box_of("playlist"), nil, "no chapters and one entry to list: no button, with three in the playlist")
+local two_files = { FOLDERS[1], FOLDERS[2], { filename = "/home/u/b.mp4" } }
+mp.props.playlist = two_files
+mp.fire("playlist", two_files)
+T.check(box_of("playlist") ~= nil, "a second file: shown at once")
+mp.props.playlist = FOLDERS
+mp.fire("playlist", FOLDERS)
+T.eq(box_of("playlist"), nil, "only folders again: hidden")
+
+local ON_FOLDER = { { filename = "/home/u/Desktop", current = true }, { filename = "/home/u/a.mkv" }, { filename = "/home/u/Music" } }
+start({ playlist = ON_FOLDER })
+T.check(box_of("playlist") ~= nil, "the current entry and a file: shown")
+open("playlist")
+p = painted()
+T.check(p:find("}Desktop", 1, true) and p:find("}a.mkv", 1, true), "the current entry is listed, even a folder")
+T.check(not p:find("}Music", 1, true), "the other folders are not")
+T.eq(#marks(p), 1, "and it is marked")
+T.eq(click(row("playlist", 2, 2)), "playlist-play-index 1", "the file after it")
+
+local deep = {}
+for i = 1, 60000 do deep[i] = { filename = "/home/u/folder " .. i } end
+deep[60001], deep[60002] = { filename = "/home/u/a.mkv" }, { filename = "/home/u/b.mkv" }
+start({ playlist = deep })
+T.eq(box_of("playlist"), nil, "files past the first 50 000 entries are not looked for")
+
 -- Playlist: 30 000 entries, opened on the current one, and an update keeps the scroll
 local big = {}
 for i = 1, 30000 do big[i] = { filename = ("/v/Episode %d.mkv"):format(i), current = i == 25000 } end
-start({ ["playlist-count"] = 30000 })
-mp.props.playlist = big
+start({ playlist = big })
 local reads = 0
 local get_native = mp.get_property_native
 mp.get_property_native = function(name, def)
@@ -631,12 +676,12 @@ mp.fire("playlist", big)
 mp.advance(0.1)
 T.eq(painted():match("}(Episode %d+)%.mkv"), before_scroll, "an update keeps the scroll")
 T.check(painted():find("}Renamed.mkv", 1, true) ~= nil, "with the new data")
-T.eq(mp.live("playlist"), 1, "the playlist is watched while open")
+T.eq(mp.live("playlist"), 2, "the playlist is watched for the menu while open")
 menu().close(true)
-T.eq(mp.live("playlist"), 0, "and not after")
+T.eq(mp.live("playlist"), 1, "and after, only for the button")
 
 -- Chapters and 30 000 entries: a new chapter moves the mark, nothing more
-start({ ["playlist-count"] = 30000, chapters = 3 })
+start({ playlist = big, chapters = 3 })
 mp.props.playlist, mp.props["chapter-list"], mp.props.chapter = big, { { time = 0 }, { time = 30 }, { time = 60 } }, 0
 reads = 0
 get_native = mp.get_property_native
@@ -823,7 +868,7 @@ T.check(not menu().is_open(), "its button left the row: the menu closes")
 -- Only one observer per property, and none of the live ones at rest ---------------------------------------
 start({ ["track-list"] = SUBS })
 for prop, n in pairs(mp.observed) do T.eq(n, 1, "one observer for " .. prop) end
-T.eq(mp.live("playlist"), 0, "the playlist is not watched at rest")
+T.eq(mp.live("playlist"), 1, "the playlist at rest: only the button's, for what it lists")
 T.eq(mp.live("chapter-list"), 1, "chapter-list: the timeline's only")
 T.eq(mp.live("speed"), 1, "the speed: only the speed button's, for its corner")
 
