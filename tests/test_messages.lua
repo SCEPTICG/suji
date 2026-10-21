@@ -455,6 +455,25 @@ T.eq(mp.props[MARGINS], nil, "enabled=no: deleted")
 mp.set_opts({ enabled = true })
 T.eq(mp.props[MARGINS] and mp.props[MARGINS].bottom, 93, "back")
 
+-- user-data/suji/enabled ------------------------------------------------------
+start()
+local ENABLED = "user-data/suji/enabled"
+T.eq(mp.props[ENABLED], true, "true from the start")
+mp.set_opts({ enabled = false })
+T.eq(mp.props[ENABLED], false, "enabled=no: false")
+mp.set_opts({ enabled = true })
+T.eq(mp.props[ENABLED], true, "on again: true")
+mp.writes = {}
+mp.emit("shutdown")
+local deleted = false
+for _, w in ipairs(mp.writes) do if w[1] == ENABLED and w[2] == nil then deleted = true end end
+T.check(deleted and mp.props[ENABLED] == nil, "deleted on shutdown, by writing nil")
+T.unload()
+mp = T.fake_mp({ ["mpv-version"] = "mpv v0.40.0" })
+mp.script_opts = { enabled = false }
+dofile("suji/main.lua")
+T.eq(mp.props[ENABLED], false, "started with enabled=no: false")
+
 -- user-data/suji/menu/type goes with every way a menu closes --------------------
 start()
 local function opened(t) open({ type = t, items = items(3) }); return mp.props[TYPE] == t end

@@ -20,6 +20,12 @@ local NAME = mp.get_script_name()
 local started, done = false, false
 local version, picked, clicked
 local types = {} -- every value of user-data/suji/menu/type, in order
+-- user-data/suji/enabled when this script loads (before suji) and on the
+-- first file-loaded, when suji must have set it.
+local at_load, at_file = tostring(mp.get_property_native("user-data/suji/enabled")), nil
+mp.register_event("file-loaded", function()
+    if at_file == nil then at_file = tostring(mp.get_property_native("user-data/suji/enabled")) end
+end)
 
 local function finish(ok, text)
     if done then return end
@@ -82,10 +88,11 @@ after(0.4, function()
     local probe = mp.commandv("script-message-to", "suji", "hikari-probe")
     local margins = mp.get_property_native("user-data/suji/margins")
     local bottom = type(margins) == "table" and margins.bottom
-    finish(version == "0.2.0" and missing == nil and probe == true and bottom == 62,
+    finish(version == "0.2.0" and missing == nil and probe == true and bottom == 62 and at_file == "true",
         ("suji-version %s, picked %s, types %s, button clicked, a message to no script gives %s, to suji %s,"
-            .. " margins.bottom %s"):format(tostring(version), picked, table.concat(types, ","), tostring(missing),
-            tostring(probe), tostring(bottom)))
+            .. " margins.bottom %s, enabled %s at load and %s on the first file-loaded"):format(tostring(version),
+            picked, table.concat(types, ","), tostring(missing), tostring(probe), tostring(bottom), at_load,
+            tostring(at_file)))
 end)
 
 mp.observe_property("osd-dimensions", "native", function(_, d)

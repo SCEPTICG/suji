@@ -21,6 +21,7 @@ require "core.messages"
 local watch, ctx, timeline = modules.watch, modules.ctx, modules.timeline
 
 local VERSION = "0.2.0" -- sent to every script at start, as suji-version
+local ENABLED = "user-data/suji/enabled" -- true while suji is on (docs/api.md)
 local MIN_MAJOR, MIN_MINOR = 0, 39
 local MAX_TITLE = 200 -- characters kept from a title (at most 4 bytes each)
 
@@ -197,7 +198,10 @@ mp.register_event("file-loaded", function()
     modules.revive(timeline)
     drop_drag()
 end)
-mp.register_event("shutdown", mouse.shutdown)
+mp.register_event("shutdown", function()
+    mouse.shutdown()
+    mp.set_property_native(ENABLED, nil) -- nil: observers hear it too
+end)
 
 -- One interface at a time: osc=no at run time unloads mpv's OSC. It is
 -- turned back on when disabled only if suji turned it off.
@@ -221,13 +225,19 @@ end
 -- Options changed at run time; the rest is read where it is used.
 opts.on_update(function(changed)
     if changed.remaining_time then state.remaining = opts.remaining_time end
-    if changed.enabled then set_enabled(opts.enabled) end
+    if changed.enabled then
+        mp.set_property_native(ENABLED, opts.enabled)
+        set_enabled(opts.enabled)
+    end
     if changed.hide_delay then mouse.rearm() end
     if changed.controls then modules.set_controls(opts.controls) end
     rescale(changed.scale and "options" or nil) -- lays out and paints
 end)
 
 state.remaining = opts.remaining_time
+-- While the script loads: mpv plays nothing until every script has, so a
+-- script loaded before suji already sees it on its first file-loaded.
+mp.set_property_native(ENABLED, opts.enabled)
 if opts.enabled then set_enabled(true) end
 rescale("start")
 
