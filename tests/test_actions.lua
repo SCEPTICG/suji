@@ -7,11 +7,11 @@ local W, H = 1280, 720
 -- The row's top is at 658 (margins.bottom 62): buttons from 610 to 646.
 local CY, RIGHT = 628, 1260
 
-local function start()
+local function start(controls)
     T.unload()
     mp = T.fake_mp({ ["mpv-version"] = "mpv v0.40.0", ["osd-dimensions"] = { w = W, h = H }, duration = 100,
                      pause = false, ["time-pos"] = 50 })
-    mp.script_opts = { controls = "pause,time,space,volume,fullscreen" }
+    mp.script_opts = { controls = controls or "pause,time,space,volume,fullscreen" }
     dofile("suji/main.lua")
     mp.fire("osd-dimensions", { w = W, h = H })
     mp.fire("display-hidpi-scale", nil)
@@ -120,6 +120,39 @@ T.eq(warnings(), 0, "a button with no command is fine")
 T.check(has("No command"), "and drawn")
 send("hide-action")
 T.eq(click(RIGHT - 10, CY), "", "a hidden button takes no clicks")
+
+-- The second click of a double click runs nothing, also when the first
+-- one was on a menu over the button, or the button changed in between.
+local function double(between)
+    mp.commands = {}
+    mp.button("press")
+    between()
+    mp.button("press")
+    local t = {}
+    for i, c in ipairs(mp.commands) do t[i] = table.concat(c, " ") end
+    return table.concat(t, " | ")
+end
+start("pause,time,space,volume,speed")
+show("skip", "Skip opening ›", "SKIP")
+local four = {}
+for i = 1, 4 do four[i] = { title = "Speed " .. i, value = { "set", "speed", tostring(i) } } end
+send("open-menu", T.json({ type = "m", items = four }), "speed")
+T.check(menu().is_open(), "a menu opens from speed")
+mp.mouse(RIGHT - 20, CY + 3) -- its last row, over the button
+T.eq(double(function() end), "set speed 4", "a double click on a menu row over the button: only the menu's choice")
+mp.advance(1)
+T.eq(click(RIGHT - 20, CY + 3), "SKIP", "then a click on the button runs it")
+mp.advance(1)
+T.eq(double(function()
+    mp.send("hide-action", "skip")
+    mp.send("show-action", "skip", T.json({ text = "Skip opening ›", command = "AGAIN" }))
+end), "SKIP", "hidden and shown again in between, same id: one command")
+mp.advance(1)
+T.eq(double(function()
+    mp.send("hide-action", "skip")
+    mp.send("show-action", "other", T.json({ text = "Skip opening ›", command = "OTHER" }))
+end), "AGAIN", "hidden and another shown in its place in between: one command")
+mp.advance(1)
 
 -- Several at once ---------------------------------------------------------------
 start()
