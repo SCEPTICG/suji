@@ -4,7 +4,7 @@ A minimal on-screen controller for [mpv](https://mpv.io), written from scratch i
 
 *suji* (筋) is Japanese for "line" or "stripe": while you watch, all you see is a thin progress line along the bottom edge. Move the mouse closer and it grows into a full seek bar with the controls you need, then fades away again.
 
-> **Status:** v0.2.0. It can be installed by hand; there are no packages yet.
+> **Status:** v0.2.1. It can be installed by hand; there are no packages yet.
 
 ## Installation
 

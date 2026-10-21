@@ -20,7 +20,7 @@ require "core.messages"
 
 local watch, ctx, timeline = modules.watch, modules.ctx, modules.timeline
 
-local VERSION = "0.2.0" -- sent to every script at start, as suji-version
+local VERSION = "0.2.1" -- sent to every script at start, as suji-version
 local ENABLED = "user-data/suji/enabled" -- true while suji is on (docs/api.md)
 local MIN_MAJOR, MIN_MINOR = 0, 39
 local MAX_TITLE = 200 -- characters kept from a title (at most 4 bytes each)
