@@ -1,4 +1,4 @@
--- The menu service and the four menus, through main.lua and a fake mp.
+-- The menu service and the five menus, through main.lua and a fake mp.
 local T = require "lib"
 
 local W, H = 1280, 720
@@ -13,6 +13,9 @@ local function start(props, script_opts)
     props["time-pos"], props.volume = 50, 100
     -- Two editions, so more has something to offer and is in the row.
     if props["edition-list"] == nil then props["edition-list"] = { { id = 0 }, { id = 1 } } end
+    if props["edition-list/count"] == nil then
+        props["edition-list/count"] = type(props["edition-list"]) == "table" and #props["edition-list"] or 0
+    end
     mp = T.fake_mp(props)
     mp.async_observe = true -- first values arrive later, as in mpv
     mp.script_opts = script_opts
@@ -681,10 +684,10 @@ local two = { { type = "video", id = 1 }, { type = "video", id = 2 } }
 mp.props["track-list"] = two
 mp.fire("track-list", two)
 T.check(box_of("more") ~= nil, "a second video track: more appears")
-mp.fire("edition-list", { { id = 0 }, { id = 1 } })
+mp.fire("edition-list/count", 2)
 mp.fire("track-list", { { type = "video", id = 1 } })
 T.check(box_of("more") ~= nil, "two editions: it stays")
-mp.fire("edition-list", {})
+mp.fire("edition-list/count", 0)
 T.eq(box_of("more"), nil, "neither: it goes")
 
 -- Speed ---------------------------------------------------------------------------------------------------

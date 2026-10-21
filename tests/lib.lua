@@ -25,10 +25,13 @@ function T.done(file)
     os.exit(T.failures == 0 and 0 or 1)
 end
 
+-- What mpv's parse_json puts on the tables it makes (mp.MAP, mp.ARRAY).
+T.MAP, T.ARRAY = { type = "MAP" }, { type = "ARRAY" }
+
 -- Fake mp: a manual clock, one-shot timers, observers, key bindings, a
 -- command log and an overlay that records every update().
 function T.fake_mp(props)
-    local mp = { now = 100, timers = {}, observers = {}, bindings = {},
+    local mp = { MAP = T.MAP, ARRAY = T.ARRAY, now = 100, timers = {}, observers = {}, bindings = {},
                  commands = {}, updates = {}, props = props or {}, logs = {} }
 
     function mp.get_time() return mp.now end
@@ -199,7 +202,8 @@ end
 
 -- JSON for the tests: T.json writes a Lua value (a table with [1] or with
 -- nothing is a list), T.parse_json reads it like mpv's utils.parse_json:
--- nil and an error for anything broken. \u escapes only go up to 127.
+-- nil and an error for anything broken, objects with the metatable T.MAP
+-- and lists with T.ARRAY. \u escapes only go up to 127.
 function T.json(v)
     local t = type(v)
     if t == "string" then
@@ -260,7 +264,7 @@ function T.parse_json(s)
         ws()
         local c = s:sub(i, i)
         if c == "{" then
-            local t = {}
+            local t = setmetatable({}, T.MAP)
             list("}", function()
                 ws()
                 if s:sub(i, i) ~= '"' then error("expected a key") end
@@ -272,7 +276,7 @@ function T.parse_json(s)
             end)
             return t
         elseif c == "[" then
-            local t, n = {}, 0
+            local t, n = setmetatable({}, T.ARRAY), 0
             list("]", function() n = n + 1; t[n] = value() end)
             return t
         elseif c == '"' then

@@ -39,13 +39,11 @@ function M.new(e)
     function b.width(ctx) return ctx.BUTTON * ctx.state.scale end
 
     function b.render(ctx, box, v)
-        local cx, s = (box.x0 + box.x1) / 2, ctx.state.scale
+        local cx = (box.x0 + box.x1) / 2
         local out = ctx.icon(b.icon, cx, box.cy, v) or
             ctx.draw.text(cx, box.cy, 5, ctx.text.upper(ctx.text.prefix(b.icon, 1)), ctx.style(15, v))
         if b.active then out = out .. "\n" .. mark(ctx, cx, box.cy, v) end
-        if b.badge then
-            out = out .. "\n" .. ctx.draw.text(cx + 11 * s, box.cy - 10 * s, 5, b.badge, ctx.style(10, v, true))
-        end
+        if b.badge then out = out .. "\n" .. ctx.badge(b.badge, box, v) end
         return out
     end
 

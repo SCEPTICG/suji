@@ -1,5 +1,5 @@
--- A button of the row that opens a menu: what subtitles, audio, playlist
--- and more have in common, and the helpers they share. See core/menu.lua
+-- A button of the row that opens a menu: what subtitles, audio, playlist,
+-- speed and more have in common, and the helpers they share. See core/menu.lua
 -- for the menu and core/modules.lua for the module contract.
 --
 -- spec: { icon, build, live, on_live?, init?, available? }

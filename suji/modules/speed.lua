@@ -59,9 +59,7 @@ local b = base.new({
 local render = b.render
 function b.render(ctx, box, v)
     local out = render(ctx, box, v)
-    if not label then return out end
-    local s = ctx.state.scale
-    return out .. "\n" .. ctx.draw.text(box.x1 - 3 * s, box.cy - 11 * s, 6, label, ctx.style(10, v, true))
+    return label and out .. "\n" .. ctx.badge(label, box, v) or out
 end
 
 return b

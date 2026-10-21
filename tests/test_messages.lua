@@ -10,7 +10,7 @@ local function start(controls)
     T.unload()
     local props = { ["mpv-version"] = "mpv v0.40.0", ["osd-dimensions"] = { w = W, h = H }, duration = 100,
                     pause = true, ["time-pos"] = 50, volume = 100, ["track-list"] = {},
-                    ["edition-list"] = { { id = 0 }, { id = 1 } } } -- so more is in the row
+                    ["edition-list"] = { { id = 0 }, { id = 1 } }, ["edition-list/count"] = 2 } -- more is in the row
     mp = T.fake_mp(props)
     mp.async_observe = true
     mp.script_opts = { controls = controls or CONTROLS }
@@ -193,9 +193,19 @@ mp.advance(1)
 click_box("command:x")
 mp.advance(1.5)
 open({ type = "late", items = items(2) }, "nothing-like-this")
-p0 = panel()
-T.check(p0 ~= cbox.x0, "a click 1.5 s before is too old, an unknown anchor is ignored")
+p0, p1 = panel()
+T.check(p0 ~= cbox.x0 and p0 <= (more.x0 + more.x1) / 2 and p1 >= (more.x0 + more.x1) / 2,
+    "a click 1.5 s before is too old, an unknown anchor is ignored: from more")
 send("close-menu")
+mp.advance(1)
+-- more in controls but hidden (nothing to offer): the middle
+mp.fire("edition-list/count", 0)
+T.eq(box_of("more"), nil, "more hides")
+open({ type = "hidden", items = items(2) })
+p0, p1 = panel()
+T.near(p0 + p1, W, "more hidden: centred", 1)
+send("close-menu")
+mp.fire("edition-list/count", 2)
 mp.advance(1)
 -- 4. Without more: the middle
 mp.set_opts({ controls = "pause,command:x:script-binding fake/open-menu,space,volume" })
@@ -204,6 +214,16 @@ open({ type = "mid", items = items(2) })
 p0, p1 = panel()
 T.near(p0 + p1, W, "no more in the row: centred", 1)
 send("close-menu")
+mp.advance(1)
+-- A recent click on a button that has left the row since: the middle
+click_box("command:x")
+mp.set_opts({ controls = "pause,command:y:show-text other,space,volume" })
+mp.advance(0.2)
+open({ type = "gone", items = items(2) })
+p0, p1 = panel()
+T.near(p0 + p1, W, "the button clicked is gone: centred", 1)
+send("close-menu")
+mp.set_opts({ controls = "pause,command:x:script-binding fake/open-menu,space,volume" })
 mp.advance(1)
 -- The anchor leaves the row: the menu stays and moves to the middle
 cbox = box_of("command:x")
@@ -261,7 +281,7 @@ set("mine", { icon = "nope" })
 T.check(box_of("button:mine") ~= nil, "shown again")
 local nb = box_of("button:mine")
 T.check(mods().call(nb.mod, "render", nb, 1):find("}N$") ~= nil, "an unknown icon: its initial")
-set("mine", {})
+send("set-button", "mine", "{}")
 T.check(mods().call(nb.mod, "render", nb, 1):find("}M$") ~= nil, "no icon: the initial of the name")
 T.eq(warnings(), 0, "no warnings so far")
 -- conditions work as for any element
@@ -310,8 +330,14 @@ still_works("broken JSON")
 T.eq(one_warning("open-menu", '{"type":"x","title":"' .. ("a"):rep(1024 * 1024) .. '"}'), 1, "over 1 MiB: one warning")
 still_works("over 1 MiB")
 T.eq(one_warning("open-menu", '{"type":"x","items":5}'), 1, "items not a list: one warning")
-T.eq(one_warning("open-menu", '[1, 2]'), 0, "a list, not an object: an empty menu with no type")
+T.eq(one_warning("open-menu", '[1, 2]'), 1, "a list, not an object: one warning")
+T.eq(one_warning("open-menu", '[]'), 1, "an empty list: one warning")
+T.check(not menu().is_open(), "and no menu")
+T.eq(one_warning("open-menu", '{}'), 0, "an empty object: a menu with no type and no items")
+T.check(menu().is_open(), "it opens")
 send("close-menu")
+T.eq(one_warning("set-button", "mine", '[]'), 1, "set-button with a list: one warning")
+T.eq(box_of("button:mine"), nil, "and no button")
 T.eq(one_warning("open-menu", '"text"'), 1, "a string: one warning")
 T.eq(one_warning("open-menu"), 1, "nothing: one warning")
 T.eq(one_warning("update-menu", "{"), 0, "update-menu with no menu open: not even read")
@@ -335,7 +361,9 @@ T.check(not menu().is_open(), "and no menu")
 still_works("odd types")
 -- No action can come in, even if the JSON reader gave a function
 local ran = false
-mp.parse_json = function() return { type = "evil", items = { { title = "Evil", action = function() ran = true end } } } end
+mp.parse_json = function()
+    return setmetatable({ type = "evil", items = { { title = "Evil", action = function() ran = true end } } }, mp.MAP)
+end
 send("open-menu", "{}")
 mp.parse_json = nil
 T.check(menu().is_open(), "the menu opens")

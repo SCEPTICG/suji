@@ -344,6 +344,9 @@ end
 -- The type of the open menu, or nil.
 function M.open_type() return M.is_open() and cur.def.type or nil end
 
+-- True while a menu that a message opened is open.
+function M.message_open() return M.is_open() and not cur.owner end
+
 -- Messages (core/messages.lua): def is untrusted, warn(text) gets what is
 -- wrong with it.
 

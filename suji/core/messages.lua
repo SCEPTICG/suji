@@ -18,6 +18,7 @@ local painter = require "core.painter"
 local layout = require "core.layout"
 local modules = require "core.modules"
 local menu = require "core.menu"
+local controls = require "core.controls"
 local command = require "modules.command"
 local button = require "modules.button"
 
@@ -45,12 +46,16 @@ local function warn(line)
     end
 end
 
--- The JSON object in s, or nil after a warning.
+-- The JSON object in s, or nil after a warning. mpv marks what
+-- parse_json makes: an object has the metatable mp.MAP, a list mp.ARRAY
+-- (both are plain tables in Lua, and an empty one looks the same).
 local function decode(what, s)
     if type(s) ~= "string" or s == "" then return warn(what .. ": no JSON") end
     if #s > M.MAX_JSON then return warn(("%s: JSON over %d bytes, ignored"):format(what, M.MAX_JSON)) end
     local ok, t = pcall(utils.parse_json, s)
-    if not ok or type(t) ~= "table" then return warn(what .. ": not a JSON object, ignored") end
+    if not ok or type(t) ~= "table" or getmetatable(t) ~= mp.MAP then
+        return warn(what .. ": not a JSON object, ignored")
+    end
     return t
 end
 
@@ -105,7 +110,7 @@ end)
 -- update-menu <json>: only the open menu of the same type, if a message
 -- opened it; it never opens one.
 on("update-menu", function(json)
-    if not menu.open_type() then return end
+    if not menu.message_open() then return end -- not read for nothing
     local def = decode("update-menu", json)
     if def then menu.update_message(def, warn) end
 end)
@@ -118,9 +123,9 @@ end)
 
 -- set-button <name> <json>
 on("set-button", function(name, json)
-    if type(name) ~= "string" or #name > button.MAX_NAME or not name:match("^[%w_%-]+$") then
+    if type(name) ~= "string" or #name > controls.MAX_NAME or not name:match("^[%w_%-]+$") then
         return warn(("set-button: bad name '%s' (letters, digits, _ and -, at most %d)"):format(
-            draw.printable(name, 64), button.MAX_NAME))
+            draw.printable(name, 64), controls.MAX_NAME))
     end
     local def = decode("set-button " .. name, json)
     if not def then return end

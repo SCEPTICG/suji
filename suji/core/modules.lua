@@ -71,6 +71,13 @@ function ctx.icon(name, cx, cy, v)
     return shape and draw.stroke(shape, stroke, v, state.scale)
 end
 
+-- A short text, small and bold, in the top right corner of a button's box:
+-- the badge of set-button, the speed away from 1x.
+function ctx.badge(t, box, v)
+    local s = state.scale
+    return draw.text(box.x1 - 3 * s, box.cy - 11 * s, 6, t, ctx.style(10, v, true))
+end
+
 -- Safe calls ---------------------------------------------------------------
 
 -- Weak keys: the command buttons of an old controls option can go.

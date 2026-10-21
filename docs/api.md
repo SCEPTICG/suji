@@ -78,7 +78,7 @@ An item:
 | `keep_open` | boolean | Choosing this item does not close the menu. |
 | `align` | string | `left` (the default), `center` or `right`. |
 
-Fields suji does not know are ignored, without a warning, and so is a field of the wrong type. Texts are cut, control characters are replaced and braces and backslashes are shown as they are, never read as ASS tags.
+Fields suji does not know are ignored, without a warning. So is an item field of the wrong type, and the menu's `title`, `selected_index` and `keep_open`: suji uses the default instead. But a menu whose `type` is not a string or is longer than 64 bytes, or whose `items` is not a list, is not opened at all, with one warning. Texts are cut, control characters are replaced and braces and backslashes are shown as they are, never read as ASS tags.
 
 ### value
 
@@ -148,7 +148,7 @@ For a script that draws its own things near the bottom of the window, suji publi
 
 `bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the row of controls (to the top of the timeline's strip, 24 px at scale 1, when the row is empty). It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale or the row (the `controls` option, a button that appears or goes), and it is deleted while suji is turned off.
 
-suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen. Above `bottom`, clicks are left to mpv and to other scripts.
+suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen. Above `bottom`, clicks are left to mpv and to other scripts, with one exception: while a menu of suji is open, any menu, a click anywhere in the window is suji's. On the menu it chooses; anywhere else it only closes the menu, and nothing else gets it. Right after a click on a menu, suji also keeps the second click of a double click, for mpv's double-click time or until the mouse moves away.
 
 ## Knowing that suji is there
 
@@ -168,9 +168,10 @@ They are suji's own drawings, thin lines on a 24 px grid; some names are the one
 Any script, and any program connected to mpv's IPC, can send these messages, so suji checks everything it gets:
 
 - A JSON text over 1 MiB is not read.
-- Broken JSON, or JSON of the wrong shape, is ignored with one warning in the mpv console.
+- Broken JSON, JSON that is not an object (a list, a string...), a `type` that is not a string or is too long and `items` that is not a list are ignored with one warning in the mpv console. Other fields of the wrong type are left out silently (see [The menu](#the-menu)).
 - An item never carries a function: only `value` runs anything.
 - Warnings are limited to 20 every 10 seconds, so a script that sends messages without stopping does not fill the log.
+- Scripts are not kept apart from each other: any of them can replace, update or close a menu another one opened, or change its button, by using the same `type` or button name.
 
 ## Examples
 
@@ -208,11 +209,13 @@ local me = mp.get_script_name()
 
 local function button()
     local speed = mp.get_property_number("speed", 1)
+    -- A badge holds 3 characters: one decimal below 10 (1.25 shows 1.3).
+    local rounded = speed < 10 and math.floor(speed * 10 + 0.5) / 10 or math.floor(speed + 0.5)
     mp.commandv("script-message-to", "suji", "set-button", me, utils.format_json({
         icon = "speed",
         command = { "script-binding", me .. "/open-menu" },
         active = speed ~= 1,
-        badge = speed ~= 1 and ("%g"):format(speed) or nil,
+        badge = speed ~= 1 and ("%g"):format(rounded) or nil,
     }))
 end
 

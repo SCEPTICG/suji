@@ -9,7 +9,6 @@ local command = require "modules.command"
 local M = {}
 
 M.MAX = 64 -- named buttons; more are refused, so a script cannot fill the memory
-M.MAX_NAME = 64 -- bytes of a name, as in the controls option
 
 local buttons, count = {}, 0
 

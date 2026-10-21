@@ -7,9 +7,10 @@
 --
 -- Window: 640x480. The row is centred on y 440 and its right part is, from
 -- the right edge: fullscreen, volume, more, speed, playlist (304-348),
--- audio, subtitles (200-244). A menu ends 12 px above the row's zones (y 406), with rows of
--- 30 px: the subtitles menu (Off, two tracks, Load from clipboard) starts
--- at y 286, the playlist menu (three chapters) at y 316.
+-- audio, subtitles (200-244). A menu ends 12 px above the row's zones (y
+-- 406), with rows of 30 px: the subtitles menu (Off, two tracks, Load
+-- from clipboard) starts at y 286, the playlist menu (three chapters) at
+-- y 316.
 
 local msg = require "mp.msg"
 

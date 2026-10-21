@@ -45,7 +45,7 @@ return base.new({
         end
         watch("idle-active", function(v) idle = v == true end)
         watch("track-list", function(v) videos = base.count(v, "video") end)
-        watch("edition-list", function(v) editions = type(v) == "table" and #v or 0 end)
+        watch("edition-list/count", function(v) editions = tonumber(v) or 0 end)
     end,
 
     available = available,
