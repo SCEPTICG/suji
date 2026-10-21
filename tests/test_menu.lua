@@ -5,9 +5,20 @@ local W, H = 1280, 720
 local Y1 = 646 -- bottom of a menu at scale 1: 12 px above the row's zones (658)
 local BG = 6   -- the panel behind it reaches this much above and below the items
 
+-- The playlist list in props as mpv has it: the whole list, and what suji
+-- reads entry by entry to count them.
+local function playlist_props(props, list)
+    props.playlist, props["playlist-count"], props["playlist-current-pos"] = list, #list, -1
+    for i, e in ipairs(list) do
+        props[("playlist/%d/filename"):format(i - 1)] = e.filename
+        if e.current then props["playlist-current-pos"] = i - 1 end
+    end
+end
+
 local function start(props, script_opts)
     T.unload()
     props = props or {}
+    if props.playlist then playlist_props(props, props.playlist) end
     props["mpv-version"] = props["mpv-version"] or "mpv v0.40.0"
     props["osd-dimensions"], props.duration, props.pause = { w = W, h = H }, 100, true
     props["time-pos"], props.volume = 50, 100
@@ -32,6 +43,13 @@ local function start(props, script_opts)
     mp.mouse(640, 300)
     mp.advance(1)
     return mp
+end
+
+-- A new playlist: mpv says it changed, and the count runs once after.
+local function set_playlist(list)
+    playlist_props(mp.props, list)
+    mp.fire("playlist")
+    mp.advance(0)
 end
 
 local function painted() return mp.updates[#mp.updates] and mp.updates[#mp.updates].data or "" end
@@ -576,10 +594,9 @@ T.eq(marks(p)[1], Y1 - 90 + 45 - 7, "the current chapter is marked")
 T.eq(click(row("playlist", 3, 3)), "set chapter 2", "the third chapter")
 mp.fire("chapters", 0)
 T.eq(box_of("playlist"), nil, "no chapters, one entry: hidden")
-mp.props.playlist = { { filename = "/a/b/One.mkv" }, { filename = "C:\\videos\\Two.mkv", title = "" },
-                      { filename = "https://example.com/watch/Three.mp4?t=10&x=1#frag", current = true },
-                      { filename = "https://example.com?x=1" }, { filename = "x.mp3", title = "Titled" } }
-mp.fire("playlist", mp.props.playlist)
+set_playlist({ { filename = "/a/b/One.mkv" }, { filename = "C:\\videos\\Two.mkv", title = "" },
+               { filename = "https://example.com/watch/Three.mp4?t=10&x=1#frag", current = true },
+               { filename = "https://example.com?x=1" }, { filename = "x.mp3", title = "Titled" } })
 T.check(box_of("playlist") ~= nil, "five entries: shown")
 open("playlist")
 p = painted()
@@ -626,11 +643,9 @@ menu().close(true)
 mp.fire("chapters", 0)
 T.eq(box_of("playlist"), nil, "no chapters and one entry to list: no button, with three in the playlist")
 local two_files = { FOLDERS[1], FOLDERS[2], { filename = "/home/u/b.mp4" } }
-mp.props.playlist = two_files
-mp.fire("playlist", two_files)
+set_playlist(two_files)
 T.check(box_of("playlist") ~= nil, "a second file: shown at once")
-mp.props.playlist = FOLDERS
-mp.fire("playlist", FOLDERS)
+set_playlist(FOLDERS)
 T.eq(box_of("playlist"), nil, "only folders again: hidden")
 
 local ON_FOLDER = { { filename = "/home/u/Desktop", current = true }, { filename = "/home/u/a.mkv" }, { filename = "/home/u/Music" } }
@@ -644,10 +659,59 @@ T.eq(#marks(p), 1, "and it is marked")
 T.eq(click(row("playlist", 2, 2)), "playlist-play-index 1", "the file after it")
 
 local deep = {}
-for i = 1, 60000 do deep[i] = { filename = "/home/u/folder " .. i } end
-deep[60001], deep[60002] = { filename = "/home/u/a.mkv" }, { filename = "/home/u/b.mkv" }
+for i = 1, 999 do deep[i] = { filename = "/home/u/folder " .. i } end
+deep[1000], deep[1001] = { filename = "/home/u/a.mkv" }, { filename = "/home/u/b.mkv" }
 start({ playlist = deep })
-T.eq(box_of("playlist"), nil, "files past the first 50 000 entries are not looked for")
+T.eq(box_of("playlist"), nil, "files past the first 1000 entries are not counted")
+deep[999] = { filename = "/home/u/c.mkv" }
+set_playlist(deep)
+T.check(box_of("playlist") ~= nil, "the 999th and the 1000th are")
+open("playlist")
+T.eq(count(painted(), "}[abc]%.mkv"), 3, "the menu lists the three: it is not bound by the count")
+
+-- The extensions: mpv's lists when it has them (0.40), as the user set them
+local EXTS = { { filename = "/m/a.mkv" }, { filename = "/m/b.MKV" }, { filename = "/m/c.xyz" }, { filename = "/m/d.cbz" } }
+start({ playlist = EXTS })
+T.eq(box_of("playlist") ~= nil, true, "no video-exts (mpv 0.39): suji's own list, a.mkv and b.MKV")
+open("playlist")
+T.check(not painted():find("}c.xyz", 1, true) and not painted():find("}d.cbz", 1, true), "and nothing else")
+start({ playlist = EXTS, ["video-exts"] = { "XYZ" }, ["audio-exts"] = {} })
+T.eq(box_of("playlist"), nil, "video-exts=xyz: only c.xyz, one entry")
+local reads_exts = 0
+local get_number = mp.get_property_number
+mp.get_property_number = function(name, def)
+    if name == "playlist-count" then reads_exts = reads_exts + 1 end
+    return get_number(name, def)
+end
+mp.props["audio-exts"] = { "cbz" }
+mp.fire("audio-exts", { "cbz" })
+mp.advance(0)
+T.check(box_of("playlist") ~= nil, "audio-exts changed: c.xyz and d.cbz")
+T.eq(reads_exts, 1, "and counted again")
+open("playlist")
+p = painted()
+T.check(p:find("}c.xyz", 1, true) and p:find("}d.cbz", 1, true) and not p:find("}a.mkv", 1, true), "the menu follows them")
+menu().close(true)
+mp.fire("video-exts", nil)
+mp.fire("audio-exts", nil)
+mp.advance(0)
+open("playlist")
+T.check(painted():find("}a.mkv", 1, true) ~= nil, "back to suji's list when mpv has none")
+
+-- Several changes of the playlist for one new file: one count
+start({ playlist = MIXED })
+local counted = 0
+get_number = mp.get_property_number
+mp.get_property_number = function(name, def)
+    if name == "playlist-count" then counted = counted + 1 end
+    return get_number(name, def)
+end
+for _ = 1, 4 do mp.fire("playlist") end
+T.eq(counted, 0, "not counted on each change")
+mp.advance(0)
+T.eq(counted, 1, "but once after them")
+mp.advance(5)
+T.eq(mp.active_timers(), 0, "and no timer left")
 
 -- Playlist: 30 000 entries, opened on the current one, and an update keeps the scroll
 local big = {}
@@ -676,9 +740,9 @@ mp.fire("playlist", big)
 mp.advance(0.1)
 T.eq(painted():match("}(Episode %d+)%.mkv"), before_scroll, "an update keeps the scroll")
 T.check(painted():find("}Renamed.mkv", 1, true) ~= nil, "with the new data")
-T.eq(mp.live("playlist"), 2, "the playlist is watched for the menu while open")
+T.eq(mp.live("playlist"), 1, "the playlist is watched while open")
 menu().close(true)
-T.eq(mp.live("playlist"), 1, "and after, only for the button")
+T.eq(mp.live("playlist"), 1, "and after, with no value, for the button")
 
 -- Chapters and 30 000 entries: a new chapter moves the mark, nothing more
 start({ playlist = big, chapters = 3 })
@@ -866,9 +930,31 @@ mp.set_opts({ controls = "pause,space,fullscreen" })
 T.check(not menu().is_open(), "its button left the row: the menu closes")
 
 -- Only one observer per property, and none of the live ones at rest ---------------------------------------
-start({ ["track-list"] = SUBS })
+local fake_mp = T.fake_mp
+local kinds -- kind of each observer, by property
+T.fake_mp = function(...)
+    local m = fake_mp(...)
+    local observe = m.observe_property
+    kinds = {}
+    m.observe_property = function(name, kind, fn)
+        kinds[name] = (kinds[name] and kinds[name] .. " " or "") .. kind
+        return observe(name, kind, fn)
+    end
+    return m
+end
+start({ ["track-list"] = SUBS, playlist = MIXED })
+T.fake_mp = fake_mp
 for prop, n in pairs(mp.observed) do T.eq(n, 1, "one observer for " .. prop) end
-T.eq(mp.live("playlist"), 1, "the playlist at rest: only the button's, for what it lists")
+T.eq(kinds.playlist, "none", "the playlist at rest: watched with no value")
+local native_reads = 0
+get_native = mp.get_property_native
+mp.get_property_native = function(name, def)
+    if name == "playlist" then native_reads = native_reads + 1 end
+    return get_native(name, def)
+end
+set_playlist(FOLDERS)
+set_playlist(MIXED)
+T.eq(native_reads, 0, "and never read whole while the menu is closed")
 T.eq(mp.live("chapter-list"), 1, "chapter-list: the timeline's only")
 T.eq(mp.live("speed"), 1, "the speed: only the speed button's, for its corner")
 

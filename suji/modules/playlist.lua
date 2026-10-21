@@ -10,6 +10,7 @@ local time = require "modules.time"
 local TYPE = "suji-playlist"
 
 local chapters, count = 0, 0 -- the chapters property, and entries listed (up to 2)
+local MAX_LOOK = 1000 -- entries looked at to count them, one property read each
 -- In the menu last built: the item of each chapter (by index from 0), and
 -- the chapter marked. A new chapter only moves the mark.
 local where, marked = {}, nil
@@ -31,18 +32,37 @@ end
 
 -- Whether path is something to play: a URL (with a scheme, ://), or a
 -- file with a video or audio extension, in any case (.mkv, .MKV, .flac).
--- Folders and files with no extension are not.
+-- Folders and files with no extension are not. The extensions are mpv's
+-- video-exts and audio-exts (mpv 0.40), as the user set them; MEDIA when
+-- mpv has neither.
 local MEDIA = {}
-for ext in ([[3gp avi flv m2ts m4v mkv mov mp4 mpeg mpg mts ogv ts vob webm wmv
-             aac ac3 aiff alac ape dts flac m4a mka mp3 ogg opus wav wma wv]]):gmatch("%S+") do
+for ext in ([[3g2 3gp avi flv m2ts m4v mj2 mkv mov mp4 mpeg mpg mts ogv rmvb ts vob webm wmv y4m
+             aac ac3 aiff alac ape au dts eac3 flac m4a mka mp3 oga ogg ogm opus thd wav wma wv]]):gmatch("%S+") do
     MEDIA[ext] = true
+end
+local exts = MEDIA
+local lists = {} -- the value of video-exts and audio-exts
+
+-- exts from mpv's two lists, read when one of them changes.
+local function set_exts(prop, list)
+    lists[prop] = type(list) == "table" and list or nil
+    if not lists["video-exts"] and not lists["audio-exts"] then
+        exts = MEDIA
+        return
+    end
+    exts = {}
+    for _, l in pairs(lists) do
+        for _, ext in ipairs(l) do
+            if type(ext) == "string" then exts[ext:lower()] = true end
+        end
+    end
 end
 
 local function is_media(path)
     if path:find("^%a[%w+.-]*://") then return true end
     -- The extension of the last part only: a folder "show.2024" has none.
     local ext = path:match("%.([^./\\]+)$")
-    return ext ~= nil and MEDIA[ext:lower()] == true
+    return ext ~= nil and exts[ext:lower()] == true
 end
 
 -- Whether the menu lists entry e: media, or the current one.
@@ -50,13 +70,19 @@ local function listed(e)
     return type(e) == "table" and (e.current == true or type(e.filename) == "string" and is_media(e.filename))
 end
 
--- How many entries of list the menu lists, up to 2: the button only needs
--- to know if there are two. At most base.MAX_ITEMS entries are looked at.
-local function count_listed(list)
-    local n = 0
-    for i, e in ipairs(type(list) == "table" and list or {}) do
-        if n >= 2 or i > base.MAX_ITEMS then break end
-        if listed(e) then n = n + 1 end
+-- How many entries the menu lists, up to 2: the button only needs to know
+-- if there are two. Read entry by entry, never the whole playlist (with
+-- thousands of entries that costs mpv a lot), and only the first MAX_LOOK.
+local function count_listed()
+    local total = mp.get_property_number("playlist-count", 0)
+    local current = mp.get_property_number("playlist-current-pos", -1)
+    local n = current >= 0 and current < total and 1 or 0
+    for i = 0, math.min(total, MAX_LOOK) - 1 do
+        if n >= 2 then break end
+        if i ~= current then
+            local f = mp.get_property(("playlist/%d/filename"):format(i))
+            if type(f) == "string" and is_media(f) then n = n + 1 end
+        end
     end
     return n
 end
@@ -111,7 +137,14 @@ local M = base.new({
             if (chapters > 0 or count > 1) ~= before then ctx.relayout() end
         end
         ctx.watch("chapters", "native", function(v) update(tonumber(v) or 0, nil) end)
-        ctx.watch("playlist", "native", function(v) update(nil, count_listed(v)) end)
+        -- mpv sends several changes of the playlist for one new file: they
+        -- are counted once, by a timer armed only when one comes.
+        local recount = mp.add_timeout(0, function() update(nil, count_listed()) end, true)
+        local function changed() if not recount:is_enabled() then recount:resume() end end
+        ctx.watch("playlist", "none", changed)
+        for _, prop in ipairs({ "video-exts", "audio-exts" }) do
+            ctx.watch(prop, "native", function(v) set_exts(prop, v); changed() end)
+        end
     end,
 
     available = function() return chapters > 0 or count > 1 end,
