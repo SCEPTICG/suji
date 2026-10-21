@@ -2,8 +2,8 @@
 # Runs the unit tests with Lua 5.1 (or $LUA), a smoke test with a windowless
 # mpv and, if xvfb-run is installed, a real drag and click test, a test of
 # the messages other scripts send, a menu test (which also needs ffmpeg and
-# mkvmerge) and a double click test (which also needs xdotool) in a
-# virtual display.
+# mkvmerge), a double click test and an action button test (which also
+# need xdotool) in a virtual display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -187,6 +187,34 @@ else
         status=1
     else
         echo "xvfb-dblclick: ok speed 2 at $sped, fullscreen only at $full"
+    fi
+fi
+
+# An action button, clicked with xdotool.
+if [ -z "$tmp" ] || [ ! -s "$tmp/t.mkv" ]; then
+    echo "xvfb-actions: skipped (no test video)"
+elif ! command -v xdotool >/dev/null 2>&1; then
+    echo "xvfb-actions: skipped (no xdotool)"
+else
+    timeout 60 xvfb-run -a -s "-screen 0 1280x1024x24" sh tests/xvfb_actions.sh "$tmp/t.mkv" "$tmp/act.log" "$MENU_ROW"
+    rc=$?
+    if grep '^\[suji\]' "$tmp/act.log" | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-actions: FAIL\n%s\n' "$(cat "$tmp/act.log")"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-actions: FAIL (exit code %s)\n%s\n' "$rc" "$(cat "$tmp/act.log")"
+        status=1
+    elif ! grep -q '^\[xvfb_actions\] shown true' "$tmp/act.log"; then
+        printf 'xvfb-actions: FAIL (show-action not delivered)\n%s\n' "$(cat "$tmp/act.log")"
+        status=1
+    elif ! grep -q '^\[xvfb_actions\] clicked 1' "$tmp/act.log"; then
+        printf 'xvfb-actions: FAIL (the click did not run the command)\n%s\n' "$(cat "$tmp/act.log")"
+        status=1
+    elif grep -q '^\[xvfb_actions\] clicked 2' "$tmp/act.log"; then
+        printf 'xvfb-actions: FAIL (hide-action did not remove the button)\n%s\n' "$(cat "$tmp/act.log")"
+        status=1
+    else
+        echo "xvfb-actions: ok the click ran the command once, hide-action removed the button"
     fi
 fi
 

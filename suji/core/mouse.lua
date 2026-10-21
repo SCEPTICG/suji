@@ -10,6 +10,8 @@
 -- An open menu (core/menu.lua) comes first: MBTN_LEFT is bound everywhere,
 -- a click on the menu is a choice and a click anywhere else only closes
 -- it, and the controls stay on screen.
+-- Action buttons (modules/actions.lua) bind MBTN_LEFT too, only while the
+-- cursor is on one that is on screen: a click there runs its command.
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -19,6 +21,7 @@ local visibility = require "core.visibility"
 local layout = require "core.layout"
 local modules = require "core.modules"
 local menu = require "core.menu"
+local actions = require "modules.actions"
 
 local M = {}
 
@@ -27,7 +30,8 @@ local seen_real = false
 local last_move = 0
 local hit           -- zone under the cursor (see layout.hit) or nil
 local captured      -- module holding the mouse, or nil
--- A click on a menu closes it, and with it the reason to bind the mouse;
+-- A click on a menu or an action button may close it (an action button is
+-- hidden by its script), and with it the reason to bind the mouse;
 -- the second click of a double click would then reach mpv (fullscreen).
 -- So the bindings stay until the cursor goes away or mpv's double-click
 -- time is over, whichever comes first: { x, y } of that click, or nil.
@@ -38,7 +42,7 @@ local took_dragging = false -- suji set input-builtin-dragging=no
 local reported_error = false
 
 -- Ends held after the double-click time, also with a still cursor. One
--- shot, armed by a click on a menu: no timer at rest.
+-- shot, armed by a click on a menu or an action button: no timer at rest.
 local held_timer = mp.add_timeout(0.3, function()
     held = nil
     M.refresh()
@@ -102,19 +106,29 @@ local function doubleclick_time()
     return ms / 1000
 end
 
+-- Keep the bindings for the second click of a double click at (x, y).
+local function hold(x, y)
+    held = { x = x, y = y }
+    held_timer:kill()
+    held_timer.timeout = doubleclick_time()
+    held_timer:resume()
+end
+
 local function press(x, y)
     if captured then release(false) end -- its button up was lost
     if menu.is_open() then
         if menu.contains(x, y) then
-            held = { x = x, y = y }
-            held_timer:kill()
-            held_timer.timeout = doubleclick_time()
-            held_timer:resume()
+            hold(x, y)
             menu.press(x, y)
         else
             menu.close()
         end
         return
+    end
+    local action = actions.at(x, y)
+    if action then
+        hold(x, y)
+        return actions.press(action)
     end
     if hit and modules.call(hit.mod, "press", hit, x, y) == true then captured = hit.mod end
 end
@@ -204,6 +218,7 @@ function M.refresh()
     end
     local usable = hit ~= nil and (not hit.bar or state.has_timeline())
     local want = captured ~= nil or menu.is_open() or held ~= nil or (usable and M.target(mp.get_time()) > 0)
+        or (pos ~= nil and actions.at(pos.x, pos.y) ~= nil)
     local on_menu = pos ~= nil and menu.contains(pos.x, pos.y)
     set_bindings(want, want and (on_menu or (hit ~= nil and modules.takes(hit.mod, "wheel"))))
     painter.request()
@@ -237,6 +252,7 @@ function M.on_mouse_pos(p)
     end
     update_zone()
     menu.pointer(pos and pos.x, pos and pos.y)
+    actions.pointer(pos and pos.x, pos and pos.y)
     M.refresh()
 end
 
@@ -259,8 +275,10 @@ function M.on_layout()
     M.refresh()
 end
 
--- A menu opened or closed: bindings and a paint.
+-- A menu opened or closed, an action button came or went: bindings and a
+-- paint.
 menu.on_change(M.refresh)
+actions.on_change(M.refresh)
 
 -- A module that failed loses the mouse and its zone. If it held the
 -- mouse, it is still told to drop what it was doing (a pause it set, a

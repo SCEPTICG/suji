@@ -3,7 +3,8 @@
 -- the controls option and the frame renderer. The core is in core/, the
 -- elements it draws in modules/ (see core/modules.lua). Menus are a service
 -- of the core (core/menu.lua) that modules use, and other scripts through
--- messages (core/messages.lua).
+-- messages (core/messages.lua), which also show action buttons
+-- (modules/actions.lua).
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -16,6 +17,7 @@ local modules = require "core.modules"
 local layout = require "core.layout"
 local mouse = require "core.mouse"
 local menu = require "core.menu"
+local actions = require "modules.actions"
 require "core.messages"
 
 local watch, ctx, timeline = modules.watch, modules.ctx, modules.timeline
@@ -60,6 +62,7 @@ end
 
 -- The zones moved: the window, the scale or the row changed.
 local function on_layout()
+    actions.on_layout()
     mouse.on_layout()
     publish_margins()
 end
@@ -101,9 +104,12 @@ painter.set_renderer(function()
         -- Its opacity came from the old width: once more under an open menu.
         remeasured = modules.title.measured ~= measured and menu.is_open()
     end
+    -- Also with the controls hidden: a skip should need no mouse move.
+    local actions_ass, actions_running = actions.render(now)
+    add(actions_ass)
     local menu_ass, menu_running = menu.render(now) -- on top of everything
     add(menu_ass)
-    return table.concat(out, "\n"), animation.running(tween, now) or menu_running or remeasured
+    return table.concat(out, "\n"), animation.running(tween, now) or menu_running or actions_running or remeasured
 end)
 
 check_version()
@@ -222,6 +228,7 @@ local function set_enabled(on)
         took_osc = true
     elseif not on then
         menu.close(true)
+        actions.hide(nil, true)
         mouse.release(false)
         if took_osc and mp.get_property_bool("osc") == false then mp.set_property_bool("osc", true) end
         took_osc = false

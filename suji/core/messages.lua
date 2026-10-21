@@ -1,7 +1,8 @@
--- Messages from other scripts: open-menu, update-menu, close-menu and
--- set-button (docs/api.md has them all). The work is done by the menu
--- service (core/menu.lua) and the named buttons (modules/button.lua);
--- this file reads the arguments.
+-- Messages from other scripts: open-menu, update-menu, close-menu,
+-- set-button, show-action and hide-action (docs/api.md has them all). The
+-- work is done by the menu service (core/menu.lua), the named buttons
+-- (modules/button.lua) and the action buttons (modules/actions.lua); this
+-- file reads the arguments.
 --
 -- Any script, and any client of mpv's IPC, can send these messages, so
 -- every argument is untrusted: JSON is size-checked before it is parsed,
@@ -21,6 +22,7 @@ local menu = require "core.menu"
 local controls = require "core.controls"
 local command = require "modules.command"
 local button = require "modules.button"
+local actions = require "modules.actions"
 
 local M = {}
 
@@ -92,6 +94,25 @@ local function clean_button(name, def)
     return f
 end
 
+-- A name of set-button or an id of show-action: letters, digits, _ and -.
+local function good_name(name)
+    return type(name) == "string" and #name <= controls.MAX_NAME and name:match("^[%w_%-]+$") ~= nil
+end
+
+-- The text of show-action: one line of at most actions.MAX_TEXT bytes,
+-- cut between characters, printable; nil when there is none.
+local function action_text(t)
+    if type(t) ~= "string" or t == "" then return nil end
+    if #t > actions.MAX_TEXT then
+        t = t:sub(1, actions.MAX_TEXT)
+        -- The last character, when it was cut, goes whole.
+        local i = t:find("[\192-\255][\128-\191]*$")
+        local b = i and t:byte(i)
+        if b and #t - i + 1 < (b >= 240 and 4 or b >= 224 and 3 or 2) then t = t:sub(1, i - 1) end
+    end
+    return t ~= "" and draw.printable(t) or nil
+end
+
 local function on(name, fn)
     mp.register_script_message(name, function(...)
         local ok, err = pcall(fn, ...)
@@ -124,7 +145,7 @@ end)
 
 -- set-button <name> <json>
 on("set-button", function(name, json)
-    if type(name) ~= "string" or #name > controls.MAX_NAME or not name:match("^[%w_%-]+$") then
+    if not good_name(name) then
         return warn(("set-button: bad name '%s' (letters, digits, _ and -, at most %d)"):format(
             draw.printable(name, 64), controls.MAX_NAME))
     end
@@ -141,6 +162,30 @@ on("set-button", function(name, json)
     elseif changed == "paint" and modules.ctx.visible() then
         painter.request()
     end
+end)
+
+-- show-action <id> <json>; nothing while suji is turned off.
+on("show-action", function(id, json)
+    if not opts.enabled then return end
+    if not good_name(id) then
+        return warn(("show-action: bad id '%s' (letters, digits, _ and -, at most %d)"):format(
+            draw.printable(id, 64), controls.MAX_NAME))
+    end
+    local def = decode("show-action " .. id, json)
+    if not def then return end
+    local t = action_text(def.text)
+    if not t then return warn(("show-action %s: no text, ignored"):format(id)) end
+    local c = menu.clean_value(def.command)
+    if def.command ~= nil and not c then
+        warn(("show-action %s: the command is not a string or a list of strings, or is too long"):format(id))
+    end
+    local ok, why = actions.set(id, { text = t, command = c })
+    if ok == false then warn(("show-action %s: %s, ignored"):format(id, why)) end
+end)
+
+-- hide-action [id]: with no id, all of them.
+on("hide-action", function(id)
+    if id == nil or id == "" then actions.hide() elseif type(id) == "string" then actions.hide(id) end
 end)
 
 return M
