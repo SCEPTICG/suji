@@ -9,7 +9,8 @@ local CONTROLS = "pause,command:x:script-binding fake/open-menu,button:mine,spac
 local function start(controls)
     T.unload()
     local props = { ["mpv-version"] = "mpv v0.40.0", ["osd-dimensions"] = { w = W, h = H }, duration = 100,
-                    pause = true, ["time-pos"] = 50, volume = 100, ["track-list"] = {} }
+                    pause = true, ["time-pos"] = 50, volume = 100, ["track-list"] = {},
+                    ["edition-list"] = { { id = 0 }, { id = 1 } } } -- so more is in the row
     mp = T.fake_mp(props)
     mp.async_observe = true
     mp.script_opts = { controls = controls or CONTROLS }
@@ -382,6 +383,148 @@ T.check(p:find("\\an6\\pos%([%d.]+,[%d.]+%)[^\n]*}Right") ~= nil, "align right")
 T.check(p:find("\\an4\\pos%([%d.]+,[%d.]+%)[^\n]*}Left") ~= nil, "left by default")
 T.eq(menu().clean({ items = { { active = 1 }, { active = 0 }, { active = true } } }).items[1].active, true, "active 1")
 T.eq(menu().clean({ items = { { active = 0 } } }).items[1].active, false, "active 0")
+send("close-menu")
+
+-- user-data/suji/margins ------------------------------------------------------
+start()
+local MARGINS = "user-data/suji/margins"
+T.eq(mp.props[MARGINS] and mp.props[MARGINS].bottom, 62, "the top of the row: 62 px above the bottom edge")
+local writes = #mp.writes
+mp.fire("pause", false)
+mp.mouse(640, 100)
+mp.advance(5)
+T.eq(mods().ctx.visible(), false, "playing, the mouse away: the controls hide")
+T.eq(mp.props[MARGINS].bottom, 62, "the same with the controls hidden")
+mp.mouse(640, 690)
+mp.advance(0.5)
+T.eq(mods().ctx.visible(), true, "shown again")
+T.eq(#mp.writes, writes, "showing and hiding the controls writes nothing")
+mp.set_opts({ scale = 1.5 })
+T.eq(mp.props[MARGINS].bottom, 93, "scale 1.5: 93")
+mp.fire("osd-dimensions", { w = 800, h = 600 })
+T.eq(mp.props[MARGINS].bottom, 93, "a new window size: the same distance")
+writes = #mp.writes
+mp.set_opts({ controls = "pause,space,fullscreen" })
+T.eq(#mp.writes, writes, "another row of the same height: no write")
+mp.set_opts({ controls = "" })
+T.eq(mp.props[MARGINS].bottom, 36, "no row: the top of the timeline's zone")
+mp.set_opts({ controls = "<user-data/fake/on>pause" })
+T.eq(mp.props[MARGINS].bottom, 36, "an element whose condition does not hold: still none")
+mp.fire("user-data/fake/on", true)
+T.eq(mp.props[MARGINS].bottom, 93, "it appears: the row's top")
+mp.set_opts({ enabled = false })
+T.eq(mp.props[MARGINS], nil, "enabled=no: deleted")
+mp.set_opts({ enabled = true })
+T.eq(mp.props[MARGINS] and mp.props[MARGINS].bottom, 93, "back")
+
+-- user-data/suji/menu/type goes with every way a menu closes --------------------
+start()
+local function opened(t) open({ type = t, items = items(3) }); return mp.props[TYPE] == t end
+T.check(opened("esc"), "open")
+mp.bindings["suji-menu-esc"].fn()
+T.eq(mp.props[TYPE], nil, "Esc")
+T.check(opened("outside"), "open")
+click(640, 100)
+T.eq(mp.props[TYPE], nil, "a click outside")
+T.check(opened("choice"), "open")
+x0 = panel()
+click(x0 + 40, row_y(1, 3))
+T.eq(mp.props[TYPE], nil, "a choice")
+mp.advance(1)
+T.check(opened("first"), "open")
+open({ type = "second", items = items(2) })
+T.eq(mp.props[TYPE], "second", "another menu on top: its type")
+mp.emit("end-file")
+T.eq(mp.props[TYPE], nil, "a new file closes a menu from a message")
+T.check(opened("closed"), "open")
+send("close-menu")
+T.eq(mp.props[TYPE], nil, "close-menu")
+T.check(opened("off"), "open")
+mp.set_opts({ enabled = false })
+T.eq(mp.props[TYPE], nil, "enabled=no")
+mp.set_opts({ enabled = true })
+mp.advance(1)
+click_box("subtitles")
+mp.advance(1)
+mp.emit("end-file")
+T.eq(mp.props[TYPE], "suji-subtitles", "suji's own menu stays open across files (it follows the new one)")
+package.loaded["modules.subtitles"].render = function() error("broken") end
+mp.advance(1)
+T.eq(mp.props[TYPE], nil, "its module failed")
+
+-- Choosing: the value runs before the menu closes ---------------------------------
+start()
+local seen
+local commandv = mp.commandv
+mp.commandv = function(...) seen = mp.props[TYPE]; return commandv(...) end
+open({ type = "order", items = items(2) })
+x0 = panel()
+click(x0 + 40, row_y(1, 2))
+T.eq(seen, "order", "the value runs while the type is still published")
+T.eq(mp.props[TYPE], nil, "then it goes")
+mp.commandv = commandv
+mp.advance(1)
+-- An item that opens another menu right away: that one stays
+local ctx_more = mods().ctx_of(package.loaded["modules.more"])
+local ctx_subs = mods().ctx_of(package.loaded["modules.subtitles"])
+ctx_more.open_menu({ type = "first", items = { { title = "Next", action = function()
+    ctx_subs.open_menu({ type = "next", items = items(2) }, box_of("subtitles"))
+end } } }, box_of("more"))
+mp.advance(1)
+x0 = panel()
+click(x0 + 40, row_y(1, 1))
+T.eq(menu().open_type(), "next", "the menu the item opened stays open")
+T.eq(mp.props[TYPE], "next", "with its type")
+menu().close()
+mp.advance(1)
+
+-- selected_index and items that cannot be chosen -----------------------------------
+local function key(k) mp.bindings["suji-menu-" .. k].fn(); mp.advance(0.1) end
+local CHOICES = { { title = "Head", selectable = false, muted = true },
+                  { title = "A", value = { "show-text", "A" } },
+                  { title = "Disabled", hint = "not now", selectable = false, value = { "show-text", "D" } },
+                  { title = "C", value = { "show-text", "C" } } }
+local function enter()
+    mp.commands = {}
+    key("enter")
+    return cmd(mp.commands[#mp.commands])
+end
+open({ type = "sel", selected_index = 4, items = CHOICES })
+T.eq(enter(), "show-text C", "selected_index counts from 1, headers too: 4 is C")
+open({ type = "sel", selected_index = 2, items = CHOICES })
+T.eq(enter(), "show-text A", "2 is A")
+open({ type = "sel", selected_index = 2, items = CHOICES })
+key("down") -- the first key shows the cursor on the selected item
+key("down")
+T.eq(enter(), "show-text C", "the keys skip the item that cannot be chosen")
+open({ type = "sel", selected_index = 4, items = CHOICES })
+key("up")
+key("up")
+T.eq(enter(), "show-text A", "both ways")
+open({ type = "sel", items = CHOICES })
+T.check(painted():find("\\1a&H80&[^}]*}Disabled") ~= nil, "it is drawn dimmed")
+x0 = panel()
+T.eq(click(x0 + 40, row_y(3, 4)), "", "a click on it does nothing")
+T.check(menu().is_open(), "and the menu stays")
+send("close-menu")
+
+-- keep_open and update-menu: the cursor stays on the same line ----------------------
+open({ type = "lang", title = "Language", keep_open = true, items = items(5) })
+key("down")
+key("down")
+send("update-menu", T.json({ type = "lang", title = "Idioma", keep_open = true, items = items(5, "Elemento ") }))
+mp.commands = {}
+key("enter")
+T.eq(cmd(mp.commands[#mp.commands]), "script-message-to fake pick 2", "the keys' line, after new texts and title")
+x0 = panel()
+mp.mouse(x0 + 40, row_y(4, 5))
+mp.advance(0.1)
+send("update-menu", T.json({ type = "lang", title = "Sprache", keep_open = true, items = items(5, "Eintrag ") }))
+T.check(painted():find("}Eintrag 4", 1, true) ~= nil, "the new texts")
+mp.commands = {}
+key("enter")
+T.eq(cmd(mp.commands[#mp.commands]), "script-message-to fake pick 4", "the line under the mouse, too")
+T.check(menu().is_open(), "keep_open: still open")
 send("close-menu")
 
 -- Icons ------------------------------------------------------------------------

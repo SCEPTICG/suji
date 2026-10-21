@@ -3,7 +3,9 @@
 -- button in suji's controls that runs its own script-binding, answers that
 -- binding with open-menu, gets the choice back as a message to itself and
 -- watches user-data/suji/menu/type. Then it sets a button of its own with
--- set-button and clicks it.
+-- set-button and clicks it. On the way it probes suji with a message it
+-- does not know (suji must not warn: run.sh fails on any warning) and
+-- reads user-data/suji/margins.
 --
 -- Window: 640x480. The row is centred on y 440: pause (20-64), the command
 -- button (72-116), button:fake (124-168). A menu of three items from the
@@ -77,9 +79,13 @@ click_at(146, 440) -- button:fake, there now
 after(0.4, function()
     if not clicked then finish(false, "the click on button:fake did not arrive") end
     local missing = mp.commandv("script-message-to", "no-such-script", "hello")
-    finish(version == "0.2.0" and missing == nil,
-        ("suji-version %s, picked %s, types %s, button clicked, a message to no script gives %s"):format(
-            tostring(version), picked, table.concat(types, ","), tostring(missing)))
+    local probe = mp.commandv("script-message-to", "suji", "hikari-probe")
+    local margins = mp.get_property_native("user-data/suji/margins")
+    local bottom = type(margins) == "table" and margins.bottom
+    finish(version == "0.2.0" and missing == nil and probe == true and bottom == 62,
+        ("suji-version %s, picked %s, types %s, button clicked, a message to no script gives %s, to suji %s,"
+            .. " margins.bottom %s"):format(tostring(version), picked, table.concat(types, ","), tostring(missing),
+            tostring(probe), tostring(bottom)))
 end)
 
 mp.observe_property("osd-dimensions", "native", function(_, d)

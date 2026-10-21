@@ -20,8 +20,9 @@ local DEFAULTS = {
     -- menu never covers the title. Keep docs/suji.conf in step.
     -- Elements, left to right, separated by commas (see core/controls.lua):
     --   pause, time, volume, fullscreen      the controls of v0.1.0
-    --   subtitles, audio, playlist, more     buttons with menus; each one
-    --                hides, leaving no gap, when it has nothing to offer
+    --   subtitles, audio, playlist, speed, more   buttons with menus;
+    --                each one hides, leaving no gap, when it has nothing
+    --                to offer
     --   space        takes the free width: what follows goes to the right
     --   gap          a small fixed hole
     --   command:icon:command?text            a button that runs an mpv command
@@ -31,7 +32,7 @@ local DEFAULTS = {
     -- has_chapter, has_playlist, idle, or any mpv property or user-data/...
     -- (true when it exists and is not false, no, 0 or empty). "," is OR,
     -- "+" is AND, "!" negates: <video,audio>, <has_playlist+!stream>.
-    controls = "pause,time,space,subtitles,audio,playlist,more,volume,fullscreen",
+    controls = "pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen",
 }
 
 -- Numbers are kept in these ranges; NaN falls back to the default.

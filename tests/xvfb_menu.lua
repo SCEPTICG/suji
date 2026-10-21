@@ -6,8 +6,8 @@
 -- it without seeking.
 --
 -- Window: 640x480. The row is centred on y 440 and its right part is, from
--- the right edge: fullscreen, volume, more, playlist, audio, subtitles
--- (252-296). A menu ends 12 px above the row's zones (y 406), with rows of
+-- the right edge: fullscreen, volume, more, speed, playlist (304-348),
+-- audio, subtitles (200-244). A menu ends 12 px above the row's zones (y 406), with rows of
 -- 30 px: the subtitles menu (Off, two tracks, Load from clipboard) starts
 -- at y 286, the playlist menu (three chapters) at y 316.
 
@@ -41,27 +41,27 @@ local function click_at(x, y)
     after(0.3, function() mp.commandv("keypress", "MBTN_LEFT") end)
 end
 
-click_at(274, 440) -- the subtitles button
-click_at(292, 361) -- third row: the second track
+click_at(222, 440) -- the subtitles button
+click_at(240, 361) -- third row: the second track
 after(0.4, function()
     local sid = mp.get_property_number("sid")
     if sid ~= 2 then finish(false, ("sid %s after choosing the second track"):format(tostring(sid))) end
 end)
-click_at(378, 440) -- the playlist button
-click_at(396, 391) -- third row: the third chapter
+click_at(326, 440) -- the playlist button
+click_at(344, 391) -- third row: the third chapter
 after(0.5, function()
     local chapter = mp.get_property_number("chapter")
     if chapter ~= 2 then finish(false, ("chapter %s after choosing the third"):format(tostring(chapter))) end
 end)
 local before
-click_at(274, 440) -- the subtitles menu again
+click_at(222, 440) -- the subtitles menu again
 after(0.3, function() before = mp.get_property_number("time-pos") end)
 click_at(100, 470) -- on the timeline, outside the menu
 after(0.5, function()
     local t = mp.get_property_number("time-pos")
     if math.abs(t - before) > 0.01 then finish(false, ("a click outside the menu seeked to %.2f"):format(t)) end
 end)
-click_at(292, 331) -- where the first track was: the menu is gone, nothing happens
+click_at(240, 331) -- where the first track was: the menu is gone, nothing happens
 after(0.4, function()
     local sid = mp.get_property_number("sid")
     if sid ~= 2 then finish(false, "the click outside did not close the menu (sid " .. tostring(sid) .. ")") end

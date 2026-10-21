@@ -11,6 +11,8 @@ local function start(props, script_opts)
     props["mpv-version"] = props["mpv-version"] or "mpv v0.40.0"
     props["osd-dimensions"], props.duration, props.pause = { w = W, h = H }, 100, true
     props["time-pos"], props.volume = 50, 100
+    -- Two editions, so more has something to offer and is in the row.
+    if props["edition-list"] == nil then props["edition-list"] = { { id = 0 }, { id = 1 } } end
     mp = T.fake_mp(props)
     mp.async_observe = true -- first values arrive later, as in mpv
     mp.script_opts = script_opts
@@ -651,28 +653,19 @@ start({ ["property-list"] = { "pause", "clipboard" } })
 mp.props["track-list"] = { { type = "video", id = 1, title = "Main", selected = true }, { type = "video", id = 2, lang = "und" },
                            { type = "audio", id = 1 } }
 mp.props["edition-list"] = { { id = 0, title = "Cut" }, { id = 1 } }
-mp.props["current-edition"], mp.props.speed = 1, 1.5
+mp.props["current-edition"] = 1
 open("more")
 p = painted()
 T.check(p:find("}Video", 1, true) and p:find("}Main", 1, true) and p:find("}und", 1, true), "video tracks with a header")
 T.check(p:find("}Editions", 1, true) and p:find("}Cut", 1, true) and p:find("}Edition 2", 1, true), "editions")
 T.eq(count(p, "}restarts"), 2, "an edition says it restarts")
-T.check(p:find("}Speed", 1, true) and p:find("}0.25\195\151", 1, true) and p:find("}4\195\151", 1, true), "speeds")
+T.check(not p:find("}Speed", 1, true) and not p:find("\195\151", 1, true), "no speeds: they have their own button")
 T.check(p:find("}Open from clipboard", 1, true) ~= nil, "mpv 0.40: open from the clipboard")
-T.eq(#marks(p), 3, "video, edition and speed marked")
--- Video, Main, und, Editions, Cut, Edition 2, Speed, 0.25 ... 4 (10), Open: 18 rows
-T.eq(click(row("more", 3, 18)), "set vid 2", "a video track")
+T.eq(#marks(p), 2, "video and edition marked")
+-- Video, Main, und, Editions, Cut, Edition 2, Open: 7 rows
+T.eq(click(row("more", 3, 7)), "set vid 2", "a video track")
 open("more")
-T.eq(click(row("more", 5, 18)), "set edition 0", "an edition")
-open("more")
-T.eq(click(row("more", 13, 18)), "set speed 1.5", "a speed")
-open("more")
-T.eq(click(row("more", 8, 18)), "set speed 0.25", "the first speed")
-mp.props.speed = 1.1
-open("more")
-p = painted()
-T.eq(#marks(p), 2, "1.1: no speed marked")
-T.check(p:find("}1.1\195\151", 1, true) ~= nil, "the header shows it")
+T.eq(click(row("more", 5, 7)), "set edition 0", "an edition")
 mp.props["edition-list"] = { { id = 0 } }
 mp.props["track-list"] = { { type = "video", id = 1 } }
 menu().close(true)
@@ -680,19 +673,73 @@ open("more")
 p = painted()
 T.check(not p:find("}Video", 1, true) and not p:find("}Editions", 1, true), "one video track and one edition: not listed")
 
+-- More hides when it has nothing to offer: no clipboard (mpv 0.39), one video track, no editions
+start({ ["edition-list"] = false, ["track-list"] = { { type = "video", id = 1 } } })
+T.eq(box_of("more"), nil, "nothing to offer: no more button")
+T.check(box_of("speed") ~= nil, "the speed button is there")
+local two = { { type = "video", id = 1 }, { type = "video", id = 2 } }
+mp.props["track-list"] = two
+mp.fire("track-list", two)
+T.check(box_of("more") ~= nil, "a second video track: more appears")
+mp.fire("edition-list", { { id = 0 }, { id = 1 } })
+mp.fire("track-list", { { type = "video", id = 1 } })
+T.check(box_of("more") ~= nil, "two editions: it stays")
+mp.fire("edition-list", {})
+T.eq(box_of("more"), nil, "neither: it goes")
+
+-- Speed ---------------------------------------------------------------------------------------------------
+start({ speed = 1.5 })
+mp.fire("speed", 1.5)
+open("speed")
+p = painted()
+T.check(p:find("}Speed{", 1, true) == nil and p:find("}Speed", 1, true) ~= nil, "the title")
+T.check(p:find("}0.25\195\151", 1, true) and p:find("}1.75\195\151", 1, true) and p:find("}4\195\151", 1, true),
+    "0.25x to 4x")
+T.eq(#marks(p), 1, "one marked")
+T.eq(marks(p)[1], Y1 - 10 * 30 + 165 - 7, "1.5x, the sixth")
+T.eq(click(row("speed", 8, 10)), "set speed 2", "2x")
+T.eq(click(row("speed", 1, 10)), "", "the menu closed after the choice: nothing there now")
+mp.props.speed = 1.0004
+open("speed")
+T.eq(marks()[1], Y1 - 10 * 30 + 105 - 7, "1.0004: 1x marked")
+menu().close(true)
+mp.props.speed = 1.2345
+open("speed")
+p = painted()
+T.eq(#marks(p), 0, "1.2345: none marked")
+T.check(p:find("}Speed  1.23\195\151", 1, true) ~= nil, "the title says which")
+menu().close(true)
+mp.advance(1)
+-- The speed in the corner of the button
+local function corner()
+    return painted():match("}([%d.]+)\195\151")
+end
+for _, c in ipairs({ { 1, nil }, { 1.5, "1.5" }, { 0.75, "0.75" }, { 2, "2" }, { 1.2345, "1.23" }, { 0.01, "0.01" },
+                     { 100, "100" }, { 33.333, "33.3" } }) do
+    mp.fire("speed", c[1])
+    mp.advance(1)
+    T.eq(corner(), c[2], "the button at " .. c[1])
+end
+local timers = mp.active_timers()
+mp.fire("speed", 33.3301)
+T.eq(mp.active_timers(), timers, "a change that looks the same: no paint")
+T.eq(box_of("speed").x1 - box_of("speed").x0, 44, "the width does not change")
+
 -- The clipboard: one argument, as it is ---------------------------------------------------------------------
+start({ ["property-list"] = { "pause", "clipboard" }, ["edition-list"] = false, ["track-list"] = { { type = "video", id = 1 } } })
 mp.props["clipboard/text"] = "  /tmp/a b; quit ${path} `x` \"q\"\nsecond line; quit\r\n"
-local items_n = 12 -- Speed, ten speeds, Open
-T.eq(click(row("more", 12, items_n)), "loadfile /tmp/a b; quit ${path} `x` \"q\" replace", "open from the clipboard")
+local items_n = 1 -- only Open
+open("more")
+T.eq(click(row("more", 1, items_n)), "loadfile /tmp/a b; quit ${path} `x` \"q\" replace", "open from the clipboard")
 local c = mp.commands[#mp.commands]
 T.eq(#c, 3, "through mp.commandv")
 T.eq(c[2], "/tmp/a b; quit ${path} `x` \"q\"", "the first line, trimmed, as one argument")
 mp.props["clipboard/text"] = (" "):rep(100000) .. "x"
 open("more")
-T.eq(click(row("more", 12, items_n)), "show-text Clipboard is empty 1500", "only the first 4 KiB are read")
+T.eq(click(row("more", 1, items_n)), "show-text Clipboard is empty 1500", "only the first 4 KiB are read")
 mp.props["clipboard/text"] = nil
 open("more")
-T.eq(click(row("more", 12, items_n)), "show-text Clipboard is empty 1500", "an empty clipboard says so")
+T.eq(click(row("more", 1, items_n)), "show-text Clipboard is empty 1500", "an empty clipboard says so")
 start({ ["property-list"] = { "pause", "clipboard" }, ["track-list"] = {} })
 mp.props["clipboard/text"] = "https://example.com/s.srt\n;quit"
 open("subtitles")
@@ -764,6 +811,6 @@ start({ ["track-list"] = SUBS })
 for prop, n in pairs(mp.observed) do T.eq(n, 1, "one observer for " .. prop) end
 T.eq(mp.live("playlist"), 0, "the playlist is not watched at rest")
 T.eq(mp.live("chapter-list"), 1, "chapter-list: the timeline's only")
-T.eq(mp.live("speed"), 0, "nor the speed")
+T.eq(mp.live("speed"), 1, "the speed: only the speed button's, for its corner")
 
 T.done("test_menu")

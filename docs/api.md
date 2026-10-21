@@ -28,7 +28,7 @@ Only one menu is open at a time. Opening a menu closes the one that was open, su
 
 ### Where the menu comes out
 
-1. From the element of the row named by the `anchor` argument, or by an `anchor` field in the JSON: `subtitles`, `audio`, `playlist`, `more`, `command:<icon>`, `button:<name>`. It has to be in the row as it is shown now.
+1. From the element of the row named by the `anchor` argument, or by an `anchor` field in the JSON: `subtitles`, `audio`, `playlist`, `speed`, `more`, `command:<icon>`, `button:<name>`. It has to be in the row as it is shown now.
 2. Otherwise, from the `command:` or `button:` button the user clicked, if that was less than a second before. This is the usual case: a button runs `script-binding myscript/open-menu`, and the script answers with `open-menu`, without knowing where its button is.
 3. Otherwise, from the `more` button, if it is in the row.
 4. Otherwise, from the middle of the window, above the row.
@@ -58,8 +58,8 @@ The menu:
 | `type` | string | Names the menu, for `update-menu`, `close-menu` and `user-data/suji/menu/type`. At most 64 bytes. Without it, the type is `""`. |
 | `title` | string | A small line above the items. |
 | `items` | list | The items, at most 50 000; the rest are left out. |
-| `selected_index` | number | The item the keyboard cursor starts on and the list scrolls to, counted from 1. Without it, the first active item, else the first. |
-| `keep_open` | boolean | Choosing an item does not close the menu. |
+| `selected_index` | number | The item the keyboard cursor starts on and the list scrolls to, counted from 1 over all the items, headings too. Without it, the first active item, else the first. |
+| `keep_open` | boolean | Choosing an item does not close the menu. An `update-menu` keeps the keyboard cursor and the highlight on the same line, even when every text changes. |
 | `anchor` | string | Where the menu comes out, see above. |
 
 An item:
@@ -71,7 +71,7 @@ An item:
 | `icon` | string | The name of one of suji's icons, see [Icons](#icons). |
 | `value` | list or string | The mpv command run when the item is chosen. See below. |
 | `active` | boolean | A mark in the accent colour: the current choice. A number counts too, any but 0 being true. |
-| `selectable` | boolean | `false`: the item cannot be chosen. With no `value`, it is a heading. |
+| `selectable` | boolean | `false`: the item cannot be chosen; it is drawn dimmed and the arrow keys skip it. With no `value`, it is a heading. |
 | `muted` | boolean | Dimmer text. |
 | `italic`, `bold` | boolean | |
 | `separator` | boolean | A thin line under the item. |
@@ -119,7 +119,7 @@ script-message-to suji set-button <name> <json>
 The button appears where the user puts `button:<name>` in the `controls` option, for example:
 
 ```
-controls=pause,time,space,button:myscript,subtitles,audio,playlist,more,volume,fullscreen
+controls=pause,time,space,button:myscript,subtitles,audio,playlist,speed,more,volume,fullscreen
 ```
 
 A `button:` in `controls` takes no room until a script sets it, and conditions in `<...>` work as with any element. Each `set-button` replaces all the fields of that button: send all of them each time. A `set-button` that changes nothing does not redraw anything.
@@ -128,7 +128,9 @@ The name is made of letters, digits, `_` and `-`, at most 64 of them. suji keeps
 
 ## Knowing when a menu is open
 
-suji publishes the type of the open menu, any menu, in the property `user-data/suji/menu/type`, and deletes it when the menu closes. suji's own menus are `suji-subtitles`, `suji-audio`, `suji-playlist` and `suji-more`.
+suji publishes the type of the open menu, any menu, in the property `user-data/suji/menu/type`, and deletes it when the menu closes, whatever closes it: a choice, Esc, a click outside, `close-menu`, turning suji off. When another menu takes its place, the property takes the new type, without being deleted in between. On a choice, the item's `value` runs first, and then the menu closes and the property is deleted.
+
+A menu opened with `open-menu` closes when mpv moves to another file, since it was about the old one; suji's own menus stay open and show the new file. suji's own menus are `suji-subtitles`, `suji-audio`, `suji-playlist`, `suji-speed` and `suji-more`.
 
 ```lua
 mp.observe_property("user-data/suji/menu/type", "native", function(_, t)
@@ -136,10 +138,22 @@ mp.observe_property("user-data/suji/menu/type", "native", function(_, t)
 end)
 ```
 
+## Where the controls are
+
+For a script that draws its own things near the bottom of the window, suji publishes `user-data/suji/margins`:
+
+```lua
+{ bottom = 62 } -- px, at scale 1
+```
+
+`bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the row of controls (to the top of the timeline's strip, 24 px at scale 1, when the row is empty). It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale or the row (the `controls` option, a button that appears or goes), and it is deleted while suji is turned off.
+
+suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen. Above `bottom`, clicks are left to mpv and to other scripts.
+
 ## Knowing that suji is there
 
 - When suji starts, it sends `suji-version <version>` to every script, with `script-message`. Only the scripts already running get it.
-- At any time, a message to suji tells: `mp.commandv("script-message-to", "suji", ...)` returns `nil` (and the error `"error running command"`) when no script called `suji` is loaded, and `true` when the message was delivered. mpv logs nothing in that case. suji ignores messages it does not know, so a probe like `script-message-to suji hello` is harmless.
+- At any time, a message to suji tells: `mp.commandv("script-message-to", "suji", ...)` returns `nil` (and the error `"error running command"`) when no script called `suji` is loaded, and `true` when the message was delivered. mpv logs nothing in that case. suji ignores messages it does not know, without a word in the log, so a probe like `script-message-to suji hello` is harmless.
 
 ## Icons
 

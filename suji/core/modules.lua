@@ -236,6 +236,7 @@ local ROW = {
     subtitles = require "modules.subtitles",
     audio = require "modules.audio",
     playlist = require "modules.playlist",
+    speed = require "modules.speed",
     more = require "modules.more",
 }
 local command = require "modules.command"
@@ -248,7 +249,7 @@ function M.init()
     names[M.timeline], names[M.title] = "timeline", "title"
     M.call(M.timeline, "init")
     M.call(M.title, "init")
-    for _, name in ipairs({ "pause", "time", "volume", "fullscreen", "subtitles", "audio", "playlist", "more" }) do
+    for _, name in ipairs({ "pause", "time", "volume", "fullscreen", "subtitles", "audio", "playlist", "speed", "more" }) do
         names[ROW[name]] = name
         M.call(ROW[name], "init")
     end

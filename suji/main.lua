@@ -40,6 +40,29 @@ local function debug_sizes(reason)
             tostring(opts.scale), state.scale))
 end
 
+-- user-data/suji/margins = { bottom = N }: N px from the bottom edge to
+-- the top of the row (the timeline's zone when the row is empty), for
+-- scripts that draw near it (docs/api.md). The same whether the controls
+-- are shown or hidden: it only follows the window, the scale and the row.
+-- Written when it changes; deleted while suji is off.
+local margin
+local function publish_margins()
+    local m
+    if opts.enabled and state.h > 0 then
+        local placed = layout.current()
+        m = math.ceil(state.h - (placed.boxes[1] or placed.bar).y0)
+    end
+    if m == margin then return end
+    margin = m
+    mp.set_property_native("user-data/suji/margins", m and { bottom = m } or nil)
+end
+
+-- The zones moved: the window, the scale or the row changed.
+local function on_layout()
+    mouse.on_layout()
+    publish_margins()
+end
+
 -- Visibility changes are smoothed by a short clock-based transition.
 local tween = animation.new(0.15)
 
@@ -88,14 +111,14 @@ watch("osd-dimensions", "native", function(dim)
     if not changed then return end
     mouse.release() -- the grid changed under a drag in progress
     debug_sizes("resize")
-    mouse.on_layout()
+    on_layout()
 end)
 
 -- The size factor changed (HiDPI or the scale option): zones move too.
 local function rescale(reason)
     state.scale = draw.scale(state.hidpi, opts.scale)
     debug_sizes(reason)
-    mouse.on_layout()
+    on_layout()
 end
 
 watch("display-hidpi-scale", "number", function(scale)
@@ -158,7 +181,7 @@ watch("mouse-pos", "native", mouse.on_mouse_pos)
 -- already updated. Then the row, which may watch more for its conditions.
 modules.init()
 modules.set_controls(opts.controls)
-modules.on_layout(mouse.on_layout)
+modules.on_layout(on_layout)
 
 -- A drag never survives a change of file.
 local function drop_drag()

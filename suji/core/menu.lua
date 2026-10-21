@@ -406,6 +406,12 @@ function M.on_layout()
     end
 end
 
+-- A new file: a menu from a message was about the old one, so it closes.
+-- suji's own menus stay and follow the new file (see menu_button).
+mp.register_event("end-file", function()
+    if M.is_open() and not cur.owner then M.close() end
+end)
+
 modules.on_failure(function(mod)
     if not cur then return end
     if cur.owner == mod then
@@ -430,12 +436,14 @@ local function run(m, it)
     end
 end
 
+-- The item runs first, then the menu closes: a script hears the choice
+-- before the type goes. Unless the item opened another menu meanwhile.
 local function choose(i)
     local it = i and cur.def.items[i]
     if not it or not it.selectable then return end
-    local m = cur.def
-    if not (m.keep_open or it.keep_open) then M.close() end
-    run(m, it)
+    local m, def = cur, cur.def
+    run(def, it)
+    if cur == m and not m.closing and not (def.keep_open or it.keep_open) then M.close() end
 end
 
 -- The next item that can be chosen from i in direction d, or i.
@@ -554,7 +562,7 @@ local function draw_item(out, it, i, y0, g, p, s)
         out[#out + 1] = draw.rect(mx0 - s, my0 - s, mx1 + s, my1 + s, { color = "&H000000&", opacity = 0.45 * p, blur = s })
         out[#out + 1] = draw.rect(mx0, my0, mx1, my1, { color = draw.color(opts.accent) or "&HFFFFFF&", opacity = p })
     end
-    local op = (it.muted and 0.5 or 1) * p
+    local op = ((it.muted or not it.selectable) and 0.5 or 1) * p
     local x = g.x0 + PAD * s
     if cur.def.icons then
         local shape, width = icons.shape(it.icon or "", x + ICON * s / 2, cy, ICON * s)

@@ -1,16 +1,16 @@
 -- More: the video track (when there is more than one), the editions (when
--- there is more than one; choosing one restarts playback), the speed and,
--- when mpv can read the clipboard, opening the file or URL that is there.
--- Shown whenever mpv is not idle with no file.
+-- there is more than one; choosing one restarts playback) and, when mpv
+-- can read the clipboard, opening the file or URL that is there. Shown
+-- when a file is loaded and there is one of those to choose.
 
 local base = require "modules.menu_button"
 
-local SPEEDS = { 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4 }
 local MAX_EDITIONS = 500
 
-local idle = false -- idle-active: no file
+-- idle-active (no file), the video tracks and the editions there are.
+local idle, videos, editions = false, 0, 0
 
-local function editions(items)
+local function editions_items(items)
     local list = mp.get_property_native("edition-list")
     if type(list) ~= "table" or #list < 2 then return end
     local current = mp.get_property_number("current-edition")
@@ -26,33 +26,29 @@ local function editions(items)
     end
 end
 
-local function speeds(items)
-    local speed = mp.get_property_number("speed") or 1
-    local header = base.header("Speed")
-    items[#items + 1] = header
-    local any = false
-    for _, s in ipairs(SPEEDS) do
-        local on = math.abs(speed - s) < 0.001
-        any = any or on
-        items[#items + 1] = { title = ("%g\195\151"):format(s), active = on, value = { "set", "speed", ("%g"):format(s) } }
-    end
-    if not any then header.hint = ("%g\195\151"):format(math.floor(speed * 100 + 0.5) / 100) end
+-- Something to choose: a video track or an edition, or the clipboard.
+local function available()
+    return not idle and (videos > 1 or editions > 1 or base.has_clipboard())
 end
 
 return base.new({
     icon = "more",
-    live = { "track-list", "edition-list", "current-edition", "speed" },
+    live = { "track-list", "edition-list", "current-edition" },
 
     init = function(ctx)
-        ctx.watch("idle-active", "native", function(v)
-            if (v == true) ~= idle then
-                idle = v == true
-                ctx.relayout()
-            end
-        end)
+        local function watch(prop, set)
+            ctx.watch(prop, "native", function(v)
+                local before = available()
+                set(v)
+                if available() ~= before then ctx.relayout() end
+            end)
+        end
+        watch("idle-active", function(v) idle = v == true end)
+        watch("track-list", function(v) videos = base.count(v, "video") end)
+        watch("edition-list", function(v) editions = type(v) == "table" and #v or 0 end)
     end,
 
-    available = function() return not idle end,
+    available = available,
 
     build = function()
         local items = {}
@@ -61,10 +57,9 @@ return base.new({
             items[1] = base.header("Video")
             for _, t in ipairs(video) do items[#items + 1] = t end
         end
-        editions(items)
-        speeds(items)
+        editions_items(items)
         if base.has_clipboard() then
-            items[#items].separator = true
+            if #items > 0 then items[#items].separator = true end
             items[#items + 1] = base.clipboard_item("Open from clipboard", "loadfile", "replace")
         end
         return { type = "suji-more", items = items }
