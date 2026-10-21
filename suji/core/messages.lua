@@ -53,7 +53,8 @@ local function decode(what, s)
     if type(s) ~= "string" or s == "" then return warn(what .. ": no JSON") end
     if #s > M.MAX_JSON then return warn(("%s: JSON over %d bytes, ignored"):format(what, M.MAX_JSON)) end
     local ok, t = pcall(utils.parse_json, s)
-    if not ok or type(t) ~= "table" or getmetatable(t) ~= mp.MAP then
+    -- mp.MAP is not documented: an mpv without it gets any table, as before.
+    if not ok or type(t) ~= "table" or (mp.MAP and getmetatable(t) ~= mp.MAP) then
         return warn(what .. ": not a JSON object, ignored")
     end
     return t

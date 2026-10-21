@@ -336,6 +336,16 @@ T.check(not menu().is_open(), "and no menu")
 T.eq(one_warning("open-menu", '{}'), 0, "an empty object: a menu with no type and no items")
 T.check(menu().is_open(), "it opens")
 send("close-menu")
+-- An mpv with no mp.MAP: any table is taken, as before
+local map = mp.MAP
+mp.MAP = nil
+T.eq(one_warning("open-menu", '{}'), 0, "no mp.MAP: an object is taken")
+T.check(menu().is_open(), "and opens")
+send("close-menu")
+T.eq(one_warning("open-menu", '[1]'), 0, "no mp.MAP: a list too, without a warning")
+T.check(menu().is_open(), "and opens")
+send("close-menu")
+mp.MAP = map
 T.eq(one_warning("set-button", "mine", '[]'), 1, "set-button with a list: one warning")
 T.eq(box_of("button:mine"), nil, "and no button")
 T.eq(one_warning("open-menu", '"text"'), 1, "a string: one warning")

@@ -4,9 +4,9 @@
 # The file is the one of the menu test (640x480 window; the speed button is
 # at x 356-400, y 440; its "2x" entry, the eighth under the title, at y
 # 331). First a double click on that entry: it sets the speed and must not
-# toggle fullscreen. Then, without
-# moving, a double click on the video, once the menu is gone and mpv's
-# double-click time is over: that one is mpv's and toggles fullscreen.
+# toggle fullscreen. Then, without moving, a double click on the video,
+# once the menu is gone and mpv's double-click time is over: that one is
+# mpv's and toggles fullscreen.
 file=$1
 log=$2
 mpv --no-config --vo=x11 --ao=null --geometry=640x480+0+0 --pause --keep-open=yes \
