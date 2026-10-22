@@ -6,6 +6,7 @@
 --                             module's box); the same menu again closes it
 --   ctx.update_menu(menu)     replace the open menu of the same type, if
 --                             it is this module's: no animation, same scroll
+--                             (selected_index moves a cursor of the keys)
 --   ctx.mark_menu(type, i, on) mark item i of this module's open menu of
 --                             that type as active or not, without cleaning
 --                             the whole menu again (cheap for long lists)
@@ -359,11 +360,18 @@ function M.open(owner, def, box)
     return true
 end
 
--- New data for owner's open menu of the same type.
+-- New data for owner's open menu of the same type. With selected_index (a
+-- new list), a cursor the keys moved goes to that item.
 function M.update(owner, def)
     if not M.is_open(owner) or type(def) ~= "table" or def.type ~= cur.def.type then return false end
     local m = M.clean(def, true)
-    return m ~= nil and replace(m)
+    if not m then return false end
+    replace(m)
+    if def.selected_index ~= nil and cur.by_keys and m.items[m.selected] then
+        cur.cursor = m.selected
+        show(cur.cursor, geometry(), true)
+    end
+    return true
 end
 
 -- The type of the open menu, or nil.

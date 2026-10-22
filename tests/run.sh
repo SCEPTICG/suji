@@ -161,20 +161,25 @@ fi
 
 # The size in the more menu, remembered: two mpv in a row, with a config
 # folder and a state folder of their own (no --no-config: with it mpv has
-# no state folder). The second starts at the size the first chose.
+# no state folder). The second starts at the size the first chose. Then
+# again with no state folder: the file goes to the config folder.
 if [ -z "$tmp" ]; then
     echo "xvfb-size: skipped (no xvfb-run)"
 elif [ ! -s "$tmp/t.mkv" ]; then
     echo "xvfb-size: skipped (could not make the test video)"
 else
-    mkdir -p "$tmp/config" "$tmp/state/mpv"
+    mkdir -p "$tmp/config" "$tmp/state-state/mpv" "$tmp/config-home" # no state-home
     out=
-    for phase in 1 2; do
-        o=$(XDG_STATE_HOME="$tmp/state" timeout 60 xvfb-run -a mpv --config-dir="$tmp/config" \
+    rc=0
+    for run in state:1 state:2 home:1 home:2; do
+        folder=${run%:*}
+        if [ "$folder" = state ]; then cfg="$tmp/config"; else cfg="$tmp/config-home"; fi
+        o=$(XDG_STATE_HOME="$tmp/state-$folder" timeout 60 xvfb-run -a mpv --config-dir="$cfg" \
             --vo=x11 --ao=null --geometry=640x480 --pause --keep-open=yes --script=./suji \
             --script=tests/xvfb_size.lua --msg-level=all=no,suji=info,xvfb_size=info \
             --script-opts-append=suji-controls=pause,time,space,more,volume,fullscreen \
-            --script-opts-append=xvfb_size-phase=$phase \
+            --script-opts-append=xvfb_size-phase=${run#*:} \
+            --script-opts-append=xvfb_size-folder=$folder \
             "$tmp/t.mkv" 2>&1)
         rc=$?
         out=$(printf '%s\n%s' "$out" "$o")
@@ -186,7 +191,7 @@ else
     elif [ "$rc" -ne 0 ]; then
         printf 'xvfb-size: FAIL (exit code %s)\n%s\n' "$rc" "$out"
         status=1
-    elif [ "$(printf '%s\n' "$out" | grep -c 'xvfb-size: ok')" -eq 2 ]; then
+    elif [ "$(printf '%s\n' "$out" | grep -c 'xvfb-size: ok')" -eq 4 ]; then
         printf '%s\n' "$out" | grep 'xvfb-size:'
     else
         printf 'xvfb-size: FAIL\n%s\n' "$out"

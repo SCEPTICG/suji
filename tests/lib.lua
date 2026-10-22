@@ -90,10 +90,12 @@ function T.fake_mp(props)
     end
     function mp.commandv(...) mp.commands[#mp.commands + 1] = { ... } end
     function mp.command(s) mp.commands[#mp.commands + 1] = { s } end
-    -- expand-path of ~~state/ gives mp.state_dir, else "" (mpv with
-    -- --no-config): no test touches the disk unless it sets one.
+    -- expand-path of ~~state/ and ~~home/ gives mp.state_dir and
+    -- mp.home_dir, else "" (mpv with --no-config): no test touches the
+    -- disk unless it sets one.
     function mp.command_native(c)
         if c[1] == "expand-path" and c[2] == "~~state/" then return mp.state_dir or "" end
+        if c[1] == "expand-path" and c[2] == "~~home/" then return mp.home_dir or "" end
     end
     mp.messages = {}
     function mp.register_script_message(name, fn) mp.messages[name] = fn end
@@ -188,9 +190,17 @@ function T.fake_mp(props)
     -- Options: mp.script_opts at start; mp.set_opts(t) changes them at run
     -- time like the script-opts property, calling on_update with the list.
     -- mp.parse_json, when set, replaces what the JSON would give.
+    -- file_info only tells a folder (fopen opens one, reading it fails
+    -- with EISDIR) from a file.
     package.loaded["mp.utils"] = { parse_json = function(s)
         if mp.parse_json then return mp.parse_json(s) end
         return T.parse_json(s)
+    end, file_info = function(p)
+        local f = io.open(p, "rb")
+        if not f then return nil end
+        local _, _, code = f:read(1)
+        f:close()
+        return { is_dir = code == 21, is_file = code ~= 21 }
     end }
     package.loaded["mp.options"] = { read_options = function(t, _, on_update)
         for k, v in pairs(mp.script_opts or {}) do t[k] = v end

@@ -32,16 +32,18 @@ end
 local build
 
 -- The sizes, the current one marked. A choice keeps the menu open and
--- moves the mark.
-local function sizes(ctx)
-    local items = {}
+-- moves the mark. first: the list replaces the first one, and a cursor of
+-- the keys goes to the current size.
+local function sizes(ctx, first)
+    local items, current = {}, nil
     for i, n in ipairs(size.SIZES) do
         items[i] = { title = ("%d%%"):format(n), active = n == size.percent(), keep_open = true, action = function()
             size.set(n)
             ctx.update_menu(build(ctx))
         end }
+        if items[i].active then current = i end
     end
-    return { type = "suji-more", title = "Size", items = items }
+    return { type = "suji-more", title = "Size", items = items, selected_index = first and current or nil }
 end
 
 function build(ctx)
@@ -60,7 +62,7 @@ function build(ctx)
     if #items > 0 then items[#items].separator = true end
     items[#items + 1] = { title = "Size", hint = ("%d%%"):format(size.percent()), keep_open = true, action = function()
         page = "size"
-        ctx.update_menu(build(ctx))
+        ctx.update_menu(sizes(ctx, true))
     end }
     return { type = "suji-more", items = items }
 end

@@ -29,7 +29,7 @@ suji turns off mpv's OSC, but it cannot know whether another interface is instal
 
 ### Uninstalling
 
-Delete the `scripts/suji` folder (and `script-opts/suji.conf`, if you made one, and `suji-size` in mpv's state folder, if you chose a size: see [Size](#size)).
+Delete the `scripts/suji` folder (and `script-opts/suji.conf`, if you made one, and `suji-size` in mpv's state or configuration folder, if you chose a size: see [Size](#size)).
 
 ## Usage
 
@@ -60,15 +60,15 @@ Click an entry to choose it; the active one has a thin mark on its left. The whe
 
 *Size* in the More menu lists 75%, 90%, 100%, 110%, 125% and 150%. A choice resizes all of suji at once (the row, the timeline, the title, the menus and the action buttons) and the menu stays open, so another size can be tried; Esc or a click outside closes it. 100% is the size the `scale` option gives, and the size chosen multiplies it: with `scale=1.2` and 125%, the factor is 1.5 (still within 0.25 to 8), times the system's HiDPI scale.
 
-suji remembers the size on each computer, in a file of its own, `suji-size`, in mpv's state folder. It holds the percentage and nothing else, and it is written only when a size is chosen. `suji.conf` is never touched.
+suji remembers the size on each computer, in a file of its own, `suji-size`. It holds the percentage and nothing else, and it is written only when a size is chosen. `suji.conf` is never touched. The file goes in mpv's state folder when it exists (mpv creates it the first time it saves something there, such as watch later), else in mpv's configuration folder (see [Installation](#installation)); suji reads the one in the state folder first.
 
 | System | mpv state folder |
 | --- | --- |
 | Linux and BSD | `~/.local/state/mpv/` (or `$XDG_STATE_HOME/mpv/`) |
-| macOS | `~/.config/mpv/` |
+| macOS | `~/.config/mpv/`, the configuration folder itself |
 | Windows | `%LOCALAPPDATA%\mpv\`, or the `portable_config` folder next to `mpv.exe` if there is one |
 
-mpv only creates that folder when it saves something there (watch later, the console's history). If it does not exist, suji cannot save the size: it says so once in the mpv console, and the size lasts until mpv is closed. Create the folder to keep it. A file that cannot be read or holds anything else gives 100%. With `--no-config` mpv has no state folder, and the size is not remembered.
+A file that cannot be read or holds anything else gives 100%. If the file cannot be written, suji says so once in the mpv console and the size lasts until mpv is closed. With `--no-config` mpv has neither folder, and the size is not remembered.
 
 ## Options
 

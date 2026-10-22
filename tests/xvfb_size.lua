@@ -1,8 +1,10 @@
 -- Real test of the size in the more menu, loaded as a second script next
--- to suji in a virtual X display, twice (see tests/run.sh), with a state
--- folder of its own. Phase 1 opens more, picks Size and then 150%, and
--- checks that the row grew (user-data/suji/margins) and that the file
--- holds 150. Phase 2, a new mpv, checks that suji starts at 150%.
+-- to suji in a virtual X display, twice (see tests/run.sh), with folders
+-- of its own. Phase 1 opens more, picks Size and then 150%, and checks
+-- that the row grew (user-data/suji/margins) and that the file holds 150.
+-- Phase 2, a new mpv, checks that suji starts at 150%. xvfb_size-folder
+-- says where the file must be: state (~~state/, the default) or home
+-- (~~home/, when there is no state folder).
 --
 -- Window: 640x480 and the row pause,time,space,more,volume,fullscreen:
 -- more is at x 408-452, on the row centred on y 440. Its menu ends 12 px
@@ -16,6 +18,7 @@ local msg = require "mp.msg"
 
 local PHASE = mp.get_opt("xvfb_size-phase") or "1"
 local SHOT = mp.get_opt("xvfb_size-shot")
+local FOLDER = mp.get_opt("xvfb_size-folder") == "home" and "~~home/" or "~~state/"
 local started, done = false, false
 local bottom -- user-data/suji/margins.bottom
 
@@ -31,7 +34,7 @@ local function finish(ok, text)
 end
 
 local function file()
-    local f = io.open(mp.command_native({ "expand-path", "~~state/suji-size" }), "rb")
+    local f = io.open(mp.command_native({ "expand-path", FOLDER .. "suji-size" }), "rb")
     if not f then return nil end
     local s = f:read("*a")
     f:close()
@@ -73,7 +76,9 @@ if PHASE == "1" then
         end
         if SHOT then mp.commandv("screenshot-to-file", SHOT, "window") end
     end)
-    after(0.5, function() finish(true, "margins.bottom 62 at 100%, 93 at 150%, the file holds 150, the menu open") end)
+    after(0.5, function()
+        finish(true, ("margins.bottom 62 at 100%%, 93 at 150%%, %ssuji-size holds 150, the menu open"):format(FOLDER))
+    end)
 else
     after(0.5, function()
         if bottom ~= 93 then finish(false, "margins.bottom " .. tostring(bottom) .. " on the next start, not 93") end

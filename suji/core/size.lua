@@ -1,11 +1,14 @@
 -- The size chosen in the more menu: a percentage of the scale option, kept
--- in a file of suji's own in mpv's state folder (~~state/suji-size, which
--- holds the number and nothing else). Read once at start; written only
--- when a size is chosen, never at rest. A file that is missing, unreadable
+-- in a file of suji's own, suji-size, which holds the number and nothing
+-- else: in mpv's state folder (~~state/) when it exists, else in mpv's
+-- config folder (~~home/), since mpv only creates the state folder when it
+-- saves something there. Read once at start; written only when a size is
+-- chosen, never at rest. A file that is missing, unreadable
 -- or holds anything but one of SIZES gives 100%; read and write errors are
 -- logged once, and the size chosen still applies until mpv is closed.
 
 local msg = require "mp.msg"
+local utils = require "mp.utils"
 local draw = require "core.draw"
 
 local M = {}
@@ -32,25 +35,51 @@ local function warn(text)
     msg.warn(text)
 end
 
--- The file's absolute path, or nil. With --no-config mpv has no state
--- folder: ~~state/ expands to "", and the name alone would be relative to
--- the current folder.
-local function path()
-    local dir = mp.command_native({ "expand-path", "~~state/" })
+-- The folder that ~~state/ or ~~home/ names, or nil. With --no-config
+-- mpv has neither: they expand to "", and the name alone would be relative
+-- to the current folder.
+local function folder(placeholder)
+    local dir = mp.command_native({ "expand-path", placeholder })
     if type(dir) ~= "string" or not (dir:find("^[/\\]") or dir:find("^%a:[/\\]")) then return nil end
-    return (dir:gsub("[/\\]+$", "")) .. "/" .. NAME
+    return (dir:gsub("[/\\]+$", ""))
 end
 
--- The size in the file, if it is one of SIZES. A missing file is the size
--- never chosen: no warning.
-function M.load()
-    local p = path()
-    if not p then return end
-    local f, err, code = io.open(p, "rb")
-    if not f then
-        if code ~= ENOENT then warn(("size: cannot read %s, using 100%%"):format(draw.printable(err, 300))) end
-        return
+local function is_dir(dir)
+    local info = dir and utils.file_info(dir)
+    return type(info) == "table" and info.is_dir == true
+end
+
+-- Where the file is written: the state folder when it exists, else the
+-- config folder; nil when mpv has neither. A file read from the config
+-- folder while the state folder exists is replaced by the one written
+-- there, which is read first.
+local function path()
+    local dir = folder("~~state/")
+    if not is_dir(dir) then dir = folder("~~home/") end
+    return dir and dir .. "/" .. NAME
+end
+
+-- The file in the state folder, else the one in the config folder: the
+-- first that exists. A missing file is the size never chosen: no warning.
+local function open()
+    for _, placeholder in ipairs({ "~~state/", "~~home/" }) do
+        local dir = folder(placeholder)
+        if dir then
+            local p = dir .. "/" .. NAME
+            local f, err, code = io.open(p, "rb")
+            if f then return f, p end
+            if code ~= ENOENT then
+                warn(("size: cannot read %s, using 100%%"):format(draw.printable(err, 300)))
+                return nil
+            end
+        end
     end
+end
+
+-- The size in the file, if it is one of SIZES.
+function M.load()
+    local f, p = open()
+    if not f then return end
     local s = f:read(MAX_READ)
     f:close()
     local n = tonumber(type(s) == "string" and s:match("^%s*(%d+)%s*$") or nil)

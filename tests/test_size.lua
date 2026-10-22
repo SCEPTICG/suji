@@ -1,6 +1,6 @@
 -- The size in the more menu (core/size.lua and modules/more.lua): the
--- list, the change at once, the file in the state folder and when it is
--- written. Every test that touches the disk uses a folder of its own.
+-- list, the change at once, the file in the state folder or the config
+-- folder and when it is written. Every test that touches the disk uses a folder of its own.
 local T = require "lib"
 
 local W, H = 1280, 720
@@ -43,7 +43,7 @@ local function count_opens()
     end
 end
 
-local function start(state_dir, script_opts)
+local function start(state_dir, script_opts, home_dir)
     T.unload()
     count_opens()
     local props = { ["mpv-version"] = "mpv v0.40.0", ["osd-dimensions"] = { w = W, h = H }, duration = 100,
@@ -51,7 +51,7 @@ local function start(state_dir, script_opts)
                     ["track-list"] = { { type = "video", id = 1, selected = true } } }
     mp = T.fake_mp(props)
     mp.async_observe = true
-    mp.state_dir = state_dir
+    mp.state_dir, mp.home_dir = state_dir, home_dir
     mp.script_opts = script_opts
     dofile("suji/main.lua")
     mp.fire("osd-dimensions", { w = W, h = H })
@@ -108,7 +108,7 @@ local function highlight()
     return y and tonumber(y) / 4
 end
 
--- No state folder (mpv --no-config: ~~state/ expands to "") ----------------------------
+-- No folders (mpv --no-config: ~~state/ and ~~home/ expand to "") ----------------------------
 start(nil)
 T.eq(scale(), 1, "100%")
 T.eq(opens.r + opens.w, 0, "nothing read")
@@ -122,13 +122,13 @@ T.check(p:find("}Size", 1, true) and p:find("}75%", 1, true) and p:find("}150%",
 T.eq(#marks(), 1, "one marked")
 click(row(6, 6)) -- 150%
 T.eq(scale(), 1.5, "150% at once")
-T.eq(opens.w, 0, "no state folder: nothing written")
+T.eq(opens.w, 0, "no folders: nothing written")
 T.eq(#warnings(), 0, "and nothing to warn about")
-start("relative/dir")
+start("relative/dir", nil, "relative/home")
 open_more()
 click(row(1, 1))
 click(row(6, 6))
-T.eq(opens.r + opens.w, 0, "a relative state folder is never used")
+T.eq(opens.r + opens.w, 0, "relative folders are never used")
 
 -- Reading ------------------------------------------------------------------------------------------------------
 local dir = folder()
@@ -232,8 +232,50 @@ start(dir)
 T.near(scale(), 0.75, "the next start reads it")
 T.eq(opens.w, 0, "and writes nothing")
 
--- Cannot write: a state folder that does not exist ------------------------------------------------------------------
-start(base .. "/missing")
+-- The state folder, else the config folder ------------------------------------------------------------------------
+local state, home = folder(), folder()
+put(home, "125")
+start(state, nil, home)
+T.near(scale(), 1.25, "only in the config folder: read there")
+put(state, "90")
+start(state, nil, home)
+T.near(scale(), 0.9, "in both: the state folder's")
+start(state, nil, base .. "/missing")
+T.near(scale(), 0.9, "only in the state folder")
+os.remove(state .. "/" .. NAME)
+start(state, nil, home)
+open_more()
+click(row(1, 1))
+click(row(6, 6))
+T.eq(get(state), "150\n", "the state folder exists: written there")
+T.eq(get(home), "125", "the config folder's is left alone")
+start(state, nil, home)
+T.eq(scale(), 1.5, "and the size written is the one read")
+home = folder()
+start(base .. "/no-state", nil, home)
+open_more()
+click(row(1, 1))
+click(row(5, 6))
+T.eq(get(home), "125\n", "no state folder: written in the config folder")
+T.eq(#warnings(), 0, "without a warning")
+start(base .. "/no-state", nil, home)
+T.near(scale(), 1.25, "and read from there")
+
+-- The keys: Enter on Size puts the cursor on the current size ------------------------------------------------------
+start(nil)
+open_more()
+mp.bindings["suji-menu-down"].fn()
+mp.bindings["suji-menu-enter"].fn()
+mp.advance(1)
+T.eq(highlight(), select(2, row(3, 6)) - 15, "on 100%, the third")
+mp.bindings["suji-menu-down"].fn()
+mp.bindings["suji-menu-enter"].fn()
+mp.advance(1)
+T.near(scale(), 1.1, "Down and Enter: 110%")
+T.near(highlight(), select(2, row(4, 6)) - 15 * 1.1, "the cursor stays on it", 0.5)
+
+-- Cannot write: neither folder exists -------------------------------------------------------------------------------
+start(base .. "/missing", nil, base .. "/missing-home")
 open_more()
 click(row(1, 1))
 click(row(6, 6))
