@@ -14,9 +14,10 @@
     From a copy of the repository:
         powershell -ExecutionPolicy Bypass -File install\suji.ps1
 
-    No administrator rights, no registry, no PATH changes. Before touching a
-    folder it copies the files it may change to a sibling folder named
-    <config>-respaldo-suji-<date>, and keeps the three newest of those.
+    No administrator rights (run as administrator it refuses to start), no
+    registry, no PATH changes. Before touching a folder it copies the files it
+    may change to a sibling folder named <config>-respaldo-suji-<date>, and
+    keeps the three newest of those.
 
     A folder where hikari is installed is left alone: hikari installs suji
     itself (its installer's -Interface suji).
@@ -172,9 +173,6 @@ $script:ConflictFontPatterns = @('modernx*', 'modernz*', 'mordenx*')
 $script:SujiScriptRoot = $PSScriptRoot
 $script:SujiQuiet = $false
 $script:NonInteractive = $false
-# Set when running as administrator: deleting or moving then refuses paths that
-# go through a link (junction or symbolic link) inside the config folder.
-$script:SujiElevated = $false
 
 # Download function, replaceable in tests: param($Url, $OutFile).
 $script:SujiDownloader = {
@@ -262,11 +260,7 @@ $script:SujiStringsEn = @{
     exe_portable         = 'Using {0}, the portable_config next to it.'
     exe_offer            = 'Use {0}, the config folder that player reads?'
     mpv_home_note        = 'MPV_HOME is set: mpv reads its config from {0}, not from {1}.'
-    admin_warn           = 'The installer is running as administrator. It does not need it, and what it creates may end up belonging to the administrator.'
-    admin_confirm        = 'Continue as administrator?'
-    admin_refused        = 'As administrator with -Yes, only folders under Program Files or ProgramData are allowed: {0}. Run it without administrator rights.'
-    link_in_path         = 'Refusing to delete or move {0}: {1} is a link (junction or symbolic link) and the installer is running as administrator.'
-    link_write           = 'Refusing to write {0}: {1} is a link (junction or symbolic link), and the installer never writes through one. Nothing was changed in that folder.'
+    admin_refused        = 'Run it from a normal PowerShell window, not as administrator.'
     record_bad           = 'Ignored an invalid entry in suji-installed.txt: {0}'
 }
 
@@ -346,11 +340,7 @@ $script:SujiStringsEs = @{
     exe_portable         = 'Se usa {0}, la portable_config que tiene al lado.'
     exe_offer            = '\u00bfUsar {0}, la carpeta de configuraci\u00f3n que lee ese reproductor?'
     mpv_home_note        = 'MPV_HOME est\u00e1 definida: mpv lee su configuraci\u00f3n de {0}, no de {1}.'
-    admin_warn           = 'El instalador se est\u00e1 ejecutando como administrador. No le hace falta, y lo que cree puede acabar perteneciendo al administrador.'
-    admin_confirm        = '\u00bfSeguir como administrador?'
-    admin_refused        = 'Como administrador y con -Yes solo se admiten carpetas dentro de Program Files o ProgramData: {0}. Ejec\u00fatalo sin permisos de administrador.'
-    link_in_path         = 'No se borra ni se mueve {0}: {1} es un enlace (uni\u00f3n o enlace simb\u00f3lico) y el instalador se est\u00e1 ejecutando como administrador.'
-    link_write           = 'No se escribe {0}: {1} es un enlace (uni\u00f3n o enlace simb\u00f3lico) y el instalador nunca escribe a trav\u00e9s de uno. No se ha cambiado nada en esa carpeta.'
+    admin_refused        = 'Ejec\u00fatalo desde una ventana normal de PowerShell, no como administrador.'
     record_bad           = 'Se ignora una entrada no v\u00e1lida de suji-installed.txt: {0}'
 }
 
@@ -514,33 +504,11 @@ function Find-SujiLinkInPath {
     return $null
 }
 
-# Running as administrator, a link inside the config folder (scripts\ ->
-# C:\Windows, say) would let a delete or move land outside it with full rights.
-# So, only when elevated, every folder between the two must be a real folder.
-function Assert-SujiNoLink {
-    param([string]$Path, [string]$Root)
-    if (-not $script:SujiElevated) { return }
-    $link = Find-SujiLinkInPath -Path $Path -Root $Root
-    if ($link) { throw (T 'link_in_path' @($Path, $link)) }
-}
-
-# Before writing to $Path, or making a folder there, inside $Root: neither
-# $Path itself nor a folder between it and $Root may be a link (junction or
-# symbolic link), so nothing is ever written outside the config folder.
-function Assert-SujiWriteTarget {
-    param([string]$Path, [string]$Root)
-    $link = Find-SujiLinkInPath -Path $Path -Root $Root
-    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-    if ($null -ne $item -and (Test-SujiLink $item)) { $link = $Path }
-    if ($link) { throw (T 'link_write' @($Path, $link)) }
-}
-
 # Deletes a file or folder inside $Root. Links (junctions, symlinks) are removed
 # as links: their target is never followed.
 function Remove-SujiItem {
     param([string]$Path, [string]$Root)
     Assert-SujiInside -Path $Path -Root $Root
-    Assert-SujiNoLink -Path $Path -Root $Root
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
     if ($null -eq $item) { return }
     $isLink = Test-SujiLink $item
@@ -574,10 +542,8 @@ function Copy-SujiTree {
     }
 }
 
-# $Root: the config folder $Path is in (checked with Assert-SujiWriteTarget).
 function New-SujiDirectory {
-    param([string]$Path, [string]$Root = '')
-    if ($Root) { Assert-SujiWriteTarget -Path $Path -Root $Root }
+    param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         New-Item -ItemType Directory -Path $Path -Force | Out-Null
     }
@@ -622,18 +588,19 @@ function Read-SujiText {
 }
 
 # Writes text without BOM unless $Bom is set (only to keep a BOM the file already
-# had), into $Path inside the config folder $Root. The text goes to a temporary
-# file next to it that then replaces it, so a failed write never leaves half a
-# file.
+# had), into $Path inside the config folder $Root. A file of its own goes to a
+# temporary file next to it that then replaces it, so a failed write never
+# leaves half a file; a link (a config kept in another folder, as dotfiles) is
+# written through and stays a link.
 function Write-SujiText {
     param([string]$Path, [string]$Text, [Parameter(Mandatory = $true)][string]$Root, [string]$Encoding = 'utf8', [bool]$Bom = $false)
     Assert-SujiInside -Path $Path -Root $Root
-    Assert-SujiWriteTarget -Path $Path -Root $Root
     if ($Encoding -eq 'latin1') { $enc = [System.Text.Encoding]::GetEncoding(28591) }
     else { $enc = New-Object System.Text.UTF8Encoding($false) }
     $body = $enc.GetBytes($Text)
     if ($Bom) { $body = [byte[]](@(0xEF, 0xBB, 0xBF) + $body) }
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -ne $item -and (Test-SujiLink $item)) { [System.IO.File]::WriteAllBytes($Path, $body); return }
     $tmp = $Path + '.suji-' + [guid]::NewGuid().ToString('N') + '.tmp'
     try {
         [System.IO.File]::WriteAllBytes($tmp, $body)
@@ -1117,13 +1084,13 @@ function Update-SujiThumbfastConf {
     $added = { param([string]$Eol) $Eol + $script:MpvPathComment + $Eol + 'mpv_path=' + $MpvPath + $Eol }
     $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
     if ($null -eq $item) {
-        New-SujiDirectory $opts -Root $ConfigDir
+        New-SujiDirectory $opts
         $text = [string]::Join("`r`n", $script:ThumbfastConfLines) + "`r`n"
         if ($MpvPath) { $text += & $added "`r`n" }
         Write-SujiText -Path $path -Text $text -Root $ConfigDir
     }
     else {
-        if (-not $MpvPath -or $item.PSIsContainer -or (Test-SujiLink $item)) { return }
+        if (-not $MpvPath -or $item.PSIsContainer) { return }
         $file = Read-SujiText $path
         if ($file.Text -match '(?m)^\s*mpv_path\s*=') { return }
         $eol = Get-SujiEol $file.Text
@@ -1489,9 +1456,7 @@ function Move-SujiAside {
     }
     Assert-SujiInside -Path $path -Root $ConfigDir
     Assert-SujiInside -Path $dest -Root $ConfigDir
-    Assert-SujiNoLink -Path $path -Root $ConfigDir
-    Assert-SujiNoLink -Path $dest -Root $ConfigDir
-    New-SujiDirectory (Split-Path -Path $dest -Parent) -Root $ConfigDir
+    New-SujiDirectory (Split-Path -Path $dest -Parent)
     Move-Item -LiteralPath $path -Destination $dest
     $destRel = (Get-SujiFullPath $dest).Substring((Get-SujiFullPath $ConfigDir).Length + 1).Replace('\', '/')
     Write-SujiInfo (T 'moved' @($Rel, $destRel))
@@ -1499,8 +1464,8 @@ function Move-SujiAside {
 }
 
 # Moves set-aside items back. The entries come from the record, which is not
-# trusted: both ends must be clean paths inside the folder, nothing is
-# overwritten and links are not followed when running as administrator.
+# trusted: both ends must be clean paths inside the folder, and nothing is
+# overwritten.
 function Restore-SujiAside {
     param([string]$ConfigDir, [string[]]$Pairs)
     foreach ($entry in $Pairs) {
@@ -1513,9 +1478,7 @@ function Restore-SujiAside {
         }
         if ($null -eq (Get-Item -LiteralPath $from -Force -ErrorAction SilentlyContinue)) { continue }
         if ($null -ne (Get-Item -LiteralPath $to -Force -ErrorAction SilentlyContinue)) { Write-SujiWarn (T 'restore_skipped' @($pair[0], $pair[1])); continue }
-        Assert-SujiNoLink -Path $from -Root $ConfigDir
-        Assert-SujiNoLink -Path $to -Root $ConfigDir
-        New-SujiDirectory (Split-Path -Path $to -Parent) -Root $ConfigDir
+        New-SujiDirectory (Split-Path -Path $to -Parent)
         Move-Item -LiteralPath $from -Destination $to
         Write-SujiInfo (T 'moved' @($pair[0], $pair[1]))
     }
@@ -1541,15 +1504,6 @@ function Get-SujiRestoreMessage {
     return $Message
 }
 
-# Every place the installer writes to in the folder is checked for links before
-# anything changes, as a broken block is (and again at each write).
-function Assert-SujiWriteTargets {
-    param([string]$ConfigDir)
-    foreach ($rel in @('mpv.conf', $script:RecordName, 'scripts/suji', 'scripts/thumbfast.lua', 'script-opts/thumbfast.conf', $script:AsideDir)) {
-        Assert-SujiWriteTarget -Path (Join-SujiRel $ConfigDir $rel) -Root $ConfigDir
-    }
-}
-
 # ---------------------------------------------------------------------------
 # Install and uninstall
 # ---------------------------------------------------------------------------
@@ -1566,7 +1520,6 @@ function Install-SujiTarget {
     # Checked before anything changes, the backup too.
     if (Test-SujiHikariPresent $config) { throw (T 'hikari_present' @($config)) }
     Assert-SujiMpvConf $config
-    Assert-SujiWriteTargets $config
 
     # Interfaces that clash with suji: asked first, so the backup has them.
     $moving = @()
@@ -1616,12 +1569,11 @@ function Install-SujiTarget {
         }
 
         # thumbfast: not copied again when it is exactly as pinned.
-        New-SujiDirectory $scripts -Root $config
+        New-SujiDirectory $scripts
         if (Test-SujiThumbfastUpToDate $config) { Write-SujiInfo (T 'thumbfast_uptodate') }
         else {
             if (-not $ThumbfastFile) { throw (T 'source_missing' @($script:ThumbfastUrl)) }
             Remove-SujiItem -Path $thumb -Root $config
-            Assert-SujiWriteTarget -Path $thumb -Root $config
             Copy-Item -LiteralPath $ThumbfastFile -Destination $thumb -Force
         }
 
@@ -1630,7 +1582,6 @@ function Install-SujiTarget {
         $dest = Join-SujiPath $scripts 'suji'
         $tmp = Join-SujiPath $scripts ('.suji-new-' + [guid]::NewGuid().ToString('N'))
         try {
-            Assert-SujiWriteTarget -Path $tmp -Root $config
             Copy-SujiTree -From $Source.SujiDir -To $tmp
             Remove-SujiItem -Path $dest -Root $config
             Move-Item -LiteralPath $tmp -Destination $dest
@@ -1660,7 +1611,6 @@ function Uninstall-SujiTarget {
     Write-SujiInfo (T 'uninstalling_from' @($config))
     if (Test-SujiHikariPresent $config) { throw (T 'hikari_present' @($config)) }
     Assert-SujiMpvConf $config
-    Assert-SujiWriteTargets $config
     $backup = New-SujiBackupStep -ConfigDir $config -Stamp $Stamp
 
     try {
@@ -1867,31 +1817,6 @@ function Select-SujiTargets {
     return [pscustomobject]@{ Ok = $true; Targets = $writable.ToArray() }
 }
 
-function Test-SujiUnderSystemDirs {
-    param([hashtable]$Env, [string]$Path)
-    foreach ($root in @($Env.ProgramFiles, $Env.ProgramFilesX86, $Env.ProgramData)) {
-        if ($root -and (Test-SujiInside -Path $Path -Root $root)) { return $true }
-    }
-    return $false
-}
-
-# Running as administrator is not needed and risky: warn and ask; with -Yes,
-# only allow folders under Program Files or ProgramData.
-function Confirm-SujiElevation {
-    param([hashtable]$Env, [object[]]$Targets)
-    if (-not $Env.IsAdmin) { return $true }
-    Write-SujiWarn (T 'admin_warn')
-    if ($script:NonInteractive) {
-        $bad = @($Targets | Where-Object { -not (Test-SujiUnderSystemDirs -Env $Env -Path $_.ConfigDir) } | ForEach-Object { $_.ConfigDir })
-        if ($bad.Count -gt 0) {
-            Write-SujiError (T 'admin_refused' @(([string]::Join('; ', $bad))))
-            return $false
-        }
-        return $true
-    }
-    return (Confirm-Suji -Question (T 'admin_confirm') -Default $false)
-}
-
 function Invoke-SujiMain {
     param([string]$Action, [string[]]$Target, [bool]$Yes, [hashtable]$Environment = $null)
     $script:NonInteractive = $Yes
@@ -1906,6 +1831,9 @@ function Invoke-SujiMain {
     }
 
     Write-SujiInfo (T 'title' @($script:SujiVersion))
+    # As administrator a link could take a write anywhere: never run that way.
+    if ($null -eq $Environment) { $Environment = New-SujiEnvironment }
+    if ($Environment.IsAdmin) { Write-SujiError (T 'admin_refused'); return 2 }
     if (-not $Action) {
         if ($Yes) { Write-SujiError (T 'usage_yes_action'); return 2 }
         while (-not $Action) {
@@ -1921,18 +1849,11 @@ function Invoke-SujiMain {
         }
     }
 
-    if ($null -eq $Environment) { $Environment = New-SujiEnvironment }
-    $script:SujiElevated = [bool]$Environment.IsAdmin
     $selection = Select-SujiTargets -Env $Environment -Mode $Action -Paths $paths
     if (-not $selection.Ok) { return 2 }
     $targets = @($selection.Targets)
     if ($targets.Count -eq 0) {
         if ($Yes) { Write-SujiError (T 'usage_none'); return 2 }
-        Write-SujiInfo (T 'cancelled')
-        return 0
-    }
-    if (-not (Confirm-SujiElevation -Env $Environment -Targets $targets)) {
-        if ($Yes) { return 2 }
         Write-SujiInfo (T 'cancelled')
         return 0
     }
