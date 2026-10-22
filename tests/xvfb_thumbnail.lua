@@ -95,10 +95,25 @@ after(0.4, function()
     clears = got().clears
     mp.commandv("loadfile", mp.get_property("path"), "replace")
 end)
-after(1, function()
-    if got().clears ~= clears + 1 then finish(false, "no clear on the change of file") end
-    local g = got()
-    finish(true, ("%d thumbs, %d clears, last '%s'"):format(g.thumbs, g.clears, g.last))
+-- The clear comes when the file changes, which takes a moment: wait for it,
+-- at most 10 s.
+after(0.1, function()
+    local tries = 0
+    local function check()
+        if done then return end
+        local g = got()
+        if g.clears == clears + 1 then
+            finish(true, ("%d thumbs, %d clears, last '%s'"):format(g.thumbs, g.clears, g.last))
+        elseif (g.clears or 0) > clears + 1 then
+            finish(false, "more than one clear on the change of file")
+        elseif tries >= 100 then
+            finish(false, "no clear on the change of file")
+        else
+            tries = tries + 1
+            mp.add_timeout(0.1, check)
+        end
+    end
+    check()
 end)
 
 mp.observe_property("osd-dimensions", "native", function(_, d)
