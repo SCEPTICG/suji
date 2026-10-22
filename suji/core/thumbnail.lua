@@ -9,7 +9,9 @@
 -- What thumbfast documents for scripts like this one:
 --   script-message thumbfast-info <json>   its state, sent by thumbfast:
 --       { width, height, disabled, available }; width and height are in
---       OSD px, with the HiDPI scale already in them
+--       OSD px, with the HiDPI scale already in them. A thumbnail may be
+--       asked for while it is not disabled, and cleared while it is
+--       available
 --   script-message-to thumbfast thumb <seconds> <x> <y>   show the frame,
 --       its top left corner at (x, y)
 --   script-message-to thumbfast clear      take it away
@@ -44,6 +46,7 @@ local MAX_CHAPTER = 200  -- characters kept from a chapter's title
 -- From the last thumbfast-info, kept for every file after it; nil before
 -- the first, as if there were no thumbfast.
 local info     -- { width, height } while thumbfast can make thumbnails, else nil
+local available = false -- thumbfast takes clear
 local sent     -- the thumbnail asked for: { ts, x, y, box }, nil when none
 local caption  -- the line under it, kept until the time or the width changes
 local chapters -- chapter-list
@@ -94,11 +97,12 @@ local function line(t, avail)
     return caption
 end
 
--- Take the thumbnail away, if one was asked for.
+-- Take the thumbnail away, if one was asked for: thumbfast only hears it
+-- while it says it is available.
 function M.clear()
     if not sent then return end
     sent, caption = nil, nil
-    mp.commandv("script-message-to", "thumbfast", "clear")
+    if available then mp.commandv("script-message-to", "thumbfast", "clear") end
 end
 
 -- True while a thumbnail is on screen: the row's time shows the position
@@ -138,6 +142,7 @@ local function set_info(data)
     local w = type(data) == "table" and tonumber(data.width)
     local h = type(data) == "table" and tonumber(data.height)
     local new
+    available = type(data) == "table" and data.available == true
     if w and h and w >= 1 and w <= MAX_SIDE and h >= 1 and h <= MAX_SIDE and data.disabled ~= true then
         new = { width = math.floor(w), height = math.floor(h) }
     end

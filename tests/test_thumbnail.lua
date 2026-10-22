@@ -217,4 +217,43 @@ hover(120)
 T.eq(#sent(), 0, "no room: nothing sent")
 T.check(row_dim("00:50") or not painted():find("00:50", 1, true), "no room: the row as before")
 
+-- Drawn over an action button it covers, not under it
+start()
+info(READY)
+mp.send("show-action", "skip-op", T.json({ text = "Skip opening \226\128\186", command = { "script-message-to", "fake", "skip-op" } }))
+hover(1275)
+local ass = painted()
+local action, box = ass:find("}Skip opening", 1, true), ass:find("\\an5\\pos(1154.0,680.0)", 1, true)
+T.check(action and box and box > action, "the box is painted after the action button")
+
+-- available=false: thumbs are asked for (not disabled), clear is not sent
+start()
+info({ width = 200, height = 112, disabled = false, available = false })
+hover(640)
+T.eq(last(), "thumb 50.000 540 558", "not available: still asked (only disabled stops it)")
+local before = #sent()
+hover(100, 680)
+T.eq(#sent(), before, "not available: no clear")
+T.check(row_time("00:50"), "but the box is gone: the row shows the position")
+info(READY)
+hover(640)
+hover(100, 680)
+T.eq(last(), "clear", "available again: clear")
+
+-- A failure in the thumbnail code leaves the rest of the frame
+start()
+info(READY)
+hover(640)
+package.loaded["core.thumbnail"].render = function() error("boom") end
+hover(641)
+local errors = 0
+for _, l in ipairs(mp.logs) do if l[1] == "error" and tostring(l[2]):find("thumbnails failed", 1, true) then errors = errors + 1 end end
+T.eq(errors, 1, "the failure is logged once")
+T.eq(last(), "clear", "and the thumbnail taken away")
+T.check(painted():find("}00:50{", 1, true) ~= nil, "the row still drawn")
+before = #sent()
+hover(300)
+T.eq(#sent(), before, "turned off: nothing more sent")
+T.check(row_dim("00:23"), "the row shows the time under the cursor again")
+
 T.done("test_thumbnail")

@@ -90,6 +90,18 @@ local function cursor_time()
     end
 end
 
+-- thumbnail.update and render, protected like a module's calls: the
+-- first error is logged, takes the thumbnail away and turns it off.
+local thumbnail_failed = false
+local function thumbnail_call(fname, ...)
+    if thumbnail_failed then return nil end
+    local ok, r = pcall(thumbnail[fname], ...)
+    if ok then return r end
+    thumbnail_failed = true
+    msg.error("thumbnails failed and were turned off: " .. draw.printable(r, 300))
+    pcall(thumbnail.clear)
+end
+
 -- The row shows it too, unless the thumbnail's box already does.
 function ctx.hover_time()
     if thumbnail.shown() then return nil end
@@ -105,7 +117,7 @@ painter.set_renderer(function()
     local function add(ass) if ass and ass ~= "" then out[#out + 1] = ass end end
     -- Before the row: it decides which time the row shows.
     local p = mouse.pos()
-    thumbnail.update(v > 0 and cursor_time() or nil, p and p.x)
+    thumbnail_call("update", v > 0 and cursor_time() or nil, p and p.x)
     add(modules.call(timeline, "render", layout.bar_zone(), v))
     if v > 0 then
         local placed = layout.current()
@@ -116,11 +128,12 @@ painter.set_renderer(function()
             v * menu.title_opacity(now)))
         -- Its opacity came from the old width: once more under an open menu.
         remeasured = modules.title.measured ~= measured and menu.is_open()
-        add(thumbnail.render(v)) -- over the row it covers
     end
     -- Also with the controls hidden: a skip should need no mouse move.
     local actions_ass, actions_running = actions.render(now)
     add(actions_ass)
+    -- Over the row and the action buttons it covers: none shows through.
+    if v > 0 then add(thumbnail_call("render", v)) end
     local menu_ass, menu_running = menu.render(now) -- on top of everything
     add(menu_ass)
     return table.concat(out, "\n"), animation.running(tween, now) or menu_running or actions_running or remeasured
