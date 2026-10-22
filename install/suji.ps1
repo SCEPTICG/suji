@@ -214,7 +214,7 @@ $script:SujiStringsEn = @{
     backup_done          = 'Backup: {0}'
     backup_failed        = 'Could not back up {0}: {1}. Nothing was changed in that folder.'
     backup_prune_failed  = 'Could not delete the old backup {0}: {1}'
-    conflicts_found      = 'These scripts replace the mpv controls and clash with suji:'
+    conflicts_found      = 'These interfaces draw their own controls and clash with suji:'
     conflicts_confirm    = 'Move them to {0}? Nothing is deleted, and they come back when you uninstall.'
     conflicts_kept       = 'Left in place: suji and that interface will both draw controls.'
     moved                = 'Moved {0} -> {1}'
@@ -238,8 +238,9 @@ $script:SujiStringsEn = @{
     restore_hint         = 'Your previous config is in {0}.'
     summary              = 'Done: {0} of {1} folders.'
     restart              = 'Restart the player to see the changes.'
-    ask_remove_thumbfast = 'Remove thumbfast too?'
-    ask_delete_user      = 'Delete your suji settings and saved size (suji.conf, suji-size)?'
+    ask_remove_thumbfast = 'Remove thumbfast (the thumbnails) too?'
+    ask_delete_user      = 'Delete {0} too (your suji settings and the size you chose)?'
+    size_left            = 'This file stays: {0} (the size suji remembers, in mpv''s state folder). Delete it yourself if you do not want it.'
     ask_restore          = 'Move back the interfaces suji set aside ({0})?'
     restore_skipped      = '{0} not moved back: {1} already exists.'
     nothing_to_uninstall = 'suji does not seem to be installed in any detected folder.'
@@ -250,7 +251,7 @@ $script:SujiStringsEn = @{
     outside_target       = 'Refusing to delete or move {0}: it is outside {1}.'
     old_ps               = 'Windows PowerShell 5.1 or newer is needed.'
     cancelled            = 'Cancelled.'
-    link_skipped         = 'Not copied to the backup: {0} is a link (junction or symbolic link), or inside one.'
+    link_skipped         = 'Not copied to the backup: {0} is a link (junction or symbolic link); what it points at is never changed.'
     path_bad             = '{0} is not a valid folder path.'
     target_root          = 'Refusing {0}: a drive root or your user folder is not an mpv config folder.'
     not_mpv_folder       = '{0} does not look like an mpv config folder: no mpv.conf, input.conf, scripts or script-opts in it, and no mpv next to it.'
@@ -294,7 +295,7 @@ $script:SujiStringsEs = @{
     backup_done          = 'Copia de seguridad: {0}'
     backup_failed        = 'No se ha podido hacer la copia de seguridad de {0}: {1}. No se ha cambiado nada en esa carpeta.'
     backup_prune_failed  = 'No se ha podido borrar la copia de seguridad antigua {0}: {1}'
-    conflicts_found      = 'Estos scripts sustituyen los controles de mpv y chocan con suji:'
+    conflicts_found      = 'Estas interfaces dibujan sus propios controles y chocan con suji:'
     conflicts_confirm    = '\u00bfMoverlos a {0}? No se borra nada y vuelven a su sitio al desinstalar.'
     conflicts_kept       = 'Se quedan donde est\u00e1n: suji y esa interfaz dibujar\u00e1n controles a la vez.'
     moved                = 'Movido {0} -> {1}'
@@ -318,8 +319,9 @@ $script:SujiStringsEs = @{
     restore_hint         = 'Tu configuraci\u00f3n anterior est\u00e1 en {0}.'
     summary              = 'Hecho: {0} de {1} carpetas.'
     restart              = 'Reinicia el reproductor para ver los cambios.'
-    ask_remove_thumbfast = '\u00bfQuitar tambi\u00e9n thumbfast?'
-    ask_delete_user      = '\u00bfBorrar tus ajustes de suji y el tama\u00f1o guardado (suji.conf, suji-size)?'
+    ask_remove_thumbfast = '\u00bfQuitar tambi\u00e9n thumbfast (las miniaturas)?'
+    ask_delete_user      = '\u00bfBorrar tambi\u00e9n {0} (tus ajustes de suji y el tama\u00f1o elegido)?'
+    size_left            = 'Este fichero se queda: {0} (el tama\u00f1o que recuerda suji, en la carpeta de estado de mpv). B\u00f3rralo t\u00fa si no lo quieres.'
     ask_restore          = '\u00bfDevolver a su sitio las interfaces que suji apart\u00f3 ({0})?'
     restore_skipped      = '{0} no se devuelve: ya existe {1}.'
     nothing_to_uninstall = 'No parece que suji est\u00e9 instalado en ninguna de las carpetas encontradas.'
@@ -330,7 +332,7 @@ $script:SujiStringsEs = @{
     outside_target       = 'No se borra ni se mueve {0}: est\u00e1 fuera de {1}.'
     old_ps               = 'Hace falta Windows PowerShell 5.1 o posterior.'
     cancelled            = 'Cancelado.'
-    link_skipped         = 'No se copia a la copia de seguridad: {0} es un enlace (uni\u00f3n o enlace simb\u00f3lico) o est\u00e1 dentro de uno.'
+    link_skipped         = 'No se copia a la copia de seguridad: {0} es un enlace (uni\u00f3n o enlace simb\u00f3lico); lo que hay al otro lado nunca se cambia.'
     path_bad             = '{0} no es una ruta de carpeta v\u00e1lida.'
     target_root          = 'No se usa {0}: la ra\u00edz de una unidad o tu carpeta de usuario no son una carpeta de configuraci\u00f3n de mpv.'
     not_mpv_folder       = '{0} no parece una carpeta de configuraci\u00f3n de mpv: no tiene mpv.conf, input.conf, scripts ni script-opts, ni hay un mpv al lado.'
@@ -488,20 +490,6 @@ function Assert-SujiInside {
 function Test-SujiLink {
     param($Item)
     return (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
-}
-
-# The first folder between $Root (excluded) and $Path (excluded) that is a
-# link, or $null.
-function Find-SujiLinkInPath {
-    param([string]$Path, [string]$Root)
-    $rootFull = Get-SujiFullPath $Root
-    $p = Split-Path -Path (Get-SujiFullPath $Path) -Parent
-    while ($p -and (Test-SujiInside -Path $p -Root $rootFull)) {
-        $item = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
-        if ($null -ne $item -and (Test-SujiLink $item)) { return $p }
-        $p = Split-Path -Path $p -Parent
-    }
-    return $null
 }
 
 # Deletes a file or folder inside $Root. Links (junctions, symlinks) are removed
@@ -1101,6 +1089,32 @@ function Update-SujiThumbfastConf {
     if ($MpvPath) { Write-SujiInfo (T 'mpvpath_set' @($MpvPath)) }
 }
 
+# Takes out the mpv_path lines suji added (the blank line, its comment, which
+# marks them, and the mpv_path line under it), so thumbfast.conf is again as it
+# was. $NoFinalEol: it did not end in a line break before suji, so the one
+# added then goes too when the lines were its end. Without the mark, nothing.
+function Remove-SujiThumbfastMark {
+    param([string]$ConfigDir, [bool]$NoFinalEol = $false)
+    $path = Join-SujiPath $ConfigDir @('script-opts', 'thumbfast.conf')
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
+    $file = Read-SujiText $path
+    $lines = @(Split-SujiLines $file.Text)
+    for ($i = 0; $i -lt $lines.Count - 1; $i++) {
+        if ($lines[$i].Content.Trim() -cne $script:MpvPathComment -or -not $lines[$i + 1].Content.Trim().StartsWith('mpv_path=')) { continue }
+        $start = $lines[$i].Start
+        if ($i -gt 0 -and $lines[$i - 1].Content.Trim() -eq '') { $start = $lines[$i - 1].Start }
+        $last = $lines[$i + 1]
+        $end = $last.Start + $last.Content.Length + $last.Eol.Length
+        $before = $file.Text.Substring(0, $start)
+        if ($NoFinalEol -and $end -ge $file.Text.Length) {
+            if ($before.EndsWith("`r`n")) { $before = $before.Substring(0, $before.Length - 2) }
+            elseif ($before.EndsWith("`n")) { $before = $before.Substring(0, $before.Length - 1) }
+        }
+        Write-SujiText -Path $path -Text ($before + $file.Text.Substring($end)) -Root $ConfigDir -Encoding $file.Encoding -Bom $file.Bom
+        return
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Installer record (suji-installed.txt)
 # ---------------------------------------------------------------------------
@@ -1334,7 +1348,11 @@ function Test-SujiThumbfastUpToDate {
 
 # Copies what the installer may change ($script:BackupItems and $Extra, paths
 # relative to the folder) to <config>-respaldo-suji-<stamp>, each at its own
-# relative path. Links, and anything inside one, are skipped. Returns the
+# relative path. A linked file (a config kept as dotfiles) is copied with its
+# contents, and what is reached through a linked folder (scripts\ or
+# script-opts\ as a junction) too: that is what the installer changes. A link
+# to a folder is skipped: only the link is ever removed or moved, never what it
+# points at. Links inside a copied folder are skipped as well. Returns the
 # backup folder, or '' when there was nothing to copy.
 function New-SujiBackup {
     param([string]$ConfigDir, [string]$Stamp, [string[]]$Extra = @())
@@ -1346,7 +1364,9 @@ function New-SujiBackup {
         $p = Join-SujiRel $full $rel
         $item = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
         if ($null -eq $item) { continue }
-        if ((Test-SujiLink $item) -or (Find-SujiLinkInPath -Path $p -Root $full)) { Write-SujiWarn (T 'link_skipped' @($p)); continue }
+        if ((Test-SujiLink $item) -and ($item.PSIsContainer -or -not (Test-Path -LiteralPath $p -PathType Leaf))) {
+            Write-SujiWarn (T 'link_skipped' @($p)); continue
+        }
         $items.Add([pscustomobject]@{ Rel = $rel; Item = $item })
     }
     if ($items.Count -eq 0) { return '' }
@@ -1362,7 +1382,8 @@ function New-SujiBackup {
             if ($i.Item.PSIsContainer) { Copy-SujiTree -From $i.Item.FullName -To $dest }
             else {
                 New-SujiDirectory (Split-Path -Path $dest -Parent)
-                Copy-Item -LiteralPath $i.Item.FullName -Destination $dest -Force
+                # File.Copy follows a link: the backup gets the contents.
+                [System.IO.File]::Copy($i.Item.FullName, $dest, $true)
             }
         }
     }
@@ -1557,6 +1578,12 @@ function Install-SujiTarget {
             (Test-Path -LiteralPath (Join-SujiPath $config @('script-opts', 'thumbfast.conf')) -PathType Leaf))
         $values['mpv_conf_preexisting'] = ConvertTo-SujiYesNo (& $prev 'mpv_conf_preexisting' `
             (Test-Path -LiteralPath (Join-SujiPath $config 'mpv.conf') -PathType Leaf))
+        # A thumbfast.conf of the user's that does not end in a line break: the
+        # one added with mpv_path goes again on uninstall.
+        $tconf = Join-SujiPath $config @('script-opts', 'thumbfast.conf')
+        $finalEol = $true
+        if (Test-Path -LiteralPath $tconf -PathType Leaf) { $confText = (Read-SujiText $tconf).Text; $finalEol = ($confText.Length -eq 0 -or $confText.EndsWith("`n")) }
+        $values['thumbfast_conf_final_eol'] = ConvertTo-SujiYesNo (& $prev 'thumbfast_conf_final_eol' $finalEol)
         $aside = New-Object System.Collections.Generic.List[string]
         if ($null -ne $old) { foreach ($a in $old.Aside) { $aside.Add($a) } }
 
@@ -1603,8 +1630,10 @@ function Install-SujiTarget {
     Write-SujiOk (T 'install_ok' @($Source.Version, $config))
 }
 
+# $StateDir: mpv's state folder for this config folder when it is another one
+# (%LOCALAPPDATA%\mpv), where suji may keep suji-size: never touched, only named.
 function Uninstall-SujiTarget {
-    param([Parameter(Mandatory = $true)]$Candidate, [string]$Stamp = '')
+    param([Parameter(Mandatory = $true)]$Candidate, [string]$Stamp = '', [string]$StateDir = '')
     if (-not $Stamp) { $Stamp = (Get-Date).ToString('yyyyMMdd-HHmmss') }
     $config = Get-SujiFullPath $Candidate.ConfigDir
     Write-SujiInfo ''
@@ -1633,10 +1662,15 @@ function Uninstall-SujiTarget {
                 }
             }
         }
-        if (@($script:UserFiles | Where-Object { Test-Path -LiteralPath (Join-SujiRel $config $_) -PathType Leaf }).Count -gt 0) {
-            if (Confirm-Suji -Question (T 'ask_delete_user') -Default $false) {
-                foreach ($f in $script:UserFiles) { Remove-SujiItem -Path (Join-SujiRel $config $f) -Root $config }
-            }
+        Remove-SujiThumbfastMark -ConfigDir $config -NoFinalEol (& $wasNot 'thumbfast_conf_final_eol')
+        # The question names only what it deletes.
+        $user = @($script:UserFiles | Where-Object { Test-Path -LiteralPath (Join-SujiRel $config $_) -PathType Leaf })
+        if ($user.Count -gt 0 -and (Confirm-Suji -Question (T 'ask_delete_user' @([string]::Join(', ', $user))) -Default $false)) {
+            foreach ($f in $user) { Remove-SujiItem -Path (Join-SujiRel $config $f) -Root $config }
+        }
+        if ($StateDir -and -not (Test-SujiSamePath $StateDir $config)) {
+            $size = Join-SujiPath $StateDir 'suji-size'
+            if (Test-Path -LiteralPath $size -PathType Leaf) { Write-SujiWarn (T 'size_left' @($size)) }
         }
         if ($aside.Count -gt 0) {
             $names = [string]::Join(', ', @($aside | ForEach-Object { ($_ -split '\|')[1] }))
@@ -1817,6 +1851,15 @@ function Select-SujiTargets {
     return [pscustomobject]@{ Ok = $true; Targets = $writable.ToArray() }
 }
 
+# mpv's state folder for a config folder: the folder itself when it is a
+# portable_config, else %LOCALAPPDATA%\mpv.
+function Get-SujiStateDir {
+    param([hashtable]$Env, $Candidate)
+    if ($Candidate.PSObject.Properties['Portable'] -and $Candidate.Portable) { return '' }
+    if (-not $Env.LocalAppData) { return '' }
+    return (Join-SujiPath $Env.LocalAppData 'mpv')
+}
+
 function Invoke-SujiMain {
     param([string]$Action, [string[]]$Target, [bool]$Yes, [hashtable]$Environment = $null)
     $script:NonInteractive = $Yes
@@ -1882,7 +1925,7 @@ function Invoke-SujiMain {
         foreach ($t in $targets) {
             try {
                 if ($Action -eq 'install') { Install-SujiTarget -Candidate $t -Source $source -ThumbfastFile $thumbFile -Stamp $stamp }
-                else { Uninstall-SujiTarget -Candidate $t -Stamp $stamp }
+                else { Uninstall-SujiTarget -Candidate $t -Stamp $stamp -StateDir (Get-SujiStateDir -Env $Environment -Candidate $t) }
                 $ok++
             }
             catch { Write-SujiError (T 'target_failed' @($t.ConfigDir, $_.Exception.Message)) }
@@ -1892,9 +1935,8 @@ function Invoke-SujiMain {
         if ($temp -and (Test-Path -LiteralPath $temp)) { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
     }
     Write-SujiInfo ''
-    $last = T 'summary' @($ok, $targets.Count)
-    if ($ok -gt 0) { $last += ' ' + (T 'restart') }
-    Write-SujiInfo $last
+    if ($targets.Count -gt 1) { Write-SujiInfo (T 'summary' @($ok, $targets.Count)) }
+    if ($ok -gt 0) { Write-SujiInfo (T 'restart') }
     if ($ok -lt $targets.Count) { return 1 }
     return 0
 }
