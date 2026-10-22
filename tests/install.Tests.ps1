@@ -497,6 +497,14 @@ Test-Case 'thumbfast.conf of the user: the mpv_path lines suji added go on unins
     Uninstall-Test $cfg
     Assert-Equal (Get-TestText $p) $now 'left alone'
     Assert-Equal (Read-SujiRecord (P @($d, 'cfg0'))) $null 'record gone'
+    # A thumbfast.conf suji made stays whole when thumbfast stays.
+    $cfg = P @($d, 'cfg-made')
+    Install-Test $cfg -Kind 'mpv.net' -Exe $exe
+    $made = Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))
+    $script:NonInteractive = $false
+    $script:Answers.Enqueue('n')
+    Uninstall-Test $cfg
+    Assert-Equal (Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))) $made 'whole, with its mpv_path'
 }
 
 # ---------------------------------------------------------------------------

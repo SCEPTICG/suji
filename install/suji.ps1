@@ -214,7 +214,7 @@ $script:SujiStringsEn = @{
     backup_done          = 'Backup: {0}'
     backup_failed        = 'Could not back up {0}: {1}. Nothing was changed in that folder.'
     backup_prune_failed  = 'Could not delete the old backup {0}: {1}'
-    conflicts_found      = 'These interfaces draw their own controls and clash with suji:'
+    conflicts_found      = 'These scripts replace the mpv controls and clash with suji:'
     conflicts_confirm    = 'Move them to {0}? Nothing is deleted, and they come back when you uninstall.'
     conflicts_kept       = 'Left in place: suji and that interface will both draw controls.'
     moved                = 'Moved {0} -> {1}'
@@ -238,7 +238,7 @@ $script:SujiStringsEn = @{
     restore_hint         = 'Your previous config is in {0}.'
     summary              = 'Done: {0} of {1} folders.'
     restart              = 'Restart the player to see the changes.'
-    ask_remove_thumbfast = 'Remove thumbfast (the thumbnails) too?'
+    ask_remove_thumbfast = 'Remove thumbfast too?'
     ask_delete_user      = 'Delete {0} too (your suji settings and the size you chose)?'
     size_left            = 'This file stays: {0} (the size suji remembers, in mpv''s state folder). Delete it yourself if you do not want it.'
     ask_restore          = 'Move back the interfaces suji set aside ({0})?'
@@ -295,7 +295,7 @@ $script:SujiStringsEs = @{
     backup_done          = 'Copia de seguridad: {0}'
     backup_failed        = 'No se ha podido hacer la copia de seguridad de {0}: {1}. No se ha cambiado nada en esa carpeta.'
     backup_prune_failed  = 'No se ha podido borrar la copia de seguridad antigua {0}: {1}'
-    conflicts_found      = 'Estas interfaces dibujan sus propios controles y chocan con suji:'
+    conflicts_found      = 'Estos scripts sustituyen los controles de mpv y chocan con suji:'
     conflicts_confirm    = '\u00bfMoverlos a {0}? No se borra nada y vuelven a su sitio al desinstalar.'
     conflicts_kept       = 'Se quedan donde est\u00e1n: suji y esa interfaz dibujar\u00e1n controles a la vez.'
     moved                = 'Movido {0} -> {1}'
@@ -319,7 +319,7 @@ $script:SujiStringsEs = @{
     restore_hint         = 'Tu configuraci\u00f3n anterior est\u00e1 en {0}.'
     summary              = 'Hecho: {0} de {1} carpetas.'
     restart              = 'Reinicia el reproductor para ver los cambios.'
-    ask_remove_thumbfast = '\u00bfQuitar tambi\u00e9n thumbfast (las miniaturas)?'
+    ask_remove_thumbfast = '\u00bfQuitar tambi\u00e9n thumbfast?'
     ask_delete_user      = '\u00bfBorrar tambi\u00e9n {0} (tus ajustes de suji y el tama\u00f1o elegido)?'
     size_left            = 'Este fichero se queda: {0} (el tama\u00f1o que recuerda suji, en la carpeta de estado de mpv). B\u00f3rralo t\u00fa si no lo quieres.'
     ask_restore          = '\u00bfDevolver a su sitio las interfaces que suji apart\u00f3 ({0})?'
@@ -1662,7 +1662,10 @@ function Uninstall-SujiTarget {
                 }
             }
         }
-        Remove-SujiThumbfastMark -ConfigDir $config -NoFinalEol (& $wasNot 'thumbfast_conf_final_eol')
+        # A thumbfast.conf suji made stays whole when thumbfast stays.
+        if ($values.ContainsKey('thumbfast_conf_preexisting') -and $values['thumbfast_conf_preexisting'] -eq 'yes') {
+            Remove-SujiThumbfastMark -ConfigDir $config -NoFinalEol (& $wasNot 'thumbfast_conf_final_eol')
+        }
         # The question names only what it deletes.
         $user = @($script:UserFiles | Where-Object { Test-Path -LiteralPath (Join-SujiRel $config $_) -PathType Leaf })
         if ($user.Count -gt 0 -and (Confirm-Suji -Question (T 'ask_delete_user' @([string]::Join(', ', $user))) -Default $false)) {
