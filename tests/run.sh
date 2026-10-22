@@ -1,11 +1,12 @@
 #!/bin/sh
 # Runs the unit tests with Lua 5.1 (or $LUA), the tests of install/suji.sh
-# (tests/install.test.sh, which needs bash and zip), a smoke test with a windowless
-# mpv and, if xvfb-run is installed, a real drag and click test, a test of
-# the messages other scripts send, a menu test (which also needs ffmpeg and
-# mkvmerge), a test of the size the more menu remembers, a thumbnail test
-# with a fake thumbfast, a double click test and an action button test
-# (which also need xdotool) in a virtual display.
+# (tests/install.test.sh, which needs bash and zip), the tests of
+# install/suji.ps1 (tests/install.Tests.ps1, with PowerShell 7 if there is
+# one), a smoke test with a windowless mpv and, if xvfb-run is installed, a
+# real drag and click test, a test of the messages other scripts send, a menu
+# test (which also needs ffmpeg and mkvmerge), a test of the size the more
+# menu remembers, a thumbnail test with a fake thumbfast, a double click test
+# and an action button test (which also need xdotool) in a virtual display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -26,6 +27,23 @@ if command -v bash >/dev/null 2>&1; then
     bash tests/install.test.sh || status=1
 else
     echo "install: skipped (no bash)"
+fi
+
+# The Windows installer, with PowerShell 7 (pwsh in PATH, $PWSH or
+# ~/.local/opt/powershell/pwsh).
+PWSH=${PWSH:-$(command -v pwsh 2>/dev/null)}
+[ -n "$PWSH" ] || [ ! -x "$HOME/.local/opt/powershell/pwsh" ] || PWSH=$HOME/.local/opt/powershell/pwsh
+if [ -n "$PWSH" ] && [ -x "$PWSH" ]; then
+    out=$("$PWSH" -NoProfile -NonInteractive -File tests/install.Tests.ps1 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'install.Tests.ps1: FAIL (exit code %s)\n%s\n' "$rc" "$out"
+        status=1
+    else
+        printf 'install.Tests.ps1: %s\n' "$(printf '%s\n' "$out" | tail -n 1)"
+    fi
+else
+    echo "install.Tests.ps1: SKIPPED (no PowerShell 7: pwsh not in PATH, \$PWSH or ~/.local/opt/powershell/pwsh)"
 fi
 
 if ! command -v mpv >/dev/null 2>&1; then
