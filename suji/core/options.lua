@@ -14,6 +14,8 @@ local DEFAULTS = {
     proximity = 120,       -- distance in px (at scale 1) where the bar reacts
     scale = 1,             -- size factor, multiplied by the system HiDPI scale
                            -- and by the size of the more menu (core/size.lua)
+    thumbnails = true,     -- ask thumbfast for thumbnails on the timeline
+                           -- (core/thumbnail.lua); no = never talk to it
     debug = false,         -- log sizes and scale to the mpv console
     -- The row everyone sees who installs suji and touches nothing: playback
     -- on the left, under the title; what is changed while watching (the

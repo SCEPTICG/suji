@@ -4,7 +4,8 @@
 -- elements it draws in modules/ (see core/modules.lua). Menus are a service
 -- of the core (core/menu.lua) that modules use, and other scripts through
 -- messages (core/messages.lua), which also show action buttons
--- (modules/actions.lua).
+-- (modules/actions.lua). Thumbnails on the timeline come from thumbfast
+-- (core/thumbnail.lua).
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -18,6 +19,7 @@ local layout = require "core.layout"
 local mouse = require "core.mouse"
 local menu = require "core.menu"
 local size = require "core.size"
+local thumbnail = require "core.thumbnail"
 local actions = require "modules.actions"
 require "core.messages"
 
@@ -80,12 +82,18 @@ local function grown()
 end
 ctx.visible = grown
 
--- On the timeline, or dragging it, the row shows the time under the cursor.
-function ctx.hover_time()
+-- The time under the cursor, on the timeline or dragging it.
+local function cursor_time()
     local p = mouse.pos()
     if p and state.has_timeline() and (mouse.on_bar() or mouse.captured() == timeline) then
         return timeline.drag_time() or timeline.x_to_time(p.x, state.duration, state.w)
     end
+end
+
+-- The row shows it too, unless the thumbnail's box already does.
+function ctx.hover_time()
+    if thumbnail.shown() then return nil end
+    return cursor_time()
 end
 
 painter.set_renderer(function()
@@ -95,6 +103,9 @@ painter.set_renderer(function()
     local v = animation.value(tween, now)
     local out, remeasured = {}, false
     local function add(ass) if ass and ass ~= "" then out[#out + 1] = ass end end
+    -- Before the row: it decides which time the row shows.
+    local p = mouse.pos()
+    thumbnail.update(v > 0 and cursor_time() or nil, p and p.x)
     add(modules.call(timeline, "render", layout.bar_zone(), v))
     if v > 0 then
         local placed = layout.current()
@@ -105,6 +116,7 @@ painter.set_renderer(function()
             v * menu.title_opacity(now)))
         -- Its opacity came from the old width: once more under an open menu.
         remeasured = modules.title.measured ~= measured and menu.is_open()
+        add(thumbnail.render(v)) -- over the row it covers
     end
     -- Also with the controls hidden: a skip should need no mouse move.
     local actions_ass, actions_running = actions.render(now)
@@ -204,6 +216,7 @@ local function drop_drag()
 end
 mp.register_event("end-file", function()
     state.series, state.episode = nil, nil
+    thumbnail.clear()
     drop_drag()
 end)
 -- The timeline is not optional: if it failed, each new file gets it back.
@@ -233,6 +246,7 @@ local function set_enabled(on)
     elseif not on then
         menu.close(true)
         actions.hide(nil, true)
+        thumbnail.clear()
         mouse.release(false)
         if took_osc and mp.get_property_bool("osc") == false then mp.set_property_bool("osc", true) end
         took_osc = false

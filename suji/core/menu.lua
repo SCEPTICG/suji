@@ -631,6 +631,13 @@ local function draw_item(out, it, i, y0, g, p, s)
     end
 end
 
+-- A black, see-through panel with round corners, behind everything: the
+-- menu's, and the thumbnail's box (core/thumbnail.lua). p: its opacity.
+M.BG_PAD = BG_PAD
+function M.panel(x0, y0, x1, y1, p)
+    return draw.round_rect(x0, y0, x1, y1, RADIUS * state.scale, { color = "&H000000&", opacity = BG_OPACITY * p })
+end
+
 -- ASS for the menu at time now (nil when there is none) and whether it is
 -- still animating. Only the items on screen are drawn.
 function M.render(now)
@@ -644,9 +651,7 @@ function M.render(now)
     local s, g = state.scale, geometry()
     clamp_scroll(g)
     local out, items = {}, cur.def.items
-    -- A black, see-through panel with round corners, behind everything.
-    out[1] = draw.round_rect(g.x0, g.y0 - BG_PAD * s, g.x1, g.y1 + BG_PAD * s, RADIUS * s,
-        { color = "&H000000&", opacity = BG_OPACITY * p })
+    out[1] = M.panel(g.x0, g.y0 - BG_PAD * s, g.x1, g.y1 + BG_PAD * s, p)
     if cur.def.title then
         local t = text.fit(cur.def.title, g.x1 - g.x0 - 2 * PAD * s,
             function(t) return modules.ctx.text_width(t, TITLE_SIZE) end)

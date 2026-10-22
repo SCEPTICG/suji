@@ -2,9 +2,9 @@
 # Runs the unit tests with Lua 5.1 (or $LUA), a smoke test with a windowless
 # mpv and, if xvfb-run is installed, a real drag and click test, a test of
 # the messages other scripts send, a menu test (which also needs ffmpeg and
-# mkvmerge), a test of the size the more menu remembers, a double click
-# test and an action button test (which also need xdotool) in a virtual
-# display.
+# mkvmerge), a test of the size the more menu remembers, a thumbnail test
+# with a fake thumbfast, a double click test and an action button test
+# (which also need xdotool) in a virtual display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -196,6 +196,34 @@ else
         printf '%s\n' "$out" | grep 'xvfb-size:'
     else
         printf 'xvfb-size: FAIL\n%s\n' "$out"
+        status=1
+    fi
+fi
+
+# Thumbnails: what suji asks of thumbfast, here a fake one that only notes
+# it down (tests/fake/thumbfast.lua).
+if [ -z "$tmp" ]; then
+    echo "xvfb-thumbnail: skipped (no xvfb-run)"
+elif [ ! -s "$tmp/t.mkv" ]; then
+    echo "xvfb-thumbnail: skipped (could not make the test video)"
+else
+    out=$(timeout 60 xvfb-run -a mpv --no-config --vo=x11 --ao=null \
+        --geometry=640x480 --pause --keep-open=yes --script=./suji \
+        --script=tests/fake/thumbfast.lua --script=tests/xvfb_thumbnail.lua \
+        --script-opts-append=suji-controls=pause,time,space,volume,fullscreen \
+        --msg-level=all=no,suji=info,thumbfast=info,xvfb_thumbnail=info \
+        "$tmp/t.mkv" 2>&1)
+    rc=$?
+    if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-thumbnail: FAIL\n%s\n' "$out"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-thumbnail: FAIL (exit code %s)\n%s\n' "$rc" "$out"
+        status=1
+    elif printf '%s\n' "$out" | grep -q 'xvfb-thumbnail: ok'; then
+        printf '%s\n' "$out" | grep 'xvfb-thumbnail:'
+    else
+        printf 'xvfb-thumbnail: FAIL\n%s\n' "$out"
         status=1
     fi
 fi
