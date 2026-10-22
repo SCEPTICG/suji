@@ -490,8 +490,10 @@ Test-Case 'a link inside the folder is not followed by the backup' {
     catch { Write-Host '     (symlinks not available, skipped)'; return }
     $b = New-SujiBackup -ConfigDir $cfg -Stamp '20260101-000000'
     Assert-True (-not (Test-Exists (P @($b, 'scripts')))) 'link not copied'
-    Assert-Throws { Install-Test $cfg -Stamp '20260101-000001' } -Like '*is a link*' -What 'install'
+    # An update replaces the link with a real folder; what it pointed at stays.
+    Install-Test $cfg -Stamp '20260101-000001'
     Assert-Equal (Get-TreeState $outside) ('secret.txt=' + (Get-SujiFileSha256 (P @($outside, 'secret.txt')))) 'target untouched'
+    Assert-True (-not ((Get-Item -LiteralPath (P @($cfg, 'scripts', 'suji')) -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) 'a real folder now'
 }
 
 # ---------------------------------------------------------------------------
@@ -584,36 +586,73 @@ function New-LinkedConfig {
     return [pscustomobject]@{ Dir = $d; Config = $cfg; Outside = $outside }
 }
 
-Test-Case 'a link at mpv.conf, script-opts, thumbfast.conf, scripts\suji or the record: refused before anything changes' {
-    $cases = @(@('mpv.conf', $false), @('script-opts', $true), @('script-opts/thumbfast.conf', $false), @('scripts/suji', $true),
-        @('suji-installed.txt', $false))
-    foreach ($case in $cases) {
-        $name = 'link-' + ($case[0] -replace '[/.]', '-')
-        $t = New-LinkedConfig $name $case[0] -Folder:($case[1])
-        if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
-        $before = Get-TreeState $t.Outside
-        $cfgBefore = Get-TreeState $t.Config
-        Assert-Throws { Install-Test $t.Config } -Like '*is a link*Nothing was changed*' -What ('install ' + $name)
-        Assert-Throws { Uninstall-Test $t.Config } -Like '*is a link*' -What ('uninstall ' + $name)
-        Assert-Equal (Get-TreeState $t.Outside) $before ('outside untouched ' + $name)
-        Assert-Equal (Get-TreeState $t.Config) $cfgBefore ('folder untouched ' + $name)
-        Assert-Equal @(Get-ChildItem -LiteralPath $t.Dir -Directory -Filter 'mpv-respaldo-suji-*').Count 0 ('no backup ' + $name)
-    }
+Test-Case 'a linked mpv.conf is written through and stays a link, also on uninstall' {
+    $t = New-LinkedConfig 'link-mpvconf' 'mpv.conf'
+    if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
+    $link = P @($t.Config, 'mpv.conf')
+    Install-Test $t.Config
+    Assert-True (((Get-Item -LiteralPath $link -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) 'still a link'
+    Assert-Equal (Get-TestText (P @($t.Outside, 'file.conf'))) ($Block + "`nvolume=50`n") 'written through'
+    Uninstall-Test $t.Config
+    Assert-True (((Get-Item -LiteralPath $link -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) 'still a link after'
+    Assert-Equal (Get-TestText (P @($t.Outside, 'file.conf'))) "volume=50`n" 'block taken out through it'
 }
 
-Test-Case 'each write checks again, not only the check at the start' {
-    $t = New-LinkedConfig 'link-write' 'mpv.conf'
+Test-Case 'a linked thumbfast.conf only gets mpv_path, through the link' {
+    $t = New-LinkedConfig 'link-tconf' 'script-opts/thumbfast.conf'
     if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
-    Assert-Throws { Update-SujiMpvConf $t.Config } -Like '*is a link*' -What 'mpv.conf'
-    New-Item -ItemType SymbolicLink -Path (P @($t.Config, 'suji-installed.txt')) -Target (P @($t.Outside, 'file.conf')) | Out-Null
-    Assert-Throws { Write-SujiRecord -ConfigDir $t.Config -Values ([ordered]@{ suji_version = 'dev' }) -Aside @() } -Like '*is a link*' -What 'record'
-    Assert-Throws { Write-SujiText -Path (P @($t.Config, 'mpv.conf')) -Text 'x' -Root $t.Config } -Like '*is a link*' -What 'Write-SujiText'
-    Assert-Equal (Get-TestText (P @($t.Outside, 'file.conf'))) "volume=50`n" 'outside untouched'
-    $u = New-LinkedConfig 'link-write-dir' 'script-opts' -Folder
-    Assert-Throws { Update-SujiThumbfastConf -ConfigDir $u.Config -MpvPath 'C:\mpv\mpvnet.exe' } -Like '*is a link*' -What 'thumbfast.conf'
-    Assert-Throws { New-SujiDirectory (P @($u.Config, 'script-opts', 'sub')) -Root $u.Config } -Like '*is a link*' -What 'folder'
-    Assert-Equal (Get-TreeState $u.Outside) ('thumbfast.conf=' + (Get-SujiFileSha256 (P @($u.Outside, 'thumbfast.conf')))) 'outside folder untouched'
-    Assert-Equal (Get-TestText (P @($u.Outside, 'thumbfast.conf'))) "network=no`n" 'outside conf untouched'
+    $exe = P @($t.Dir, 'mpv.net', 'mpvnet.exe')
+    Install-Test $t.Config -Kind 'mpv.net' -Exe $exe
+    Assert-True (((Get-Item -LiteralPath (P @($t.Config, 'script-opts', 'thumbfast.conf')) -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) 'still a link'
+    Assert-Equal (Get-TestText (P @($t.Outside, 'file.conf'))) ("volume=50`n`n" + $script:MpvPathComment + "`nmpv_path=" + $exe + "`n") 'mpv_path added in the target'
+}
+
+Test-Case 'a linked script-opts: thumbfast.conf is made in the folder it points at, and the link stays' {
+    $t = New-LinkedConfig 'link-opts' 'script-opts' -Folder
+    if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
+    Remove-Item -LiteralPath (P @($t.Outside, 'thumbfast.conf'))
+    Install-Test $t.Config
+    Assert-True ((Get-TestText (P @($t.Outside, 'thumbfast.conf'))).StartsWith('# suji settings for thumbfast')) 'in the target'
+    Uninstall-Test $t.Config
+    Assert-True (Test-Exists (P @($t.Config, 'script-opts'))) 'link kept'
+    Assert-True (((Get-Item -LiteralPath (P @($t.Config, 'script-opts')) -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) 'still a link'
+    Assert-True (Test-Exists $t.Outside) 'target folder kept'
+    Assert-True (-not (Test-Exists (P @($t.Outside, 'thumbfast.conf')))) 'suji''s thumbfast.conf removed from it'
+}
+
+Test-Case 'a linked scripts folder: suji and thumbfast go in the folder it points at, and the link stays' {
+    $t = New-LinkedConfig 'link-scripts' 'scripts' -Folder
+    if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
+    Install-Test $t.Config
+    Assert-True (Test-Exists (P @($t.Outside, 'suji', 'main.lua'))) 'suji in the target'
+    Assert-True (Test-Exists (P @($t.Outside, 'thumbfast.lua'))) 'thumbfast in the target'
+    Uninstall-Test $t.Config
+    Assert-True (((Get-Item -LiteralPath (P @($t.Config, 'scripts')) -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) 'still a link'
+    Assert-Equal (Get-TreeState $t.Outside) ('thumbfast.conf=' + (Get-SujiFileSha256 (P @($t.Outside, 'thumbfast.conf')))) 'only what was there before'
+}
+
+Test-Case 'uninstall with scripts\suji or thumbfast.lua as links: the links go, what they point at stays' {
+    $d = New-TestDir 'link-suji-uninstall'
+    $cfg = P @($d, 'mpv')
+    Install-Test $cfg
+    $other = P @($d, 'other-suji')
+    Set-TestFile (P @($other, 'main.lua')) '-- my own suji'
+    $otherThumb = P @($d, 'my-thumbfast.lua')
+    Set-TestFile $otherThumb '-- my thumbfast'
+    Remove-SujiItem -Path (P @($cfg, 'scripts', 'suji')) -Root $cfg
+    Remove-SujiItem -Path (P @($cfg, 'scripts', 'thumbfast.lua')) -Root $cfg
+    try {
+        New-Item -ItemType SymbolicLink -Path (P @($cfg, 'scripts', 'suji')) -Target $other | Out-Null
+        New-Item -ItemType SymbolicLink -Path (P @($cfg, 'scripts', 'thumbfast.lua')) -Target $otherThumb | Out-Null
+    }
+    catch { Write-Host '     (symlinks not available, skipped)'; return }
+    $script:NonInteractive = $false
+    $script:Answers.Enqueue('y')
+    Uninstall-Test $cfg
+    Assert-True (-not (Test-Exists (P @($cfg, 'scripts', 'suji')))) 'suji link gone'
+    Assert-True (-not (Test-Exists (P @($cfg, 'scripts', 'thumbfast.lua')))) 'thumbfast link gone'
+    Assert-Equal (Get-TestText (P @($other, 'main.lua'))) '-- my own suji' 'other folder intact'
+    Assert-Equal (Get-TestText $otherThumb) '-- my thumbfast' 'other thumbfast intact'
 }
 
 Test-Case 'writes leave no temporary file behind' {
