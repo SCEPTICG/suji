@@ -29,7 +29,7 @@ suji turns off mpv's OSC, but it cannot know whether another interface is instal
 
 ### Uninstalling
 
-Delete the `scripts/suji` folder (and `script-opts/suji.conf`, if you made one).
+Delete the `scripts/suji` folder (and `script-opts/suji.conf`, if you made one, and `suji-size` in mpv's state folder, if you chose a size: see [Size](#size)).
 
 ## Usage
 
@@ -52,9 +52,23 @@ Each menu opens upwards from its button. A button with nothing to offer is hidde
 - **Audio:** the audio tracks. Shown when there is more than one.
 - **Playlist:** the chapters, then the playlist. The playlist lists video and audio files and URLs, and the file playing; folders and files with no extension are left out. Shown when the file has chapters or the playlist has more than one entry to list.
 - **Speed:** the playback speeds from 0.25× to 4×. Away from 1×, the button shows the speed in its corner. Shown whenever a file is loaded.
-- **More:** the video track and the editions when there is a choice (a new edition restarts playback), and *Open from clipboard* (mpv 0.40 or newer). Hidden when it has none of them.
+- **More:** the video track and the editions when there is a choice (a new edition restarts playback), *Open from clipboard* (mpv 0.40 or newer) and *Size*. Shown whenever a file is loaded.
 
 Click an entry to choose it; the active one has a thin mark on its left. The wheel scrolls a long list, and the arrow keys and Enter work too. A menu closes after a choice, with a click anywhere outside it (that click does nothing else) or with Esc. While a menu is open the controls stay on screen.
+
+### Size
+
+*Size* in the More menu lists 75%, 90%, 100%, 110%, 125% and 150%. A choice resizes all of suji at once (the row, the timeline, the title, the menus and the action buttons) and the menu stays open, so another size can be tried; Esc or a click outside closes it. 100% is the size the `scale` option gives, and the size chosen multiplies it: with `scale=1.2` and 125%, the factor is 1.5 (still within 0.25 to 8), times the system's HiDPI scale.
+
+suji remembers the size on each computer, in a file of its own, `suji-size`, in mpv's state folder. It holds the percentage and nothing else, and it is written only when a size is chosen. `suji.conf` is never touched.
+
+| System | mpv state folder |
+| --- | --- |
+| Linux and BSD | `~/.local/state/mpv/` (or `$XDG_STATE_HOME/mpv/`) |
+| macOS | `~/.config/mpv/` |
+| Windows | `%LOCALAPPDATA%\mpv\`, or the `portable_config` folder next to `mpv.exe` if there is one |
+
+mpv only creates that folder when it saves something there (watch later, the console's history). If it does not exist, suji cannot save the size: it says so once in the mpv console, and the size lasts until mpv is closed. Create the folder to keep it. A file that cannot be read or holds anything else gives 100%. With `--no-config` mpv has no state folder, and the size is not remembered.
 
 ## Options
 
@@ -69,7 +83,7 @@ All options, with their defaults and what they do, are in [`docs/suji.conf`](doc
 | `remaining_time` | `no` | show the remaining time at start |
 | `hide_delay` | `1.5` | seconds without movement before hiding |
 | `proximity` | `120` | distance in px where the bar reacts |
-| `scale` | `1` | size, times the system's HiDPI scale |
+| `scale` | `1` | size, times the system's HiDPI scale and the size chosen in More |
 | `debug` | `no` | log to the mpv console |
 
 `script-opts/suji.conf` is read when mpv starts; changes to the file apply the next time mpv is opened. While mpv runs, options can be changed through the `script-opts` property, with a `suji-` prefix, and suji applies them at once:

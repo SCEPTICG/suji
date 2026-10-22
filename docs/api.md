@@ -176,7 +176,7 @@ For a script that draws its own things near the bottom of the window, suji publi
 { bottom = 62 } -- px, at scale 1
 ```
 
-`bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the row of controls (to the top of the timeline's strip, 24 px at scale 1, when the row is empty). It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale or the row (the `controls` option, a button that appears or goes), and it is deleted while suji is turned off.
+`bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the row of controls (to the top of the timeline's strip, 24 px at scale 1, when the row is empty). It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale (the size chosen in the More menu included) or the row (the `controls` option, a button that appears or goes), and it is deleted while suji is turned off.
 
 suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen, and on the [action buttons](#action-buttons). Elsewhere above `bottom`, clicks are left to mpv and to other scripts, with one exception: while a menu of suji is open, any menu, a click anywhere in the window is suji's. On the menu it chooses; anywhere else it only closes the menu, and nothing else gets it. Right after a click on a menu or on an action button, suji also keeps the second click of a double click, for mpv's double-click time or until the mouse moves away; on an action button, that second click runs nothing.
 
