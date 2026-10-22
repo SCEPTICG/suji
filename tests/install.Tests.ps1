@@ -426,16 +426,34 @@ Test-Case 'uninstall: the settings question names only what it deletes; a suji-s
     $script:NonInteractive = $false
     foreach ($a in @('y', 'y')) { $script:Answers.Enqueue($a) }
     $shown = Get-ShownText { Uninstall-Test $cfg -StateDir $state }
-    Assert-True ($script:Prompts[1].StartsWith('Delete suji-size too')) ('question: ' + $script:Prompts[1])
+    Assert-True ($script:Prompts[1].StartsWith('Delete your suji settings (suji-size)?')) ('question: ' + $script:Prompts[1])
     Assert-True (-not $script:Prompts[1].Contains('suji.conf')) 'no suji.conf in it: there is none'
     Assert-True (-not (Test-Exists (P @($cfg, 'suji-size')))) 'the one in the config folder deleted'
     Assert-Equal (Get-TestText (P @($state, 'suji-size'))) "110`n" 'the state one stays'
-    Assert-True ($shown.Contains('This file stays: ' + (P @($state, 'suji-size')))) ('named; shown: ' + $shown)
+    Assert-True ($shown.Contains('The size suji remembers is also in ' + (P @($state, 'suji-size')) + ': that file stays')) ('named; shown: ' + $shown)
     # A portable_config is its own state folder: nothing else is named.
     $c = [pscustomobject]@{ Kind = 'AnimeJaNai'; Exe = 'x'; ConfigDir = $cfg; Portable = $true }
     Assert-Equal (Get-SujiStateDir -Env (New-FakeEnv $d) -Candidate $c) '' 'portable'
-    $c.Portable = $false
-    Assert-Equal (Get-SujiStateDir -Env (New-FakeEnv $d) -Candidate $c) (P @($d, 'Local', 'mpv')) '%LOCALAPPDATA%\mpv'
+    $fake = New-FakeEnv $d
+    # Only mpv's own folder (also found without the player) has its state in %LOCALAPPDATA%\mpv.
+    $c = [pscustomobject]@{ Kind = 'mpv'; Exe = 'x'; ConfigDir = (P @($fake.AppData, 'mpv')); Portable = $false }
+    Assert-Equal (Get-SujiStateDir -Env $fake -Candidate $c) (P @($fake.LocalAppData, 'mpv')) 'mpv'
+    $c.Kind = 'folder'
+    Assert-Equal (Get-SujiStateDir -Env $fake -Candidate $c) (P @($fake.LocalAppData, 'mpv')) 'the mpv folder, no player'
+    foreach ($k in @('mpv.net', 'AnimeJaNai')) {
+        $c = [pscustomobject]@{ Kind = $k; Exe = 'x'; ConfigDir = (P @($fake.AppData, 'mpv.net')); Portable = $false }
+        Assert-Equal (Get-SujiStateDir -Env $fake -Candidate $c) '' $k
+    }
+    $c = [pscustomobject]@{ Kind = 'folder'; Exe = ''; ConfigDir = (P @($fake.AppData, 'mpv.net')); Portable = $false }
+    Assert-Equal (Get-SujiStateDir -Env $fake -Candidate $c) '' 'the mpv.net folder, no player'
+    # Through the whole run: mpv.net says nothing of a suji-size in %LOCALAPPDATA%\mpv.
+    $netCfg = P @($fake.AppData, 'mpv.net')
+    Install-Test $netCfg -Kind 'mpv.net'
+    Set-TestFile (P @($fake.LocalAppData, 'mpv', 'suji-size')) "110`n"
+    $netCand = [pscustomobject]@{ Kind = 'mpv.net'; Exe = ''; ConfigDir = $netCfg; Portable = $false }
+    $script:NonInteractive = $true
+    $shown = Get-ShownText { Uninstall-SujiTarget -Candidate $netCand -Stamp '20260103-000000' -StateDir (Get-SujiStateDir -Env $fake -Candidate $netCand) }
+    Assert-True (-not $shown.Contains('The size suji remembers')) ('no notice for mpv.net; shown: ' + $shown)
 }
 
 # ---------------------------------------------------------------------------
