@@ -663,9 +663,13 @@ record_path_ok() {
     return 0
 }
 
-# "moved|original", both clean record paths.
+# "moved|original", both clean record paths: moved inside the set-aside
+# folder, original in scripts/, script-opts/ or fonts/ (so an edited record
+# can never move mpv.conf or anything else of the user's).
 pair_ok() {
     case $1 in *'|'*'|'*) return 1 ;; *'|'*) ;; *) return 1 ;; esac
+    case ${1%%|*} in "$DISABLED_DIR"/?*) ;; *) return 1 ;; esac
+    case ${1#*|} in scripts/?* | script-opts/?* | fonts/?*) ;; *) return 1 ;; esac
     record_path_ok "${1%%|*}" && record_path_ok "${1#*|}"
 }
 

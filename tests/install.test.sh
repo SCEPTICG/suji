@@ -320,9 +320,13 @@ h=$(newhome aside3)
 cfg="$h/.config/mpv"
 run "$h" --yes
 printf '%s\n' 'secret' >"$h/outside.txt"
+printf 'volume=50\n' >"$cfg/mpv.conf.mine"
 printf 'disabled=../../outside.txt|scripts/x.lua\ndisabled=scripts-apartados-suji/a|/etc/passwd\n' >>"$cfg/suji-installed.txt"
+printf 'disabled=mpv.conf.mine|scripts/y.lua\ndisabled=scripts-apartados-suji/b|mpv.conf.b\n' >>"$cfg/suji-installed.txt"
 run "$h" --yes --action uninstall
 check 'record: paths outside the folder ignored' test -f "$h/outside.txt" -a ! -e "$cfg/scripts/x.lua"
+check 'record: only set-aside items moved, only back to scripts, script-opts or fonts' \
+    test -f "$cfg/mpv.conf.mine" -a ! -e "$cfg/scripts/y.lua"
 check 'record: said so' has "$out" 'Ignored an invalid entry'
 
 # --- mpv.conf ------------------------------------------------------------------------------------
