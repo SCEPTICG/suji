@@ -93,6 +93,17 @@ suji_fetch() {
 }
 suji_uname() { printf '%s' "${SUJI_TEST_OS:-Linux}"; }
 suji_euid() { printf '%s' "${SUJI_TEST_EUID:-1000}"; }
+suji_sandbox_running() { return "${SUJI_TEST_SANDBOX_RUNNING:-1}"; }
+# A link planted by the sandboxed mpv while the installer works: just before
+# the change of a path ending in SUJI_TEST_PLANT_AT, SUJI_TEST_PLANT_LINK (in
+# the config folder) becomes a link to SUJI_TEST_PLANT_TO.
+suji_before_change() {
+    [ -n "${SUJI_TEST_PLANT_AT:-}" ] || return 0
+    case $1 in */"$SUJI_TEST_PLANT_AT") ;; *) return 0 ;; esac
+    [ ! -L "$CFG/$SUJI_TEST_PLANT_LINK" ] || return 0
+    mv "$CFG/$SUJI_TEST_PLANT_LINK" "$CFG/$SUJI_TEST_PLANT_LINK.real"
+    ln -s "$SUJI_TEST_PLANT_TO" "$CFG/$SUJI_TEST_PLANT_LINK"
+}
 suji_apple_languages() { [ -z "${SUJI_TEST_APPLE_LANGS:-}" ] || printf '%b\n' "$SUJI_TEST_APPLE_LANGS"; }
 suji_find_mpv() { printf '%s' "${SUJI_TEST_MPV-/usr/bin/mpv}"; }
 suji_flatpak_mpv() { [ -n "${SUJI_TEST_FLATPAK:-}" ]; }
@@ -490,6 +501,47 @@ for link in mpv.conf scripts script-opts/thumbfast.conf scripts/suji folder; do
     listing "$h/outside" >"$tmp/sandbox-after.txt"
     check "Flatpak, link at $link: uninstall refused too" test "$rc" = 1
     check "Flatpak, link at $link: uninstall changed nothing outside" same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
+done
+# A conflicting script that is a link out of the sandbox: not followed, not copied.
+h=$(newhome sandbox-conflict)
+cfg="$h/$fp"
+mkdir -p "$cfg/scripts" "$h/outside"
+printf '%s\n' 'SECRET' >"$h/outside/secret.lua"
+ln -s "$h/outside/secret.lua" "$cfg/scripts/osc.lua"
+listing "$h/outside" >"$tmp/sandbox-before.txt"
+run "$h" --yes --target "$cfg"
+check 'Flatpak, linked conflict: installed, the link left alone' test "$rc" = 0 -a -L "$cfg/scripts/osc.lua"
+check 'Flatpak, linked conflict: nothing of it in the backup' test -z "$(grep -rl SECRET "$h/.var/app/io.mpv.Mpv/config"/mpv-respaldo-suji-* 2>/dev/null)"
+listing "$h/outside" >"$tmp/sandbox-after.txt"
+check 'Flatpak, linked conflict: what it points to untouched' same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
+# The sandboxed mpv running: it could swap things for links while we work.
+h=$(newhome sandbox-running)
+cfg="$h/$fp"
+mkdir -p "$cfg"
+SUJI_TEST_SANDBOX_RUNNING=0 run "$h" --yes --target "$cfg"
+check 'Flatpak with mpv running: exit 1, asks to close it' test "$rc" = 1 -a -n "$(grep -F 'is running' "$out")" -a ! -e "$cfg/scripts"
+SUJI_TEST_SANDBOX_RUNNING=2 run "$h" --yes --target "$cfg"
+check 'Flatpak, cannot tell, --yes: taken as closed and said so' test "$rc" = 0 -a -n "$(grep -F 'taken as closed' "$out")"
+h=$(newhome sandbox-ask)
+cfg="$h/$fp"
+mkdir -p "$cfg"
+answers '1\nn\n'
+SUJI_TEST_SANDBOX_RUNNING=2 run "$h" --target "$cfg"
+check 'Flatpak, cannot tell, answered not closed: exit 1, nothing done' test "$rc" = 1 -a ! -e "$cfg/scripts"
+no_answers
+# A link planted in a parent folder just before a change: stops there.
+for at in scripts/suji mpv.conf; do
+    h=$(newhome "sandbox-race-$(printf '%s' "$at" | tr '/' '-')")
+    cfg="$h/$fp"
+    mkdir -p "$cfg/scripts" "$h/outside"
+    printf 'export SECRET=1\n' >"$h/outside/mpv.conf"
+    listing "$h/outside" >"$tmp/sandbox-before.txt"
+    if [ "$at" = mpv.conf ]; then link=mpv.conf; to="$h/outside/mpv.conf"; else link=scripts; to="$h/outside"; fi
+    : >"$cfg/mpv.conf"
+    SUJI_TEST_PLANT_AT=$at SUJI_TEST_PLANT_LINK=$link SUJI_TEST_PLANT_TO=$to run "$h" --yes --target "$cfg"
+    check "Flatpak, link planted at $link during the install: exit 1" test "$rc" = 1 -a -n "$(grep -F 'follows no links there' "$out")"
+    listing "$h/outside" >"$tmp/sandbox-after.txt"
+    check "Flatpak, link planted at $link during the install: nothing written outside" same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
 done
 h=$(newhome flatpak)
 SUJI_TEST_FLATPAK=1 SUJI_TEST_MPV='' run "$h" --yes --target "$h/$fp"

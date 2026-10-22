@@ -190,6 +190,9 @@ suji_text_en() {
         root_refused) s='The installer is running as root: nothing is done. Run it as your normal user, without sudo.' ;;
         sandbox_link) s='%s is a symbolic link or leads out of %s. The Flatpak or Snap mpv can write in that folder, so the installer follows no links there: nothing was changed in it.' ;;
         suji_link_odd) s='%s is a symbolic link to something that is not a suji folder (no main.lua): nothing was changed in that folder.' ;;
+        sandbox_running) s='The %s mpv is running, and it can change %s while the installer works there. Close it and run the installer again.' ;;
+        ask_mpv_closed) s='Is the %s mpv closed? (It could not be checked; while it runs it can change the folder under the installer.)' ;;
+        assumed_closed) s='Could not check whether the %s mpv is running: taken as closed (--yes). Close it before installing.' ;;
         record_bad) s='Ignored an invalid entry in suji-installed.txt: %s' ;;
         unsupported_os) s='This installer is for macOS and Linux (this system is %s). On Windows use suji.ps1: see the README.' ;;
         missing_tool) s='%s is needed and was not found.' ;;
@@ -270,6 +273,9 @@ suji_text_es() {
         root_refused) s='El instalador se está ejecutando como root: no se hace nada. Ejecútalo con tu usuario normal, sin sudo.' ;;
         sandbox_link) s='%s es un enlace simbólico o lleva fuera de %s. El mpv de Flatpak o Snap puede escribir en esa carpeta, así que el instalador no sigue enlaces ahí: no se ha cambiado nada en ella.' ;;
         suji_link_odd) s='%s es un enlace simbólico a algo que no es una carpeta de suji (no tiene main.lua): no se ha cambiado nada en esa carpeta.' ;;
+        sandbox_running) s='El mpv de %s está abierto y puede cambiar %s mientras trabaja el instalador. Ciérralo y vuelve a ejecutar el instalador.' ;;
+        ask_mpv_closed) s='¿Está cerrado el mpv de %s? (No se ha podido comprobar; mientras esté abierto puede cambiar la carpeta a espaldas del instalador.)' ;;
+        assumed_closed) s='No se ha podido comprobar si el mpv de %s está abierto: se da por cerrado (--yes). Ciérralo antes de instalar.' ;;
         record_bad) s='Se ignora una entrada no válida de suji-installed.txt: %s' ;;
         unsupported_os) s='Este instalador es para macOS y Linux (este sistema es %s). En Windows usa suji.ps1: mira el README.' ;;
         missing_tool) s='Hace falta %s y no se encuentra.' ;;
@@ -441,6 +447,7 @@ remove_item() {
         SUJI_ERR=$(T outside_target "$(clean_text "$p")" "$(clean_text "$root")")
         return 1
     fi
+    guard "$p" || return 1
     if [ -L "$p" ] || [ -f "$p" ]; then
         rm -f "$p" || return 1
     elif [ -d "$p" ]; then
@@ -495,10 +502,12 @@ link_target() {
 # gets the usual ones for the umask). A link stays a link: the file it points
 # to is the one written (dotfile managers link mpv.conf). Never as root (main
 # refuses to run as root), so a link only leads where the user could write,
-# and never in a Flatpak or Snap folder, where check_sandbox refuses links.
+# and never in a Flatpak or Snap folder (SANDBOX_MODE), where it follows none.
 write_file() {
-    local path tmp
-    path=$(link_target "$1")
+    local path=$1 tmp
+    # In a Flatpak or Snap folder no link is ever followed: the rename
+    # replaces whatever is there.
+    if [ "$SANDBOX_MODE" = 1 ]; then guard "$path" self || return 1; else path=$(link_target "$path"); fi
     tmp=$(mktemp "$path.suji-tmp.XXXXXX") || return 1
     if [ -f "$path" ]; then
         cp -p "$path" "$tmp" 2>/dev/null || :
@@ -529,9 +538,12 @@ physical() { (cd -P "$1" 2>/dev/null && pwd -P); }
 # other folder: nothing to check, links are followed (dotfiles). Run before
 # anything in the folder changes.
 check_sandbox() {
-    local base a pa pb rel
+    local base a pa pb rel kind label
+    SANDBOX_MODE=0
     base=$(sandbox_base "$CFG")
     [ -n "$base" ] || return 0
+    SANDBOX_MODE=1
+    SANDBOX_BASE=$base
     # The nearest part of CFG that exists must lead inside the sandbox.
     a=$CFG
     while [ ! -e "$a" ] && [ ! -L "$a" ]; do a=${a%/*}; done
@@ -546,6 +558,57 @@ check_sandbox() {
     for rel in "${SANDBOX_CHECKED[@]}"; do
         if [ -L "$CFG/$rel" ]; then SUJI_ERR=$(T sandbox_link "$(clean_text "$CFG/$rel")" "$(clean_text "$base")"); return 1; fi
     done
+    # A running mpv could still swap something for a link while we work.
+    case $base in */.var/app/*) kind=flatpak; label=Flatpak ;; *) kind=snap; label=Snap ;; esac
+    suji_sandbox_running "$kind" "${base##*/}"
+    case $? in
+        0) SUJI_ERR=$(T sandbox_running "$label" "$(clean_text "$CFG")"); return 1 ;;
+        2)
+            if [ "$NONINTERACTIVE" = 1 ]; then
+                warn "$(T assumed_closed "$label")"
+            elif ! confirm "$(T ask_mpv_closed "$label")" yes; then
+                SUJI_ERR=$(T sandbox_running "$label" "$(clean_text "$CFG")")
+                return 1
+            fi
+            ;;
+    esac
+}
+
+# Replaceable in tests: 0 when the mpv of a sandbox ($1 flatpak or snap, $2
+# its id) is running, 1 when it is not, 2 when that cannot be told.
+suji_sandbox_running() {
+    local list
+    if [ "$1" = flatpak ]; then
+        command -v flatpak >/dev/null 2>&1 || return 2
+        list=$(flatpak ps --columns=application 2>/dev/null) || return 2
+        if printf '%s\n' "$list" | grep -qxF "$2"; then return 0; fi
+        return 1
+    fi
+    command -v pgrep >/dev/null 2>&1 || return 2
+    # Snap programs run from /snap/<name>/<revision>/...
+    pgrep -f "^/snap/$2/" >/dev/null 2>&1
+    case $? in 0) return 0 ;; 1) return 1 ;; *) return 2 ;; esac
+}
+
+# Replaceable in tests: called just before each change in a Flatpak or Snap
+# folder, with the path about to change.
+suji_before_change() { :; }
+
+# guard <path> [self]: in a Flatpak or Snap folder (SANDBOX_MODE), fails with
+# SUJI_ERR set when any folder between the path and CFG, or CFG itself, or,
+# with self, the path itself, is a symbolic link. Run just before each write,
+# move, removal or new folder there: the sandboxed mpv could have planted one
+# since check_sandbox looked.
+guard() {
+    [ "$SANDBOX_MODE" = 1 ] || return 0
+    local p=$1
+    suji_before_change "$p"
+    [ "${2:-}" = self ] || p=${p%/*}
+    while is_inside "$p" "$CFG"; do
+        if [ -L "$p" ]; then SUJI_ERR=$(T sandbox_link "$(clean_text "$p")" "$(clean_text "$SANDBOX_BASE")"); return 1; fi
+        p=${p%/*}
+    done
+    if [ -L "$CFG" ]; then SUJI_ERR=$(T sandbox_link "$(clean_text "$CFG")" "$(clean_text "$SANDBOX_BASE")"); return 1; fi
 }
 
 # The lines of a text file: F_LINE (content, without line break), F_EOL (crlf,
@@ -584,7 +647,8 @@ print_lines() {
     done
 }
 
-save_file() { print_lines | write_file "$1"; }
+# Not in a pipe: write_file runs in this shell, so its SUJI_ERR is kept.
+save_file() { write_file "$1" < <(print_lines); }
 
 # Line break used for new lines: CRLF when the file has any, LF otherwise.
 file_eol() {
@@ -786,17 +850,19 @@ prev_flag() {
 # Writes the record of CFG from what install_steps knows. Written again after
 # each interface it sets aside, so a failure never leaves one unrecorded.
 write_record() {
+    write_file "$CFG/$RECORD_NAME" < <(record_text)
+}
+
+record_text() {
     local d
-    {
-        printf '%s\n' "$RECORD_HEADER"
-        printf 'suji_version=%s\n' "$SUJI_VERSION"
-        printf 'installed_at=%s\n' "$(date +%Y-%m-%dT%H:%M:%S)"
-        printf 'player=%s\n' "$KIND"
-        printf 'thumbfast_preexisting=%s\n' "$THUMB_BEFORE"
-        printf 'thumbfast_conf_preexisting=%s\n' "$TCONF_BEFORE"
-        printf 'mpv_conf_preexisting=%s\n' "$MPV_BEFORE"
-        for d in ${DISABLED[@]+"${DISABLED[@]}"}; do printf 'disabled=%s\n' "$d"; done
-    } | write_file "$CFG/$RECORD_NAME"
+    printf '%s\n' "$RECORD_HEADER"
+    printf 'suji_version=%s\n' "$SUJI_VERSION"
+    printf 'installed_at=%s\n' "$(date +%Y-%m-%dT%H:%M:%S)"
+    printf 'player=%s\n' "$KIND"
+    printf 'thumbfast_preexisting=%s\n' "$THUMB_BEFORE"
+    printf 'thumbfast_conf_preexisting=%s\n' "$TCONF_BEFORE"
+    printf 'mpv_conf_preexisting=%s\n' "$MPV_BEFORE"
+    for d in ${DISABLED[@]+"${DISABLED[@]}"}; do printf 'disabled=%s\n' "$d"; done
 }
 
 # ---------------------------------------------------------------------------
@@ -994,7 +1060,7 @@ make_backup() {
     items=()
     for rel in "${BACKUP_ITEMS[@]}" ${1+"$@"}; do
         [ -e "$CFG/$rel" ] || [ -L "$CFG/$rel" ] || continue
-        if [ -L "$CFG/$rel" ] && { [ -d "$CFG/$rel" ] || [ ! -e "$CFG/$rel" ]; }; then
+        if [ -L "$CFG/$rel" ] && { [ "$SANDBOX_MODE" = 1 ] || [ -d "$CFG/$rel" ] || [ ! -e "$CFG/$rel" ]; }; then
             warn "$(T link_skipped "$(clean_text "$CFG/$rel")")"
             continue
         fi
@@ -1008,7 +1074,9 @@ make_backup() {
     if ! mkdir "$BACKUP"; then SUJI_ERR=$(clean_text "$BACKUP"); BACKUP=''; return 1; fi
     for rel in "${items[@]}"; do
         case $rel in */*) mkdir -p "$BACKUP/${rel%/*}" || { rm -rf "$BACKUP"; SUJI_ERR=$rel; BACKUP=''; return 1; } ;; esac
-        if [ -d "$CFG/$rel" ]; then
+        # cp -PR never follows a link; outside a sandbox a linked file
+        # (dotfiles) is copied as the file it leads to.
+        if [ -d "$CFG/$rel" ] || [ "$SANDBOX_MODE" = 1 ]; then
             cp -pPR "$CFG/$rel" "$BACKUP/$rel" || { rm -rf "$BACKUP"; SUJI_ERR=$(clean_text "$rel"); BACKUP=''; return 1; }
         else
             cp -p "$CFG/$rel" "$BACKUP/$rel" || { rm -rf "$BACKUP"; SUJI_ERR=$(clean_text "$rel"); BACKUP=''; return 1; }
@@ -1068,6 +1136,8 @@ find_conflicts() {
     shopt -s nocasematch
     for f in "$CFG"/scripts/*; do
         name=${f##*/}
+        # In a Flatpak or Snap folder a link is never touched (or followed).
+        if [ "$SANDBOX_MODE" = 1 ] && [ -L "$f" ]; then continue; fi
         if [ -d "$f" ]; then
             [[ $name == uosc ]] && { CONFLICTS[${#CONFLICTS[@]}]=$f; names[${#names[@]}]=$name; }
             continue
@@ -1080,6 +1150,7 @@ find_conflicts() {
     done
     for f in "$CFG"/script-opts/*.conf; do
         [ -f "$f" ] || continue
+        if [ "$SANDBOX_MODE" = 1 ] && [ -L "$f" ]; then continue; fi
         name=${f##*/}
         for stem in ${names[@]+"${names[@]}"}; do
             if [[ $name == "$stem.conf" ]]; then CONFLICTS[${#CONFLICTS[@]}]=$f; break; fi
@@ -1088,6 +1159,7 @@ find_conflicts() {
     if [ "${#names[@]}" -gt 0 ]; then
         for f in "$CFG"/fonts/*; do
             [ -f "$f" ] || continue
+            if [ "$SANDBOX_MODE" = 1 ] && [ -L "$f" ]; then continue; fi
             name=${f##*/}
             for pat in "${CONFLICT_FONT_PATTERNS[@]}"; do
                 # shellcheck disable=SC2053
@@ -1113,6 +1185,8 @@ move_aside() {
     case $rel in */*) sub=${rel%/*} ;; esac
     dest_dir="$CFG/$DISABLED_DIR"
     if [ -n "$sub" ] && [ "$sub" != scripts ]; then dest_dir="$dest_dir/$sub"; fi
+    guard "$p" || return 1
+    guard "$dest_dir" self || return 1
     mkdir -p "$dest_dir" || return 1
     name=${p##*/}
     dest="$dest_dir/$name"
@@ -1120,6 +1194,7 @@ move_aside() {
         if [ -d "$p" ] || [ "${name%.*}" = "$name" ]; then dest="$dest_dir/$name-$STAMP"
         else dest="$dest_dir/${name%.*}-$STAMP.${name##*.}"; fi
     fi
+    guard "$dest" self || return 1
     mv "$p" "$dest" || return 1
     MOVED_PAIR="$(rel_path "$dest" "$CFG")|$rel"
     info "$(T moved "$(clean_text "$rel")" "$(clean_text "${MOVED_PAIR%%|*}")")"
@@ -1140,7 +1215,10 @@ restore_pairs() {
         fi
         [ -e "$from" ] || [ -L "$from" ] || continue
         if [ -e "$to" ] || [ -L "$to" ]; then warn "$(T restore_skipped "$(clean_text "${entry%%|*}")" "$(clean_text "${entry#*|}")")"; continue; fi
+        guard "$from" || return 1
+        guard "${to%/*}" self || return 1
         mkdir -p "${to%/*}" || return 1
+        guard "$to" self || return 1
         mv "$from" "$to" || return 1
         info "$(T moved "$(clean_text "${entry%%|*}")" "$(clean_text "${entry#*|}")")"
     done
@@ -1218,6 +1296,7 @@ install_steps() {
     done
 
     # thumbfast: not copied again when it is exactly as pinned.
+    guard "$CFG/scripts" self && guard "$CFG/script-opts" self || return 1
     mkdir -p "$CFG/scripts" "$CFG/script-opts" || return 1
     if thumbfast_uptodate "$CFG"; then
         info "$(T thumbfast_uptodate)"
@@ -1230,6 +1309,7 @@ install_steps() {
     # one in place. A linked scripts/suji (outside a sandbox; install_target
     # checked it leads to a suji folder) stays a link: the folder it points
     # to (SUJI_DEST) is the one replaced.
+    guard "${SUJI_DEST%/*}" self || return 1
     tmp=$(mktemp -d "${SUJI_DEST%/*}/.suji-new.XXXXXX") || return 1
     if ! cp -R "$SRC_DIR/." "$tmp/"; then rm -rf "$tmp"; return 1; fi
     if [ "$SUJI_DEST" = "$CFG/scripts/suji" ]; then
@@ -1237,6 +1317,7 @@ install_steps() {
     else
         rm -rf "$SUJI_DEST" || { rm -rf "$tmp"; return 1; }
     fi
+    guard "$SUJI_DEST" self || { rm -rf "$tmp"; return 1; }
     mv "$tmp" "$SUJI_DEST" || { rm -rf "$tmp"; return 1; }
     # mktemp -d made it private: the usual permissions for the umask.
     chmod "$(printf '%o' $((0777 & ~0$(umask))))" "$SUJI_DEST" 2>/dev/null || :
@@ -1248,14 +1329,14 @@ install_steps() {
     local conf="$CFG/script-opts/thumbfast.conf" path=''
     [ "$OS" = Darwin ] && [ "$KIND" = mpv ] && path=$exe
     if [ ! -e "$conf" ] && [ ! -L "$conf" ]; then
-        { thumbfast_conf_text; [ -z "$path" ] || mpv_path_lines "$path" lf; } | write_file "$conf" || return 1
+        write_file "$conf" < <(thumbfast_conf_text; [ -z "$path" ] || mpv_path_lines "$path" lf) || return 1
         [ -z "$path" ] || info "$(T mpvpath_set "$(clean_text "$path")")"
     elif [ -n "$path" ] && [ -f "$conf" ] && ! grep -qE '^[[:space:]]*mpv_path[[:space:]]*=' "$conf"; then
         load_file "$conf"
         local eol
         eol=$(file_eol)
-        { print_lines; [ "$F_COUNT" -eq 0 ] || [ -n "${F_EOL[F_COUNT - 1]}" ] || printf_eol "$eol"; mpv_path_lines "$path" "$eol"; } |
-            write_file "$conf" || return 1
+        write_file "$conf" < <(print_lines; [ "$F_COUNT" -eq 0 ] || [ -n "${F_EOL[F_COUNT - 1]}" ] || printf_eol "$eol"
+            mpv_path_lines "$path" "$eol") || return 1
         info "$(T mpvpath_set "$(clean_text "$path")")"
     fi
 
@@ -1525,6 +1606,8 @@ main() {
     REFUSED=0
     USAGE_ERROR=0
     MPV_EXE=''
+    SANDBOX_MODE=0
+    SANDBOX_BASE=''
     local rc action t done_count=0
     parse_args "$@"
     rc=$?
