@@ -45,12 +45,20 @@ New-Item -ItemType Directory -Path $TestRoot | Out-Null
 
 # Typed answers for the questions, in order; $null (no more input) when they run out.
 $script:Answers = New-Object System.Collections.Generic.Queue[string]
-$script:SujiReadLine = { param([string]$Prompt) if ($script:Answers.Count -gt 0) { return $script:Answers.Dequeue() } return $null }
+# The questions asked, in order.
+$script:Prompts = New-Object System.Collections.Generic.List[string]
+$script:SujiReadLine = {
+    param([string]$Prompt)
+    $script:Prompts.Add($Prompt)
+    if ($script:Answers.Count -gt 0) { return $script:Answers.Dequeue() }
+    return $null
+}
 
 function Test-Case {
     param([string]$Name, [scriptblock]$Body)
     $script:NonInteractive = $true
     $script:Answers.Clear()
+    $script:Prompts.Clear()
     try {
         & $Body
         $script:Passed++
@@ -170,8 +178,17 @@ function Install-Test {
 }
 
 function Uninstall-Test {
-    param([string]$Config, [string]$Stamp = '20260102-000000')
-    Uninstall-SujiTarget -Candidate ([pscustomobject]@{ Kind = 'mpv'; Exe = ''; ConfigDir = $Config }) -Stamp $Stamp
+    param([string]$Config, [string]$Stamp = '20260102-000000', [string]$StateDir = '')
+    Uninstall-SujiTarget -Candidate ([pscustomobject]@{ Kind = 'mpv'; Exe = ''; ConfigDir = $Config }) -Stamp $Stamp -StateDir $StateDir
+}
+
+# What the installer writes to the console while $Body runs.
+function Get-ShownText {
+    param([scriptblock]$Body)
+    $script:SujiQuiet = $false
+    try { $out = & $Body 6>&1 | ForEach-Object { [string]$_ } }
+    finally { $script:SujiQuiet = $true }
+    return [string]::Join("`n", @($out))
 }
 
 # The suji.zip of a release: LICENSE and suji\.
@@ -399,6 +416,28 @@ Test-Case 'thumbfast that was there before is kept on uninstall (default), with 
     Assert-Equal (Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))) "network=no`n" 'conf kept'
 }
 
+Test-Case 'uninstall: the settings question names only what it deletes; a suji-size in the state folder stays and is named' {
+    $d = New-TestDir 'size-state'
+    $cfg = P @($d, 'mpv')
+    $state = P @($d, 'Local', 'mpv')
+    Install-Test $cfg
+    Set-TestFile (P @($cfg, 'suji-size')) "125`n"
+    Set-TestFile (P @($state, 'suji-size')) "110`n"
+    $script:NonInteractive = $false
+    foreach ($a in @('y', 'y')) { $script:Answers.Enqueue($a) }
+    $shown = Get-ShownText { Uninstall-Test $cfg -StateDir $state }
+    Assert-True ($script:Prompts[1].StartsWith('Delete suji-size too')) ('question: ' + $script:Prompts[1])
+    Assert-True (-not $script:Prompts[1].Contains('suji.conf')) 'no suji.conf in it: there is none'
+    Assert-True (-not (Test-Exists (P @($cfg, 'suji-size')))) 'the one in the config folder deleted'
+    Assert-Equal (Get-TestText (P @($state, 'suji-size'))) "110`n" 'the state one stays'
+    Assert-True ($shown.Contains('This file stays: ' + (P @($state, 'suji-size')))) ('named; shown: ' + $shown)
+    # A portable_config is its own state folder: nothing else is named.
+    $c = [pscustomobject]@{ Kind = 'AnimeJaNai'; Exe = 'x'; ConfigDir = $cfg; Portable = $true }
+    Assert-Equal (Get-SujiStateDir -Env (New-FakeEnv $d) -Candidate $c) '' 'portable'
+    $c.Portable = $false
+    Assert-Equal (Get-SujiStateDir -Env (New-FakeEnv $d) -Candidate $c) (P @($d, 'Local', 'mpv')) '%LOCALAPPDATA%\mpv'
+}
+
 # ---------------------------------------------------------------------------
 # thumbfast.conf and mpv_path
 # ---------------------------------------------------------------------------
@@ -431,6 +470,41 @@ Test-Case 'thumbfast.conf: an existing one only gets mpv_path, and only when it 
     $cfg3 = P @($d, 'cfg3')
     Install-Test $cfg3 -Kind 'mpv.net' -Exe ''
     Assert-True ((Get-TestText (P @($cfg3, 'script-opts', 'thumbfast.conf'))) -notmatch 'mpv_path') 'mpv.net without its exe: none'
+}
+
+Test-Case 'thumbfast.conf of the user: the mpv_path lines suji added go on uninstall, byte for byte back' {
+    $d = New-TestDir 'mark'
+    $exe = P @($d, 'mpv.net', 'mpvnet.exe')
+    $cases = @("network=no`nmax_height=300", "network=no`r`nmax_height=300`r`n", "", "# mine`n`n")
+    $i = 0
+    foreach ($text in $cases) {
+        $cfg = P @($d, ('cfg' + $i))
+        Set-TestFile (P @($cfg, 'script-opts', 'thumbfast.conf')) $text
+        Install-Test $cfg -Kind 'mpv.net' -Exe $exe
+        Assert-True ((Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))).Contains($script:MpvPathComment)) ('marked ' + $i)
+        Install-Test $cfg -Kind 'mpv.net' -Exe $exe -Stamp '20260101-000001'
+        Uninstall-Test $cfg
+        Assert-Equal (Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))) $text ('as it was ' + $i)
+        $i++
+    }
+    # The mark taken out by the user: the mpv_path line is theirs now.
+    $cfg = P @($d, 'cfg-nomark')
+    Set-TestFile (P @($cfg, 'script-opts', 'thumbfast.conf')) "network=no`n"
+    Install-Test $cfg -Kind 'mpv.net' -Exe $exe
+    $p = P @($cfg, 'script-opts', 'thumbfast.conf')
+    Set-TestFile $p ((Get-TestText $p).Replace($script:MpvPathComment + "`n", ''))
+    $now = Get-TestText $p
+    Uninstall-Test $cfg
+    Assert-Equal (Get-TestText $p) $now 'left alone'
+    Assert-Equal (Read-SujiRecord (P @($d, 'cfg0'))) $null 'record gone'
+    # A thumbfast.conf suji made stays whole when thumbfast stays.
+    $cfg = P @($d, 'cfg-made')
+    Install-Test $cfg -Kind 'mpv.net' -Exe $exe
+    $made = Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))
+    $script:NonInteractive = $false
+    $script:Answers.Enqueue('n')
+    Uninstall-Test $cfg
+    Assert-Equal (Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))) $made 'whole, with its mpv_path'
 }
 
 # ---------------------------------------------------------------------------
@@ -653,6 +727,40 @@ Test-Case 'uninstall with scripts\suji or thumbfast.lua as links: the links go, 
     Assert-True (-not (Test-Exists (P @($cfg, 'scripts', 'thumbfast.lua')))) 'thumbfast link gone'
     Assert-Equal (Get-TestText (P @($other, 'main.lua'))) '-- my own suji' 'other folder intact'
     Assert-Equal (Get-TestText $otherThumb) '-- my thumbfast' 'other thumbfast intact'
+}
+
+Test-Case 'backup: a linked mpv.conf is copied with its contents' {
+    $t = New-LinkedConfig 'backup-linked-mpvconf' 'mpv.conf'
+    if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
+    Install-Test $t.Config -Stamp '20260101-000000'
+    $b = P @($t.Dir, 'mpv-respaldo-suji-20260101-000000', 'mpv.conf')
+    $item = Get-Item -LiteralPath $b -Force
+    Assert-True (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) 'a real file in the backup'
+    Assert-Equal (Get-TestText $b) "volume=50`n" 'its contents'
+}
+
+Test-Case 'backup: through linked scripts and script-opts folders, what suji will change is copied' {
+    $d = New-TestDir 'backup-linked-dirs'
+    $cfg = P @($d, 'mpv')
+    $scripts = P @($d, 'dot-scripts')
+    $opts = P @($d, 'dot-opts')
+    Set-TestFile (P @($scripts, 'suji', 'main.lua')) '-- an older suji'
+    Set-TestFile (P @($scripts, 'thumbfast.lua')) '-- an older thumbfast'
+    Set-TestFile (P @($opts, 'suji.conf')) "scale=2`n"
+    Set-TestFile (P @($opts, 'thumbfast.conf')) "network=no`n"
+    New-Item -ItemType Directory -Path $cfg -Force | Out-Null
+    try {
+        New-Item -ItemType SymbolicLink -Path (P @($cfg, 'scripts')) -Target $scripts | Out-Null
+        New-Item -ItemType SymbolicLink -Path (P @($cfg, 'script-opts')) -Target $opts | Out-Null
+    }
+    catch { Write-Host '     (symlinks not available, skipped)'; return }
+    Install-Test $cfg -Stamp '20260101-000000'
+    $b = P @($d, 'mpv-respaldo-suji-20260101-000000')
+    Assert-Equal (Get-TestText (P @($b, 'scripts', 'suji', 'main.lua'))) '-- an older suji' 'scripts\suji'
+    Assert-Equal (Get-TestText (P @($b, 'scripts', 'thumbfast.lua'))) '-- an older thumbfast' 'thumbfast.lua'
+    Assert-Equal (Get-TestText (P @($b, 'script-opts', 'suji.conf'))) "scale=2`n" 'suji.conf'
+    Assert-Equal (Get-TestText (P @($b, 'script-opts', 'thumbfast.conf'))) "network=no`n" 'thumbfast.conf'
+    Assert-Equal (Get-TestText (P @($scripts, 'suji', 'main.lua'))) (Get-TestText (P @($Source.SujiDir, 'main.lua'))) 'and then updated through the link'
 }
 
 Test-Case 'writes leave no temporary file behind' {
@@ -981,7 +1089,7 @@ Test-Case 'release through iex and through [scriptblock]::Create: install, updat
     Assert-SessionClean $run 0
     Assert-True $run.Report.TlsTouched 'the downloader changed SecurityProtocol, so putting it back was tested'
     Assert-Equal ([string]::Join(' ', @($run.Report.Downloads))) ($TestReleaseUrl + ' ' + $script:ThumbfastUrl) 'downloads'
-    Assert-True ($run.Text.Contains('Done: 1 of 1 folders. Restart the player to see the changes.')) ('last line; output: ' + $run.Text)
+    Assert-True ($run.Text.TrimEnd().EndsWith('Restart the player to see the changes.') -and -not $run.Text.Contains('Done: ')) ('last line, one folder; output: ' + $run.Text)
     Assert-Equal (Get-TestText (P @($cfg, 'scripts', 'suji', 'main.lua'))) (Get-TestText (P @($Source.SujiDir, 'main.lua'))) 'installed'
     Assert-True (Test-Exists (P @($cfg, 'scripts-apartados-suji', 'osc.lua'))) 'osc set aside'
     Assert-Equal (Read-SujiRecord $cfg).Values['suji_version'] '9.9.9' 'record'
