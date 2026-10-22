@@ -10,7 +10,7 @@ local function start(controls)
     T.unload()
     local props = { ["mpv-version"] = "mpv v0.40.0", ["osd-dimensions"] = { w = W, h = H }, duration = 100,
                     pause = true, ["time-pos"] = 50, volume = 100, ["track-list"] = {},
-                    ["edition-list"] = { { id = 0 }, { id = 1 } }, ["edition-list/count"] = 2 } -- more is in the row
+                    ["edition-list"] = { { id = 0 }, { id = 1 } }, ["edition-list/count"] = 2 }
     mp = T.fake_mp(props)
     mp.async_observe = true
     mp.script_opts = { controls = controls or CONTROLS }
@@ -198,14 +198,14 @@ T.check(p0 ~= cbox.x0 and p0 <= (more.x0 + more.x1) / 2 and p1 >= (more.x0 + mor
     "a click 1.5 s before is too old, an unknown anchor is ignored: from more")
 send("close-menu")
 mp.advance(1)
--- more in controls but hidden (nothing to offer): the middle
-mp.fire("edition-list/count", 0)
+-- more in controls but hidden (idle, no file): the middle
+mp.fire("idle-active", true)
 T.eq(box_of("more"), nil, "more hides")
 open({ type = "hidden", items = items(2) })
 p0, p1 = panel()
 T.near(p0 + p1, W, "more hidden: centred", 1)
 send("close-menu")
-mp.fire("edition-list/count", 2)
+mp.fire("idle-active", false)
 mp.advance(1)
 -- 4. Without more: the middle
 mp.set_opts({ controls = "pause,command:x:script-binding fake/open-menu,space,volume" })

@@ -330,12 +330,14 @@ local function start(owner, m, follow, anchor)
 end
 
 -- The open menu shows m instead: at once, with the same scroll and cursor
--- when they still fit.
+-- when they still fit. A cursor that follows the mouse goes to the item
+-- under it now (another list, or the menu moved).
 local function replace(m)
     cur.def = m
     if cur.cursor and not m.items[cur.cursor] then cur.cursor = nil end
     clamp_scroll(geometry())
     cover() -- its size may have changed
+    if not cur.by_keys and cur.px then M.pointer(cur.px, cur.py) end
     painter.request()
     return true
 end

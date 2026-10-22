@@ -17,6 +17,7 @@ local modules = require "core.modules"
 local layout = require "core.layout"
 local mouse = require "core.mouse"
 local menu = require "core.menu"
+local size = require "core.size"
 local actions = require "modules.actions"
 require "core.messages"
 
@@ -39,9 +40,9 @@ end
 
 local function debug_sizes(reason)
     if not opts.debug or not reason then return end
-    msg.info(("%s: osd-dimensions %dx%d, display-hidpi-scale %s, scale option %s, scale %.3f")
+    msg.info(("%s: osd-dimensions %dx%d, display-hidpi-scale %s, scale option %s, size %d%%, scale %.3f")
         :format(reason, math.floor(state.w), math.floor(state.h), tostring(mp.get_property_number("display-hidpi-scale")),
-            tostring(opts.scale), state.scale))
+            tostring(opts.scale), size.percent(), state.scale))
 end
 
 -- user-data/suji/margins = { bottom = N }: N px from the bottom edge to
@@ -126,9 +127,10 @@ watch("osd-dimensions", "native", function(dim)
     on_layout()
 end)
 
--- The size factor changed (HiDPI or the scale option): zones move too.
+-- The size factor changed (HiDPI, the scale option or the size chosen in
+-- the more menu): zones move too.
 local function rescale(reason)
-    state.scale = draw.scale(state.hidpi, opts.scale)
+    state.scale = draw.scale(state.hidpi, size.scale(opts.scale, opts.LIMITS.scale))
     debug_sizes(reason)
     on_layout()
 end
@@ -255,6 +257,8 @@ end)
 
 state.remaining = opts.remaining_time
 if opts.enabled then set_enabled(true) end
+size.load()
+size.on_change(function() rescale("size") end)
 rescale("start")
 
 -- Last, so a start that failed leaves no true behind. Still while the

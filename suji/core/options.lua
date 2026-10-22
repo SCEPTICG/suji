@@ -13,6 +13,7 @@ local DEFAULTS = {
     hide_delay = 1.5,      -- seconds without mouse movement before hiding
     proximity = 120,       -- distance in px (at scale 1) where the bar reacts
     scale = 1,             -- size factor, multiplied by the system HiDPI scale
+                           -- and by the size of the more menu (core/size.lua)
     debug = false,         -- log sizes and scale to the mpv console
     -- The row everyone sees who installs suji and touches nothing: playback
     -- on the left, under the title; what is changed while watching (the
@@ -39,6 +40,8 @@ local DEFAULTS = {
 local LIMITS = { hide_delay = { 0, 3600 }, proximity = { 1, 10000 }, scale = { 0.25, 8 } }
 
 local M = {}
+
+M.LIMITS = LIMITS -- for the size of the more menu, which multiplies scale
 
 local warned -- last invalid accent warned about, not to repeat it
 

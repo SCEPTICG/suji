@@ -22,7 +22,7 @@ local function start(props, script_opts)
     props["mpv-version"] = props["mpv-version"] or "mpv v0.40.0"
     props["osd-dimensions"], props.duration, props.pause = { w = W, h = H }, 100, true
     props["time-pos"], props.volume = 50, 100
-    -- Two editions, so more has something to offer and is in the row.
+    -- Two editions, which more lists.
     if props["edition-list"] == nil then props["edition-list"] = { { id = 0 }, { id = 1 } } end
     if props["edition-list/count"] == nil then
         props["edition-list/count"] = type(props["edition-list"]) == "table" and #props["edition-list"] or 0
@@ -785,10 +785,10 @@ T.eq(count(p, "}restarts"), 2, "an edition says it restarts")
 T.check(not p:find("}Speed", 1, true) and not p:find("\195\151", 1, true), "no speeds: they have their own button")
 T.check(p:find("}Open from clipboard", 1, true) ~= nil, "mpv 0.40: open from the clipboard")
 T.eq(#marks(p), 2, "video and edition marked")
--- Video, Main, und, Editions, Cut, Edition 2, Open: 7 rows
-T.eq(click(row("more", 3, 7)), "set vid 2", "a video track")
+-- Video, Main, und, Editions, Cut, Edition 2, Open, Size: 8 rows
+T.eq(click(row("more", 3, 8)), "set vid 2", "a video track")
 open("more")
-T.eq(click(row("more", 5, 7)), "set edition 0", "an edition")
+T.eq(click(row("more", 5, 8)), "set edition 0", "an edition")
 mp.props["edition-list"] = { { id = 0 } }
 mp.props["track-list"] = { { type = "video", id = 1 } }
 menu().close(true)
@@ -796,19 +796,18 @@ open("more")
 p = painted()
 T.check(not p:find("}Video", 1, true) and not p:find("}Editions", 1, true), "one video track and one edition: not listed")
 
--- More hides when it has nothing to offer: no clipboard (mpv 0.39), one video track, no editions
+-- More is there whenever a file is loaded, Size at least: no clipboard
+-- (mpv 0.39), one video track, no editions
 start({ ["edition-list"] = false, ["track-list"] = { { type = "video", id = 1 } } })
-T.eq(box_of("more"), nil, "nothing to offer: no more button")
-T.check(box_of("speed") ~= nil, "the speed button is there")
-local two = { { type = "video", id = 1 }, { type = "video", id = 2 } }
-mp.props["track-list"] = two
-mp.fire("track-list", two)
-T.check(box_of("more") ~= nil, "a second video track: more appears")
-mp.fire("edition-list/count", 2)
-mp.fire("track-list", { { type = "video", id = 1 } })
-T.check(box_of("more") ~= nil, "two editions: it stays")
-mp.fire("edition-list/count", 0)
-T.eq(box_of("more"), nil, "neither: it goes")
+T.check(box_of("more") ~= nil, "nothing else to offer: more is there")
+open("more")
+p = painted()
+T.check(p:find("}Size", 1, true) and p:find("}100%", 1, true), "only Size, with the size of now")
+menu().close(true)
+mp.fire("idle-active", true)
+T.eq(box_of("more"), nil, "idle with no file: it goes")
+mp.fire("idle-active", false)
+T.check(box_of("more") ~= nil, "a file again: it comes back")
 
 -- Speed ---------------------------------------------------------------------------------------------------
 start({ speed = 1.5 })
@@ -851,7 +850,7 @@ T.eq(box_of("speed").x1 - box_of("speed").x0, 44, "the width does not change")
 -- The clipboard: one argument, as it is ---------------------------------------------------------------------
 start({ ["property-list"] = { "pause", "clipboard" }, ["edition-list"] = false, ["track-list"] = { { type = "video", id = 1 } } })
 mp.props["clipboard/text"] = "  /tmp/a b; quit ${path} `x` \"q\"\nsecond line; quit\r\n"
-local items_n = 1 -- only Open
+local items_n = 2 -- Open and Size
 open("more")
 T.eq(click(row("more", 1, items_n)), "loadfile /tmp/a b; quit ${path} `x` \"q\" replace", "open from the clipboard")
 local c = mp.commands[#mp.commands]
@@ -889,7 +888,7 @@ for text, arg in pairs(allowed) do
 end
 mp.props["clipboard/text"] = "av://lavfi:x"
 open("more")
-T.eq(click(row("more", 12, 12)), "show-text Clipboard: unsupported address 1500", "open from the clipboard refuses it too")
+T.eq(click(row("more", 11, 12)), "show-text Clipboard: unsupported address 1500", "open from the clipboard refuses it too")
 start()
 open("subtitles")
 T.check(not painted():find("clipboard", 1, true), "mpv 0.39 (no clipboard property): no clipboard entries")

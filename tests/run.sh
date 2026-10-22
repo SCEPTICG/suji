@@ -2,8 +2,9 @@
 # Runs the unit tests with Lua 5.1 (or $LUA), a smoke test with a windowless
 # mpv and, if xvfb-run is installed, a real drag and click test, a test of
 # the messages other scripts send, a menu test (which also needs ffmpeg and
-# mkvmerge), a double click test and an action button test (which also
-# need xdotool) in a virtual display.
+# mkvmerge), a test of the size the more menu remembers, a double click
+# test and an action button test (which also need xdotool) in a virtual
+# display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -12,7 +13,7 @@ export LUA_PATH="./suji/?.lua;./tests/?.lua;;"
 status=0
 tmp=
 # Each test in a virtual display fixes its row, so its coordinates hold
-# whatever the mpv: without a clipboard (0.39) the more button hides.
+# whatever the mpv.
 MENU_ROW=pause,time,space,subtitles,audio,playlist,speed,volume,fullscreen
 
 for t in tests/test_*.lua; do
@@ -154,6 +155,41 @@ else
         printf '%s\n' "$out" | grep 'xvfb-menu:'
     else
         printf 'xvfb-menu: FAIL\n%s\n' "$out"
+        status=1
+    fi
+fi
+
+# The size in the more menu, remembered: two mpv in a row, with a config
+# folder and a state folder of their own (no --no-config: with it mpv has
+# no state folder). The second starts at the size the first chose.
+if [ -z "$tmp" ]; then
+    echo "xvfb-size: skipped (no xvfb-run)"
+elif [ ! -s "$tmp/t.mkv" ]; then
+    echo "xvfb-size: skipped (could not make the test video)"
+else
+    mkdir -p "$tmp/config" "$tmp/state/mpv"
+    out=
+    for phase in 1 2; do
+        o=$(XDG_STATE_HOME="$tmp/state" timeout 60 xvfb-run -a mpv --config-dir="$tmp/config" \
+            --vo=x11 --ao=null --geometry=640x480 --pause --keep-open=yes --script=./suji \
+            --script=tests/xvfb_size.lua --msg-level=all=no,suji=info,xvfb_size=info \
+            --script-opts-append=suji-controls=pause,time,space,more,volume,fullscreen \
+            --script-opts-append=xvfb_size-phase=$phase \
+            "$tmp/t.mkv" 2>&1)
+        rc=$?
+        out=$(printf '%s\n%s' "$out" "$o")
+        [ "$rc" -eq 0 ] || break
+    done
+    if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-size: FAIL\n%s\n' "$out"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-size: FAIL (exit code %s)\n%s\n' "$rc" "$out"
+        status=1
+    elif [ "$(printf '%s\n' "$out" | grep -c 'xvfb-size: ok')" -eq 2 ]; then
+        printf '%s\n' "$out" | grep 'xvfb-size:'
+    else
+        printf 'xvfb-size: FAIL\n%s\n' "$out"
         status=1
     fi
 fi

@@ -90,6 +90,11 @@ function T.fake_mp(props)
     end
     function mp.commandv(...) mp.commands[#mp.commands + 1] = { ... } end
     function mp.command(s) mp.commands[#mp.commands + 1] = { s } end
+    -- expand-path of ~~state/ gives mp.state_dir, else "" (mpv with
+    -- --no-config): no test touches the disk unless it sets one.
+    function mp.command_native(c)
+        if c[1] == "expand-path" and c[2] == "~~state/" then return mp.state_dir or "" end
+    end
     mp.messages = {}
     function mp.register_script_message(name, fn) mp.messages[name] = fn end
     -- script-message-to suji name ...

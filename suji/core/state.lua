@@ -4,7 +4,7 @@
 local M = {
     w = 0, h = 0,     -- window size in OSD pixels (osd-dimensions)
     hidpi = 1,        -- display-hidpi-scale, 1 when unknown
-    scale = 1,        -- hidpi * options.scale, see draw.scale()
+    scale = 1,        -- hidpi * options.scale * the size, see draw.scale()
     time = nil,       -- time-pos in seconds, nil when unknown
     duration = nil,   -- duration in seconds, nil when unknown
     paused = false,

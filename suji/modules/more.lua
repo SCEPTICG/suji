@@ -1,14 +1,17 @@
 -- More: the video track (when there is more than one), the editions (when
--- there is more than one; choosing one restarts playback) and, when mpv
--- can read the clipboard, opening the file or URL that is there. Shown
--- when a file is loaded and there is one of those to choose.
+-- there is more than one; choosing one restarts playback), opening the
+-- file or URL in the clipboard when mpv can read it, and the size of suji
+-- (core/size.lua). Size turns the same menu into the list of sizes, and a
+-- size applies at once with the menu still open. Shown whenever a file is
+-- loaded.
 
 local base = require "modules.menu_button"
+local size = require "core.size"
 
 local MAX_EDITIONS = 500
 
--- idle-active (no file), the video tracks and the editions there are.
-local idle, videos, editions = false, 0, 0
+local idle = false -- idle-active: no file
+local page         -- "size" while the menu lists the sizes, else nil
 
 local function editions_items(items)
     local list = mp.get_property_native("edition-list")
@@ -26,42 +29,65 @@ local function editions_items(items)
     end
 end
 
--- Something to choose: a video track or an edition, or the clipboard.
-local function available()
-    return not idle and (videos > 1 or editions > 1 or base.has_clipboard())
+local build
+
+-- The sizes, the current one marked. A choice keeps the menu open and
+-- moves the mark.
+local function sizes(ctx)
+    local items = {}
+    for i, n in ipairs(size.SIZES) do
+        items[i] = { title = ("%d%%"):format(n), active = n == size.percent(), keep_open = true, action = function()
+            size.set(n)
+            ctx.update_menu(build(ctx))
+        end }
+    end
+    return { type = "suji-more", title = "Size", items = items }
 end
 
-return base.new({
+function build(ctx)
+    if page == "size" then return sizes(ctx) end
+    local items = {}
+    local video = base.track_items(mp.get_property_native("track-list"), "video", "vid")
+    if #video > 1 then
+        items[1] = base.header("Video")
+        for _, t in ipairs(video) do items[#items + 1] = t end
+    end
+    editions_items(items)
+    if base.has_clipboard() then
+        if #items > 0 then items[#items].separator = true end
+        items[#items + 1] = base.clipboard_item("Open from clipboard", "loadfile", "replace")
+    end
+    if #items > 0 then items[#items].separator = true end
+    items[#items + 1] = { title = "Size", hint = ("%d%%"):format(size.percent()), keep_open = true, action = function()
+        page = "size"
+        ctx.update_menu(build(ctx))
+    end }
+    return { type = "suji-more", items = items }
+end
+
+local b = base.new({
     icon = "more",
     live = { "track-list", "edition-list", "current-edition" },
 
     init = function(ctx)
-        local function watch(prop, set)
-            ctx.watch(prop, "native", function(v)
-                local before = available()
-                set(v)
-                if available() ~= before then ctx.relayout() end
-            end)
-        end
-        watch("idle-active", function(v) idle = v == true end)
-        watch("track-list", function(v) videos = base.count(v, "video") end)
-        watch("edition-list/count", function(v) editions = tonumber(v) or 0 end)
+        ctx.watch("idle-active", "native", function(v)
+            if (v == true) ~= idle then
+                idle = v == true
+                ctx.relayout()
+            end
+        end)
     end,
 
-    available = available,
+    available = function() return not idle end,
 
-    build = function()
-        local items = {}
-        local video = base.track_items(mp.get_property_native("track-list"), "video", "vid")
-        if #video > 1 then
-            items[1] = base.header("Video")
-            for _, t in ipairs(video) do items[#items + 1] = t end
-        end
-        editions_items(items)
-        if base.has_clipboard() then
-            if #items > 0 then items[#items].separator = true end
-            items[#items + 1] = base.clipboard_item("Open from clipboard", "loadfile", "replace")
-        end
-        return { type = "suji-more", items = items }
-    end,
+    build = build,
 })
+
+-- Opened again, it starts from the first list.
+local menu_closed = b.menu_closed
+function b.menu_closed(ctx)
+    page = nil
+    menu_closed(ctx)
+end
+
+return b
