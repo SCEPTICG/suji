@@ -426,11 +426,11 @@ Test-Case 'uninstall: the settings question names only what it deletes; a suji-s
     $script:NonInteractive = $false
     foreach ($a in @('y', 'y')) { $script:Answers.Enqueue($a) }
     $shown = Get-ShownText { Uninstall-Test $cfg -StateDir $state }
-    Assert-True ($script:Prompts[1].StartsWith('Delete your suji settings (suji-size)?')) ('question: ' + $script:Prompts[1])
+    Assert-True ($script:Prompts[1].StartsWith('Delete suji-size too (your suji settings and the size you chose)?')) ('question: ' + $script:Prompts[1])
     Assert-True (-not $script:Prompts[1].Contains('suji.conf')) 'no suji.conf in it: there is none'
     Assert-True (-not (Test-Exists (P @($cfg, 'suji-size')))) 'the one in the config folder deleted'
     Assert-Equal (Get-TestText (P @($state, 'suji-size'))) "110`n" 'the state one stays'
-    Assert-True ($shown.Contains('The size suji remembers is also in ' + (P @($state, 'suji-size')) + ': that file stays')) ('named; shown: ' + $shown)
+    Assert-True ($shown.Contains('This file stays: ' + (P @($state, 'suji-size')) + ' (the size suji remembers')) ('named; shown: ' + $shown)
     # A portable_config is its own state folder: nothing else is named.
     $c = [pscustomobject]@{ Kind = 'AnimeJaNai'; Exe = 'x'; ConfigDir = $cfg; Portable = $true }
     Assert-Equal (Get-SujiStateDir -Env (New-FakeEnv $d) -Candidate $c) '' 'portable'
@@ -453,7 +453,7 @@ Test-Case 'uninstall: the settings question names only what it deletes; a suji-s
     $netCand = [pscustomobject]@{ Kind = 'mpv.net'; Exe = ''; ConfigDir = $netCfg; Portable = $false }
     $script:NonInteractive = $true
     $shown = Get-ShownText { Uninstall-SujiTarget -Candidate $netCand -Stamp '20260103-000000' -StateDir (Get-SujiStateDir -Env $fake -Candidate $netCand) }
-    Assert-True (-not $shown.Contains('The size suji remembers')) ('no notice for mpv.net; shown: ' + $shown)
+    Assert-True (-not $shown.Contains('This file stays')) ('no notice for mpv.net; shown: ' + $shown)
 }
 
 # ---------------------------------------------------------------------------
