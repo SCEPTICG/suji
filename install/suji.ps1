@@ -239,8 +239,8 @@ $script:SujiStringsEn = @{
     summary              = 'Done: {0} of {1} folders.'
     restart              = 'Restart the player to see the changes.'
     ask_remove_thumbfast = 'Remove thumbfast too?'
-    ask_delete_user      = 'Delete {0} too (your suji settings and the size you chose)?'
-    size_left            = 'This file stays: {0} (the size suji remembers, in mpv''s state folder). Delete it yourself if you do not want it.'
+    ask_delete_settings  = 'Delete {0} too (your suji settings and the size you chose)?'
+    state_size_left      = 'This file stays: {0} (the size suji remembers, in mpv''s state folder). Delete it yourself if you do not want it.'
     ask_restore          = 'Move back the interfaces suji set aside ({0})?'
     restore_skipped      = '{0} not moved back: {1} already exists.'
     nothing_to_uninstall = 'suji does not seem to be installed in any detected folder.'
@@ -320,8 +320,8 @@ $script:SujiStringsEs = @{
     summary              = 'Hecho: {0} de {1} carpetas.'
     restart              = 'Reinicia el reproductor para ver los cambios.'
     ask_remove_thumbfast = '\u00bfQuitar tambi\u00e9n thumbfast?'
-    ask_delete_user      = '\u00bfBorrar tambi\u00e9n {0} (tus ajustes de suji y el tama\u00f1o elegido)?'
-    size_left            = 'Este fichero se queda: {0} (el tama\u00f1o que recuerda suji, en la carpeta de estado de mpv). B\u00f3rralo t\u00fa si no lo quieres.'
+    ask_delete_settings  = '\u00bfBorrar tambi\u00e9n {0} (tus ajustes de suji y el tama\u00f1o elegido)?'
+    state_size_left      = 'Este fichero se queda: {0} (el tama\u00f1o que recuerda suji, en la carpeta de estado de mpv). B\u00f3rralo t\u00fa si no lo quieres.'
     ask_restore          = '\u00bfDevolver a su sitio las interfaces que suji apart\u00f3 ({0})?'
     restore_skipped      = '{0} no se devuelve: ya existe {1}.'
     nothing_to_uninstall = 'No parece que suji est\u00e9 instalado en ninguna de las carpetas encontradas.'
@@ -1668,12 +1668,12 @@ function Uninstall-SujiTarget {
         }
         # The question names only what it deletes.
         $user = @($script:UserFiles | Where-Object { Test-Path -LiteralPath (Join-SujiRel $config $_) -PathType Leaf })
-        if ($user.Count -gt 0 -and (Confirm-Suji -Question (T 'ask_delete_user' @([string]::Join(', ', $user))) -Default $false)) {
+        if ($user.Count -gt 0 -and (Confirm-Suji -Question (T 'ask_delete_settings' @([string]::Join(', ', $user))) -Default $false)) {
             foreach ($f in $user) { Remove-SujiItem -Path (Join-SujiRel $config $f) -Root $config }
         }
         if ($StateDir -and -not (Test-SujiSamePath $StateDir $config)) {
             $size = Join-SujiPath $StateDir 'suji-size'
-            if (Test-Path -LiteralPath $size -PathType Leaf) { Write-SujiWarn (T 'size_left' @($size)) }
+            if (Test-Path -LiteralPath $size -PathType Leaf) { Write-SujiWarn (T 'state_size_left' @($size)) }
         }
         if ($aside.Count -gt 0) {
             $names = [string]::Join(', ', @($aside | ForEach-Object { ($_ -split '\|')[1] }))
@@ -1854,12 +1854,19 @@ function Select-SujiTargets {
     return [pscustomobject]@{ Ok = $true; Targets = $writable.ToArray() }
 }
 
-# mpv's state folder for a config folder: the folder itself when it is a
-# portable_config, else %LOCALAPPDATA%\mpv.
+# mpv's state folder when it is not the config folder: %LOCALAPPDATA%\mpv, for
+# mpv's own %APPDATA%\mpv (or MPV_HOME). '' for a portable_config, which is its
+# own state folder, and for mpv.net and AnimeJaNai, whose state is elsewhere.
 function Get-SujiStateDir {
     param([hashtable]$Env, $Candidate)
     if ($Candidate.PSObject.Properties['Portable'] -and $Candidate.Portable) { return '' }
     if (-not $Env.LocalAppData) { return '' }
+    $mpv = $Candidate.Kind -eq 'mpv'
+    if ($Candidate.Kind -eq 'folder') {
+        $user = Get-SujiUserConfigDir -Env $Env -Kind 'mpv'
+        $mpv = [bool]($user -and (Test-SujiSamePath $user $Candidate.ConfigDir))
+    }
+    if (-not $mpv) { return '' }
     return (Join-SujiPath $Env.LocalAppData 'mpv')
 }
 
