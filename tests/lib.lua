@@ -190,17 +190,18 @@ function T.fake_mp(props)
     -- Options: mp.script_opts at start; mp.set_opts(t) changes them at run
     -- time like the script-opts property, calling on_update with the list.
     -- mp.parse_json, when set, replaces what the JSON would give.
-    -- file_info only tells a folder (fopen opens one, reading it fails
-    -- with EISDIR) from a file.
+    -- file_info: nil when nothing is there, else is_dir and is_file, from
+    -- test(1) (opening a FIFO to find out would block).
+    local function test(flag, p)
+        local r = os.execute(("test %s '%s'"):format(flag, p:gsub("'", "'\\''")))
+        return r == 0 or r == true
+    end
     package.loaded["mp.utils"] = { parse_json = function(s)
         if mp.parse_json then return mp.parse_json(s) end
         return T.parse_json(s)
     end, file_info = function(p)
-        local f = io.open(p, "rb")
-        if not f then return nil end
-        local _, _, code = f:read(1)
-        f:close()
-        return { is_dir = code == 21, is_file = code ~= 21 }
+        if not test("-e", p) then return nil end
+        return { is_dir = test("-d", p), is_file = test("-f", p) }
     end }
     package.loaded["mp.options"] = { read_options = function(t, _, on_update)
         for k, v in pairs(mp.script_opts or {}) do t[k] = v end

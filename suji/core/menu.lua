@@ -540,6 +540,12 @@ function M.pointer(x, y)
     end
 end
 
+-- The item of the open menu under (x, y): its index and title, or nil.
+function M.item_under(x, y)
+    local i = M.is_open() and item_at(x, y)
+    if i then return i, cur.def.items[i].title end
+end
+
 -- A click on the menu: on an item it is a choice.
 function M.press(x, y)
     if M.is_open() then choose(item_at(x, y)) end

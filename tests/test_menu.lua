@@ -291,6 +291,43 @@ T.check(not menu().is_open(), "closed")
 mp.advance(1)
 T.check(not menu().is_open(), "and it does not open again")
 
+-- A double click on an item that keeps the menu open chooses it twice, as
+-- before, also when the menu is built again in between with the same
+-- items. The second click on another item, or off the menu, does nothing.
+start()
+local kept = items(3, function() return { keep_open = true } end)
+ctx_of("more").open_menu({ type = "x", items = kept }, box_of("more"))
+local function double(x, y, between)
+    mp.mouse(x, y)
+    mp.commands = {}
+    mp.button("press")
+    if between then between() end
+    mp.advance(0.05)
+    mp.button("press")
+    local t = {}
+    for i, c in ipairs(mp.commands) do t[i] = cmd(c) end
+    mp.advance(1)
+    return table.concat(t, " | ")
+end
+T.eq(double(row("more", 2, 3)), "show-text item 2 | show-text item 2", "keep_open: twice")
+local px, py = row("more", 2, 3)
+T.eq(double(px, py, function() ctx_of("more").update_menu({ type = "x", items = kept }) end),
+    "show-text item 2 | show-text item 2", "built again in between, same items: twice")
+mp.mouse(px, py)
+mp.commands = {}
+mp.button("press")
+mp.mouse(px, py + 16) -- the next row, still within the double-click distance
+mp.button("press")
+T.eq(#mp.commands, 1, "the second click on another item: nothing")
+mp.advance(1)
+ctx_of("more").update_menu({ type = "x", items = items(3, function(i) return { keep_open = true, title = "New " .. i } end) })
+T.eq(double(px, py, function()
+    ctx_of("more").update_menu({ type = "x", items = items(3, function(i) return { keep_open = true, title = "Other " .. i } end) })
+end), "show-text item 2", "another item in its place in between: only the first")
+T.check(menu().is_open(), "still open")
+menu().close(true)
+mp.advance(1)
+
 -- A double click on an entry does not reach mpv (it would toggle fullscreen)
 start({ ["track-list"] = SUBS })
 open("subtitles")

@@ -29,13 +29,13 @@ local function get(dir)
     return s
 end
 
--- io.open is counted: opens[mode] for the file of the size, by suji.
+-- io.open is counted: opens[mode] for the file of the size and its .tmp.
 local real_open = io.open
 local opens
 local function count_opens()
     opens = { r = 0, w = 0 }
     io.open = function(p, mode)
-        if type(p) == "string" and p:sub(-#NAME) == NAME then
+        if type(p) == "string" and (p:sub(-#NAME) == NAME or p:sub(-#NAME - 4) == NAME .. ".tmp") then
             local k = (mode or "r"):sub(1, 1)
             opens[k] = (opens[k] or 0) + 1
         end
@@ -134,12 +134,13 @@ T.eq(opens.r + opens.w, 0, "relative folders are never used")
 local dir = folder()
 start(dir)
 T.eq(scale(), 1, "no file: 100%")
-T.eq(opens.r, 1, "read once at start")
+T.eq(opens.r, 0, "a missing file is not even opened")
 T.eq(#warnings(), 0, "a missing file is not worth a warning")
 for _, c in ipairs({ { "150\n", 1.5 }, { "75", 0.75 }, { " 110 \r\n", 1.1 } }) do
     put(dir, c[1])
     start(dir)
     T.near(scale(), c[2], ("%q is read"):format(c[1]))
+    T.eq(opens.r, 1, ("%q: read once"):format(c[1]))
     T.eq(#warnings(), 0, ("%q: no warning"):format(c[1]))
 end
 for _, bad in ipairs({ "", "abc", "80", "150 150", "1.5", "-100", ("1"):rep(100), "150\0" }) do
@@ -273,6 +274,93 @@ mp.bindings["suji-menu-enter"].fn()
 mp.advance(1)
 T.near(scale(), 1.1, "Down and Enter: 110%")
 T.near(highlight(), select(2, row(4, 6)) - 15 * 1.1, "the cursor stays on it", 0.5)
+
+-- A double click on a size: the first click resizes the menu under the
+-- cursor, and the second, on another row or off the menu, does nothing
+for k, n in ipairs({ 0.75, 0.9, 1, 1.1, 1.25, 1.5 }) do
+    start(nil)
+    open_more()
+    click(row(1, 1))
+    mp.mouse(row(k, 6))
+    mp.button("press")
+    mp.advance(0.05)
+    mp.button("press")
+    mp.advance(1)
+    T.near(scale(), n, ("a double click on %g%%: %g%%"):format(n * 100, n * 100))
+    T.check(menu().is_open(mod("more")), ("%g%%: the menu stays open"):format(n * 100))
+end
+-- Nor on Size: the second click does not choose a size
+start(nil)
+open_more()
+mp.mouse(row(1, 1))
+mp.button("press")
+mp.advance(0.05)
+mp.button("press")
+mp.advance(1)
+T.eq(scale(), 1, "a double click on Size: the sizes, none chosen")
+T.check(painted():find("}150%", 1, true) ~= nil, "and the sizes are open")
+
+-- Not a regular file: a FIFO is never opened (it would block), a symbolic
+-- link is replaced, not followed ------------------------------------------------------------------------------------
+local fifo = folder()
+os.execute(("mkfifo '%s/%s'"):format(fifo, NAME))
+start(fifo)
+T.eq(scale(), 1, "a FIFO: 100%")
+T.eq(opens.r, 0, "not opened")
+T.eq(#warnings(), 1, "one warning")
+open_more()
+click(row(1, 1))
+click(row(5, 6))
+T.near(scale(), 1.25, "a size still applies")
+T.eq(opens.w, 0, "nothing written over it")
+T.eq(#warnings(), 1, "still one warning")
+fifo = folder()
+os.execute(("mkfifo '%s/%s.tmp'"):format(fifo, NAME))
+start(fifo)
+open_more()
+click(row(1, 1))
+click(row(5, 6))
+T.eq(opens.w, 0, "a FIFO as the .tmp: nothing written")
+T.eq(#warnings(), 1, "one warning")
+local link = folder()
+put(link, "keep")
+os.rename(link .. "/" .. NAME, link .. "/other")
+os.execute(("ln -s other '%s/%s'"):format(link, NAME))
+start(link)
+T.eq(scale(), 1, "a link to a file with no size: read, 100%")
+open_more()
+click(row(1, 1))
+click(row(5, 6))
+local f = io.open(link .. "/other", "rb")
+T.eq(f:read("*a"), "keep", "the file the link pointed to is left alone")
+f:close()
+T.eq(get(link), "125\n", "the size written")
+local function test(flag, p)
+    local r = os.execute(("test %s '%s'"):format(flag, p))
+    return r == 0 or r == true
+end
+T.check(not test("-L", link .. "/" .. NAME) and test("-f", link .. "/" .. NAME), "suji-size is a regular file now")
+T.eq(io.open(link .. "/" .. NAME .. ".tmp"), nil, "no .tmp left")
+-- Windows: no rename over a file that exists
+local real_rename = os.rename
+os.rename = function(a, b)
+    if io.open(b) then return nil, "exists" end
+    return real_rename(a, b)
+end
+dir = folder()
+put(dir, "90")
+start(dir)
+open_more()
+click(row(1, 1))
+click(row(6, 6))
+T.eq(get(dir), "150\n", "no rename over it: removed, then renamed")
+-- Nor any rename at all: written in place
+os.rename = function() return nil, "no" end
+click(row(1, 6))
+T.eq(get(dir), "75\n", "no rename: written in place")
+T.eq(io.open(dir .. "/" .. NAME .. ".tmp"), nil, "no .tmp left")
+T.eq(#warnings(), 0, "without a warning")
+os.rename = real_rename
 
 -- Cannot write: neither folder exists -------------------------------------------------------------------------------
 start(base .. "/missing", nil, base .. "/missing-home")

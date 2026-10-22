@@ -61,11 +61,17 @@ end
 
 -- The file in the state folder, else the one in the config folder: the
 -- first that exists. A missing file is the size never chosen: no warning.
+-- Only a regular file is opened: a FIFO would block mpv's start.
 local function open()
     for _, placeholder in ipairs({ "~~state/", "~~home/" }) do
         local dir = folder(placeholder)
-        if dir then
-            local p = dir .. "/" .. NAME
+        local p = dir and dir .. "/" .. NAME
+        local info = p and utils.file_info(p)
+        if info then
+            if not info.is_file then
+                warn(("size: %s is not a regular file, using 100%%"):format(draw.printable(p, 300)))
+                return nil
+            end
             local f, err, code = io.open(p, "rb")
             if f then return f, p end
             if code ~= ENOENT then
@@ -90,16 +96,46 @@ function M.load()
     end
 end
 
--- Write n to the file, or warn that it cannot.
+-- Nothing there, or a regular file: what may be written over.
+local function writable(p)
+    local info = utils.file_info(p)
+    return not info or info.is_file
+end
+
+-- Write text to p, which must be writable. True, or nil and the error.
+local function write(p, text)
+    local f, err = io.open(p, "wb")
+    if not f then return nil, err end
+    local ok, werr = f:write(text)
+    local closed, cerr = f:close()
+    if not ok then return nil, werr end
+    if not closed then return nil, cerr end
+    return true
+end
+
+-- Write n to the file, or warn that it cannot. Written to NAME.tmp and
+-- renamed over the file, so a symbolic link there is replaced, not
+-- followed. Windows does not rename over a file that exists: then it is
+-- removed first, and as a last resort written in place.
 local function save(n)
     local p = path()
     if not p then return end
-    local f, err = io.open(p, "wb")
-    local ok = f ~= nil
-    if f then
-        ok, err = f:write(("%d\n"):format(n))
-        local closed, cerr = f:close()
-        if ok then ok, err = closed, cerr end
+    local tmp, text = p .. ".tmp", ("%d\n"):format(n)
+    if not writable(p) or not writable(tmp) then
+        warn(("size: %s is not a regular file, the size is not saved"):format(draw.printable(p, 300)))
+        return
+    end
+    local ok, err = write(tmp, text)
+    if ok then
+        ok, err = os.rename(tmp, p)
+        if not ok then
+            os.remove(p)
+            ok, err = os.rename(tmp, p)
+        end
+        if not ok then
+            os.remove(tmp)
+            ok, err = write(p, text)
+        end
     end
     if not ok then warn(("size: cannot save the size: %s"):format(draw.printable(err, 300))) end
 end

@@ -161,8 +161,9 @@ fi
 
 # The size in the more menu, remembered: two mpv in a row, with a config
 # folder and a state folder of their own (no --no-config: with it mpv has
-# no state folder). The second starts at the size the first chose. Then
-# again with no state folder: the file goes to the config folder.
+# no state folder; so mpv also reads /etc/mpv, if there is one). The
+# second starts at the size the first chose. Then again with no state
+# folder: the file goes to the config folder.
 if [ -z "$tmp" ]; then
     echo "xvfb-size: skipped (no xvfb-run)"
 elif [ ! -s "$tmp/t.mkv" ]; then

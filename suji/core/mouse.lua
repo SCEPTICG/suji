@@ -107,8 +107,9 @@ local function doubleclick_time()
 end
 
 -- Keep the bindings for the second click of a double click at (x, y).
-local function hold(x, y)
-    held = { x = x, y = y }
+-- On a menu, item and title say which item that click was on (nil: none).
+local function hold(x, y, on_menu, item, title)
+    held = { x = x, y = y, menu = on_menu, item = item, title = title }
     held_timer:kill()
     held_timer.timeout = doubleclick_time()
     held_timer:resume()
@@ -117,8 +118,14 @@ end
 local function press(x, y)
     if captured then release(false) end -- its button up was lost
     if menu.is_open() then
+        local item, title = menu.item_under(x, y)
+        -- The second click of a double click on a menu only counts on the
+        -- item the first was on: a choice may have moved the rows (a new
+        -- size) or replaced them. Anywhere else it does nothing, not even
+        -- close the menu.
+        if held and held.menu and (item == nil or item ~= held.item or title ~= held.title) then return end
         if menu.contains(x, y) then
-            hold(x, y)
+            hold(x, y, true, item, title)
             menu.press(x, y)
         else
             menu.close()
