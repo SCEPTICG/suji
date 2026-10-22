@@ -542,6 +542,12 @@ sandboxed() {
     pres[${#pres[@]}]=$pre
     pre=$(physical_path "$home/snap") || return 0
     pres[${#pres[@]}]=$pre
+    # Each app's folder too, which may itself be a link to another disk.
+    for pre in "$home"/.var/app/* "$home"/snap/*; do
+        [ -e "$pre" ] || [ -L "$pre" ] || continue
+        pre=$(physical_path "$pre") || return 0
+        pres[${#pres[@]}]=$pre
+    done
     SANDBOX_WHY=sandbox
     for p in "$p" "$pp"; do
         for pre in "${pres[@]}"; do
@@ -1394,10 +1400,11 @@ uninstall_steps() {
         remove_item "$CFG/suji-size" "$CFG" || return 1
     fi
     # On Linux suji may keep its size in mpv's state folder: never touched,
-    # only named. Only for the usual folder of a native mpv (with --target or
-    # MPV_HOME that state folder may be another player's).
+    # only named. Only for the usual folder of a native mpv, found or given
+    # with --target, and without MPV_HOME (as install/suji.ps1): any other
+    # folder's state folder may be another player's.
     f="${XDG_STATE_HOME:-$HOME/.local/state}/mpv/suji-size"
-    if [ "$OS" = Linux ] && [ "$KIND" = mpv ] && [ -z "${MPV_HOME:-}" ] && [ "${#OPT_TARGETS[@]}" -eq 0 ] && [ -f "$f" ]; then
+    if [ "$OS" = Linux ] && [ -z "${MPV_HOME:-}" ] && [ "$CFG" = "$(abs_path "${XDG_CONFIG_HOME:-$HOME/.config}/mpv")" ] && [ -f "$f" ]; then
         notice_size "$f"
     fi
 
