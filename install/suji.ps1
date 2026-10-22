@@ -522,6 +522,18 @@ function Assert-SujiNoLink {
     if ($link) { throw (T 'link_in_path' @($Path, $link)) }
 }
 
+# Before writing to $Path, or making a folder there, inside $Root: running as
+# administrator, neither $Path itself nor a folder between it and $Root may be
+# a link. Without administrator rights a link is written through, with the
+# user's own rights: a config kept as links to another folder keeps working.
+function Assert-SujiWriteTarget {
+    param([string]$Path, [string]$Root)
+    if (-not $script:SujiElevated) { return }
+    Assert-SujiNoLink -Path $Path -Root $Root
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -ne $item -and (Test-SujiLink $item)) { throw (T 'link_in_path' @($Path, $Path)) }
+}
+
 # Deletes a file or folder inside $Root. Links (junctions, symlinks) are removed
 # as links: their target is never followed.
 function Remove-SujiItem {
@@ -561,8 +573,10 @@ function Copy-SujiTree {
     }
 }
 
+# $Root: the config folder $Path is in (checked with Assert-SujiWriteTarget).
 function New-SujiDirectory {
-    param([string]$Path)
+    param([string]$Path, [string]$Root = '')
+    if ($Root) { Assert-SujiWriteTarget -Path $Path -Root $Root }
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         New-Item -ItemType Directory -Path $Path -Force | Out-Null
     }
@@ -606,14 +620,27 @@ function Read-SujiText {
     return [pscustomobject]@{ Text = $text; Encoding = $encoding; Bom = $bom }
 }
 
-# Writes text without BOM unless $Bom is set (only to keep a BOM the file already had).
+# Writes text without BOM unless $Bom is set (only to keep a BOM the file already
+# had), into $Path inside the config folder $Root. The text goes to a temporary
+# file next to it that then replaces it, so a failed write never leaves half a
+# file; a link (only allowed without administrator rights) is written through.
 function Write-SujiText {
-    param([string]$Path, [string]$Text, [string]$Encoding = 'utf8', [bool]$Bom = $false)
+    param([string]$Path, [string]$Text, [Parameter(Mandatory = $true)][string]$Root, [string]$Encoding = 'utf8', [bool]$Bom = $false)
+    Assert-SujiInside -Path $Path -Root $Root
+    Assert-SujiWriteTarget -Path $Path -Root $Root
     if ($Encoding -eq 'latin1') { $enc = [System.Text.Encoding]::GetEncoding(28591) }
     else { $enc = New-Object System.Text.UTF8Encoding($false) }
     $body = $enc.GetBytes($Text)
     if ($Bom) { $body = [byte[]](@(0xEF, 0xBB, 0xBF) + $body) }
-    [System.IO.File]::WriteAllBytes($Path, $body)
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -ne $item -and (Test-SujiLink $item)) { [System.IO.File]::WriteAllBytes($Path, $body); return }
+    $tmp = $Path + '.suji-' + [guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        [System.IO.File]::WriteAllBytes($tmp, $body)
+        if ($null -ne $item) { [System.IO.File]::Replace($tmp, $Path, [NullString]::Value) }
+        else { [System.IO.File]::Move($tmp, $Path) }
+    }
+    finally { if ([System.IO.File]::Exists($tmp)) { [System.IO.File]::Delete($tmp) } }
 }
 
 function Test-SujiDirWritable {
@@ -1064,7 +1091,7 @@ function Update-SujiMpvConf {
     else { $file = [pscustomobject]@{ Text = ''; Encoding = 'utf8'; Bom = $false } }
     $newText = Set-SujiBlockText -Text $file.Text -Name $path
     if (-not $existed -or $newText -cne $file.Text) {
-        Write-SujiText -Path $path -Text $newText -Encoding $file.Encoding -Bom $file.Bom
+        Write-SujiText -Path $path -Text $newText -Root $ConfigDir -Encoding $file.Encoding -Bom $file.Bom
     }
 }
 
@@ -1077,7 +1104,7 @@ function Remove-SujiMpvConf {
     $newText = Remove-SujiBlockText -Text $file.Text -Name $path
     if ($newText -ceq $file.Text) { return }
     if ($CreatedBySuji -and $newText.Trim() -eq '') { Remove-SujiItem -Path $path -Root $ConfigDir; return }
-    Write-SujiText -Path $path -Text $newText -Encoding $file.Encoding -Bom $file.Bom
+    Write-SujiText -Path $path -Text $newText -Root $ConfigDir -Encoding $file.Encoding -Bom $file.Bom
 }
 
 # thumbfast.conf: created with suji's settings when missing; an existing one is
@@ -1090,10 +1117,10 @@ function Update-SujiThumbfastConf {
     $added = { param([string]$Eol) $Eol + $script:MpvPathComment + $Eol + 'mpv_path=' + $MpvPath + $Eol }
     $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
     if ($null -eq $item) {
-        New-SujiDirectory $opts
+        New-SujiDirectory $opts -Root $ConfigDir
         $text = [string]::Join("`r`n", $script:ThumbfastConfLines) + "`r`n"
         if ($MpvPath) { $text += & $added "`r`n" }
-        Write-SujiText -Path $path -Text $text
+        Write-SujiText -Path $path -Text $text -Root $ConfigDir
     }
     else {
         if (-not $MpvPath -or $item.PSIsContainer -or (Test-SujiLink $item)) { return }
@@ -1102,7 +1129,7 @@ function Update-SujiThumbfastConf {
         $eol = Get-SujiEol $file.Text
         $text = $file.Text
         if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $text += $eol }
-        Write-SujiText -Path $path -Text ($text + (& $added $eol)) -Encoding $file.Encoding -Bom $file.Bom
+        Write-SujiText -Path $path -Text ($text + (& $added $eol)) -Root $ConfigDir -Encoding $file.Encoding -Bom $file.Bom
     }
     if ($MpvPath) { Write-SujiInfo (T 'mpvpath_set' @($MpvPath)) }
 }
@@ -1125,13 +1152,13 @@ function Test-SujiRecordPath {
     return $true
 }
 
-# "aside|original": something set aside in the folder of set-aside things,
-# from scripts, script-opts or fonts.
+# "aside|original": something set aside, so in the folder of set-aside things
+# (never another file of the folder), and where it came from.
 function Test-SujiAsidePair {
     param([string]$Value)
     $pair = $Value -split '\|'
     return ($pair.Count -eq 2 -and (Test-SujiRecordPath $pair[0]) -and (Test-SujiRecordPath $pair[1]) -and
-        $pair[0].StartsWith($script:AsideDir + '/') -and $pair[1] -match '^(scripts|script-opts|fonts)/')
+        $pair[0].StartsWith($script:AsideDir + '/'))
 }
 
 function Read-SujiRecord {
@@ -1161,7 +1188,7 @@ function Write-SujiRecord {
     [void]$sb.Append('# Written by the suji installer. Used to update and uninstall; do not edit.' + $eol)
     foreach ($key in $Values.Keys) { [void]$sb.Append($key + '=' + [regex]::Replace([string]$Values[$key], '\p{Cc}', '') + $eol) }
     foreach ($a in $Aside) { [void]$sb.Append('disabled=' + $a + $eol) }
-    Write-SujiText -Path (Join-SujiPath $ConfigDir $script:RecordName) -Text $sb.ToString()
+    Write-SujiText -Path (Join-SujiPath $ConfigDir $script:RecordName) -Text $sb.ToString() -Root $ConfigDir
 }
 
 function ConvertTo-SujiYesNo { param([bool]$Value) if ($Value) { return 'yes' } return 'no' }
@@ -1464,7 +1491,7 @@ function Move-SujiAside {
     Assert-SujiInside -Path $dest -Root $ConfigDir
     Assert-SujiNoLink -Path $path -Root $ConfigDir
     Assert-SujiNoLink -Path $dest -Root $ConfigDir
-    New-SujiDirectory (Split-Path -Path $dest -Parent)
+    New-SujiDirectory (Split-Path -Path $dest -Parent) -Root $ConfigDir
     Move-Item -LiteralPath $path -Destination $dest
     $destRel = (Get-SujiFullPath $dest).Substring((Get-SujiFullPath $ConfigDir).Length + 1).Replace('\', '/')
     Write-SujiInfo (T 'moved' @($Rel, $destRel))
@@ -1488,7 +1515,7 @@ function Restore-SujiAside {
         if ($null -ne (Get-Item -LiteralPath $to -Force -ErrorAction SilentlyContinue)) { Write-SujiWarn (T 'restore_skipped' @($pair[0], $pair[1])); continue }
         Assert-SujiNoLink -Path $from -Root $ConfigDir
         Assert-SujiNoLink -Path $to -Root $ConfigDir
-        New-SujiDirectory (Split-Path -Path $to -Parent)
+        New-SujiDirectory (Split-Path -Path $to -Parent) -Root $ConfigDir
         Move-Item -LiteralPath $from -Destination $to
         Write-SujiInfo (T 'moved' @($pair[0], $pair[1]))
     }
@@ -1514,6 +1541,15 @@ function Get-SujiRestoreMessage {
     return $Message
 }
 
+# Running as administrator, every place the installer writes to in the folder
+# is checked for links before anything changes (and again at each write).
+function Assert-SujiWriteTargets {
+    param([string]$ConfigDir)
+    foreach ($rel in @('mpv.conf', $script:RecordName, 'scripts/suji', 'scripts/thumbfast.lua', 'script-opts/thumbfast.conf', $script:AsideDir)) {
+        Assert-SujiWriteTarget -Path (Join-SujiRel $ConfigDir $rel) -Root $ConfigDir
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Install and uninstall
 # ---------------------------------------------------------------------------
@@ -1530,6 +1566,7 @@ function Install-SujiTarget {
     # Checked before anything changes, the backup too.
     if (Test-SujiHikariPresent $config) { throw (T 'hikari_present' @($config)) }
     Assert-SujiMpvConf $config
+    Assert-SujiWriteTargets $config
 
     # Interfaces that clash with suji: asked first, so the backup has them.
     $moving = @()
@@ -1579,11 +1616,12 @@ function Install-SujiTarget {
         }
 
         # thumbfast: not copied again when it is exactly as pinned.
-        New-SujiDirectory $scripts
+        New-SujiDirectory $scripts -Root $config
         if (Test-SujiThumbfastUpToDate $config) { Write-SujiInfo (T 'thumbfast_uptodate') }
         else {
             if (-not $ThumbfastFile) { throw (T 'source_missing' @($script:ThumbfastUrl)) }
             Remove-SujiItem -Path $thumb -Root $config
+            Assert-SujiWriteTarget -Path $thumb -Root $config
             Copy-Item -LiteralPath $ThumbfastFile -Destination $thumb -Force
         }
 
@@ -1592,6 +1630,7 @@ function Install-SujiTarget {
         $dest = Join-SujiPath $scripts 'suji'
         $tmp = Join-SujiPath $scripts ('.suji-new-' + [guid]::NewGuid().ToString('N'))
         try {
+            Assert-SujiWriteTarget -Path $tmp -Root $config
             Copy-SujiTree -From $Source.SujiDir -To $tmp
             Remove-SujiItem -Path $dest -Root $config
             Move-Item -LiteralPath $tmp -Destination $dest
@@ -1621,6 +1660,7 @@ function Uninstall-SujiTarget {
     Write-SujiInfo (T 'uninstalling_from' @($config))
     if (Test-SujiHikariPresent $config) { throw (T 'hikari_present' @($config)) }
     Assert-SujiMpvConf $config
+    Assert-SujiWriteTargets $config
     $backup = New-SujiBackupStep -ConfigDir $config -Stamp $Stamp
 
     try {
