@@ -50,7 +50,6 @@ $script:SujiReadLine = { param([string]$Prompt) if ($script:Answers.Count -gt 0)
 function Test-Case {
     param([string]$Name, [scriptblock]$Body)
     $script:NonInteractive = $true
-    $script:SujiElevated = $false
     $script:Answers.Clear()
     try {
         & $Body
@@ -588,23 +587,17 @@ function New-LinkedConfig {
 Test-Case 'a link at mpv.conf, script-opts, thumbfast.conf, scripts\suji or the record: refused before anything changes' {
     $cases = @(@('mpv.conf', $false), @('script-opts', $true), @('script-opts/thumbfast.conf', $false), @('scripts/suji', $true),
         @('suji-installed.txt', $false))
-    foreach ($elevated in @($false, $true)) {
-        foreach ($case in $cases) {
-            $name = 'link-' + $elevated + '-' + ($case[0] -replace '[/.]', '-')
-            $t = New-LinkedConfig $name $case[0] -Folder:($case[1])
-            if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
-            $before = Get-TreeState $t.Outside
-            $cfgBefore = Get-TreeState $t.Config
-            $script:SujiElevated = $elevated
-            try {
-                Assert-Throws { Install-Test $t.Config } -Like '*is a link*Nothing was changed*' -What ('install ' + $name)
-                Assert-Throws { Uninstall-Test $t.Config } -Like '*is a link*' -What ('uninstall ' + $name)
-            }
-            finally { $script:SujiElevated = $false }
-            Assert-Equal (Get-TreeState $t.Outside) $before ('outside untouched ' + $name)
-            Assert-Equal (Get-TreeState $t.Config) $cfgBefore ('folder untouched ' + $name)
-            Assert-Equal @(Get-ChildItem -LiteralPath $t.Dir -Directory -Filter 'mpv-respaldo-suji-*').Count 0 ('no backup ' + $name)
-        }
+    foreach ($case in $cases) {
+        $name = 'link-' + ($case[0] -replace '[/.]', '-')
+        $t = New-LinkedConfig $name $case[0] -Folder:($case[1])
+        if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
+        $before = Get-TreeState $t.Outside
+        $cfgBefore = Get-TreeState $t.Config
+        Assert-Throws { Install-Test $t.Config } -Like '*is a link*Nothing was changed*' -What ('install ' + $name)
+        Assert-Throws { Uninstall-Test $t.Config } -Like '*is a link*' -What ('uninstall ' + $name)
+        Assert-Equal (Get-TreeState $t.Outside) $before ('outside untouched ' + $name)
+        Assert-Equal (Get-TreeState $t.Config) $cfgBefore ('folder untouched ' + $name)
+        Assert-Equal @(Get-ChildItem -LiteralPath $t.Dir -Directory -Filter 'mpv-respaldo-suji-*').Count 0 ('no backup ' + $name)
     }
 }
 
@@ -790,12 +783,33 @@ Test-Case 'main: exit codes for wrong usage and for a failed folder' {
     Assert-Equal (Invoke-SujiMain -Action '' -Target @() -Yes $false -Environment $fake) 0 'menu: no more input'
 }
 
-Test-Case 'main: as administrator, -Yes only takes folders under Program Files or ProgramData' {
+Test-Case 'main: as administrator it does not run: exit code 2, the folder exactly as it was' {
     $d = New-TestDir 'main-admin'
     $fake = New-FakeEnv $d
     $fake.IsAdmin = $true
-    Assert-Equal (Invoke-SujiMain -Action 'install' -Target @((P @($d, 'cfg'))) -Yes $true -Environment $fake) 2 'refused'
-    Assert-True (-not (Test-Exists (P @($d, 'cfg')))) 'nothing made'
+    $cfg = P @($d, 'cfg')
+    Set-TestFile (P @($cfg, 'mpv.conf')) "volume=50`n"
+    Set-TestFile (P @($cfg, 'scripts', 'osc.lua')) '-- an osc'
+    $before = Get-TreeState $d
+    $saved = $script:SujiScriptRoot
+    try {
+        $script:SujiScriptRoot = P @($RepoRoot, 'install')
+        foreach ($action in @('install', 'uninstall')) {
+            Assert-Equal (Invoke-SujiMain -Action $action -Target @($cfg) -Yes $true -Environment $fake) 2 ('-Yes ' + $action)
+        }
+        $script:NonInteractive = $false
+        $script:Answers.Enqueue('1')
+        Assert-Equal (Invoke-SujiMain -Action '' -Target @() -Yes $false -Environment $fake) 2 'menu'
+        Assert-Equal $script:Answers.Count 1 'asked nothing'
+    }
+    finally { $script:SujiScriptRoot = $saved }
+    Assert-Equal (Get-TreeState $d) $before 'nothing changed, no backup'
+    try {
+        Set-SujiLanguage 'es'
+        Assert-Equal (T 'admin_refused') ('Ejec' + [char]0xFA + 'talo desde una ventana normal de PowerShell, no como administrador.') 'Spanish'
+    }
+    finally { Set-SujiLanguage 'en' }
+    Assert-Equal (T 'admin_refused') 'Run it from a normal PowerShell window, not as administrator.' 'English'
 }
 
 Test-Case 'detection: AnimeJaNai and its portable_config, mpv.net, MPV_HOME' {
