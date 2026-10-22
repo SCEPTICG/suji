@@ -67,13 +67,6 @@ suji_defaults() {
         'mpv.conf' 'suji-installed.txt' 'scripts/suji' 'scripts/thumbfast.lua'
         'script-opts/thumbfast.conf' 'script-opts/suji.conf' 'suji-size' 'scripts-apartados-suji'
     )
-    # What check_links refuses as a symbolic link: every path the installer
-    # writes, copies, creates or moves things into, and the folders on the way.
-    LINK_CHECKED=(
-        'mpv.conf' 'suji-installed.txt' 'suji-size' 'scripts' 'scripts/suji' 'scripts/thumbfast.lua'
-        'script-opts' 'script-opts/thumbfast.conf' 'script-opts/suji.conf' 'fonts'
-        'scripts-apartados-suji' 'scripts-apartados-suji/script-opts' 'scripts-apartados-suji/fonts'
-    )
     MPV_CONFIG_FILES=('mpv.conf' 'input.conf' 'suji-installed.txt')
     MPV_CONFIG_DIRS=('scripts' 'script-opts')
     # Scripts that replace mpv's on-screen controller and clash with suji (file
@@ -148,7 +141,6 @@ suji_text_en() {
         backup_pruned) s='Old backup deleted: %s' ;;
         backup_prune_failed) s='Could not delete the old backup %s.' ;;
         link_skipped) s='Not copied to the backup: %s is a symbolic link.' ;;
-        link_refused) s='%s is a symbolic link: the installer does not write or move anything through links. Nothing was changed in that folder.' ;;
         conflicts_found) s='These interfaces draw their own controls and clash with suji:' ;;
         conflicts_confirm) s='Move them to %s? Nothing is deleted, and they come back when you uninstall.' ;;
         conflicts_kept) s='Left in place: suji and that interface will both draw controls.' ;;
@@ -183,9 +175,7 @@ suji_text_en() {
         not_mpv_confirm) s='Use it anyway?' ;;
         not_mpv_yes) s='Without questions such a folder is refused: run it in a terminal to confirm it.' ;;
         hikari_here) s='%s has hikari: nothing is changed there. hikari installs suji itself: use the hikari installer with -Interface suji.' ;;
-        root_warn) s='The installer is running as root (sudo). It does not need it, and what it creates would belong to root.' ;;
-        root_confirm) s='Continue as root?' ;;
-        root_refused) s='As root and without questions nothing is done: run it as your own user, without sudo.' ;;
+        root_refused) s='The installer is running as root (sudo). It does not need it, and as root it would write through links into files that are not yours: nothing is done. Run it as your own user, without sudo.' ;;
         record_bad) s='Ignored an invalid entry in suji-installed.txt: %s' ;;
         unsupported_os) s='This installer is for macOS and Linux (this system is %s). On Windows use suji.ps1: see the README.' ;;
         missing_tool) s='%s is needed and was not found.' ;;
@@ -229,7 +219,6 @@ suji_text_es() {
         backup_pruned) s='Borrada la copia de seguridad antigua %s' ;;
         backup_prune_failed) s='No se ha podido borrar la copia de seguridad antigua %s.' ;;
         link_skipped) s='No se copia a la copia de seguridad: %s es un enlace simbólico.' ;;
-        link_refused) s='%s es un enlace simbólico: el instalador no escribe ni mueve nada a través de enlaces. No se ha cambiado nada en esa carpeta.' ;;
         conflicts_found) s='Estas interfaces dibujan sus propios controles y chocan con suji:' ;;
         conflicts_confirm) s='¿Moverlas a %s? No se borra nada y vuelven a su sitio al desinstalar.' ;;
         conflicts_kept) s='Se quedan donde están: suji y esa interfaz dibujarán controles a la vez.' ;;
@@ -264,9 +253,7 @@ suji_text_es() {
         not_mpv_confirm) s='¿Usarla de todos modos?' ;;
         not_mpv_yes) s='Sin preguntas se rechaza una carpeta así: ejecútalo en un terminal para confirmarla.' ;;
         hikari_here) s='%s tiene hikari: no se cambia nada ahí. hikari ya instala suji: usa el instalador de hikari con -Interface suji.' ;;
-        root_warn) s='El instalador se está ejecutando como root (sudo). No le hace falta, y lo que cree pertenecería a root.' ;;
-        root_confirm) s='¿Seguir como root?' ;;
-        root_refused) s='Como root y sin preguntas no se hace nada: ejecútalo con tu usuario, sin sudo.' ;;
+        root_refused) s='El instalador se está ejecutando como root (sudo). No le hace falta, y como root escribiría a través de enlaces en ficheros que no son tuyos: no se hace nada. Ejecútalo con tu usuario, sin sudo.' ;;
         record_bad) s='Se ignora una entrada no válida de suji-installed.txt: %s' ;;
         unsupported_os) s='Este instalador es para macOS y Linux (este sistema es %s). En Windows usa suji.ps1: mira el README.' ;;
         missing_tool) s='Hace falta %s y no se encuentra.' ;;
@@ -474,14 +461,28 @@ sha256_of() {
     fi
 }
 
+# The file a path leads to once its symbolic links are followed (at most 40),
+# relative links taken from the folder of the link. Prints the path itself
+# when it is no link.
+link_target() {
+    local p=$1 t n=0
+    while [ -L "$p" ] && [ "$n" -lt 40 ]; do
+        t=$(readlink "$p") || break
+        case $t in /*) p=$t ;; *) p=${p%/*}/$t ;; esac
+        n=$((n + 1))
+    done
+    printf '%s' "$p"
+}
+
 # Writes stdin to $1 through a temporary file next to it and a rename, so a
 # failure never leaves half a file. The file keeps its permissions (a new one
-# gets the usual ones for the umask). Never through a link (check_links has
-# refused the folder already; this is the last guard).
+# gets the usual ones for the umask). A link stays a link: the file it points
+# to is the one written (dotfile managers link mpv.conf). Never as root (main
+# refuses to run as root), so a link only leads where the user could write.
 write_file() {
-    local path=$1 tmp
-    if [ -L "$path" ]; then SUJI_ERR=$(T link_refused "$(clean_text "$path")"); return 1; fi
-    tmp=$(mktemp "$1.suji-tmp.XXXXXX") || return 1
+    local path tmp
+    path=$(link_target "$1")
+    tmp=$(mktemp "$path.suji-tmp.XXXXXX") || return 1
     if [ -f "$path" ]; then
         cp -p "$path" "$tmp" 2>/dev/null || :
     else
@@ -489,16 +490,6 @@ write_file() {
     fi
     if ! cat >"$tmp"; then rm -f "$tmp"; return 1; fi
     mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
-}
-
-# Fails, with SUJI_ERR set, when anything the installer may write, copy,
-# create or move in CFG is a symbolic link: the files themselves and every
-# folder between them and CFG. Run before anything in the folder changes.
-check_links() {
-    local rel
-    for rel in "${LINK_CHECKED[@]}"; do
-        if [ -L "$CFG/$rel" ]; then SUJI_ERR=$(T link_refused "$(clean_text "$CFG/$rel")"); return 1; fi
-    done
 }
 
 # The lines of a text file: F_LINE (content, without line break), F_EOL (crlf,
@@ -811,7 +802,7 @@ get_source() {
 # Is the thumbfast of folder $1 the pinned file, byte for byte?
 thumbfast_uptodate() {
     local f="$1/scripts/thumbfast.lua"
-    [ -f "$f" ] && [ ! -L "$f" ] && [ "$(sha256_of "$f")" = "$(lower "$THUMBFAST_SHA256")" ]
+    [ -f "$f" ] && [ "$(sha256_of "$f")" = "$(lower "$THUMBFAST_SHA256")" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -820,6 +811,7 @@ thumbfast_uptodate() {
 
 # Replaceable in tests.
 suji_uname() { uname -s; }
+suji_euid() { id -u; }
 suji_flatpak_mpv() {
     [ -d "$HOME/.var/app/io.mpv.Mpv" ] && return 0
     command -v flatpak >/dev/null 2>&1 && flatpak info io.mpv.Mpv >/dev/null 2>&1
@@ -1109,8 +1101,7 @@ install_target() {
     local exe=${C_EXE[$1]} c moving
     BACKUP=''
     mkdir -p "$CFG" || { SUJI_ERR=$(clean_text "$CFG"); return 1; }
-    # Checked before anything changes: a link or a broken block stops it here.
-    check_links || return 1
+    # Checked before anything changes: a broken block stops it here.
     load_file "$CFG/mpv.conf"
     find_block || return 1
 
@@ -1165,8 +1156,7 @@ install_steps() {
         info "$(T thumbfast_uptodate)"
     else
         [ -f "$TEMP_DIR/thumbfast.lua" ] || { SUJI_ERR=$(T source_missing "$THUMBFAST_URL"); return 1; }
-        rm -f "$CFG/scripts/thumbfast.lua"
-        cp "$TEMP_DIR/thumbfast.lua" "$CFG/scripts/thumbfast.lua" || return 1
+        write_file "$CFG/scripts/thumbfast.lua" <"$TEMP_DIR/thumbfast.lua" || return 1
     fi
 
     # suji: copied next to the old one first, so a failed copy leaves the old
@@ -1218,8 +1208,7 @@ mpv_path_lines() {
 uninstall_target() {
     CFG=${C_DIR[$1]}
     BACKUP=''
-    # Checked before anything changes: a link or a broken block stops it here.
-    check_links || return 1
+    # Checked before anything changes: a broken block stops it here.
     load_file "$CFG/mpv.conf"
     find_block || return 1
     backup_step || return 1
@@ -1471,6 +1460,7 @@ main() {
 
     OS=$(suji_uname)
     case $OS in Darwin | Linux) ;; *) error "$(T unsupported_os "$(clean_text "$OS")")"; return 2 ;; esac
+    if [ "$(suji_euid)" = 0 ]; then error "$(T root_refused)"; return 2; fi
     action=$OPT_ACTION
 
     io_setup
@@ -1501,11 +1491,6 @@ main() {
         done
     fi
 
-    if [ "$(id -u)" = 0 ]; then
-        warn "$(T root_warn)"
-        if [ "$NONINTERACTIVE" = 1 ]; then error "$(T root_refused)"; return 2; fi
-        confirm "$(T root_confirm)" no || { info "$(T cancelled)"; return 0; }
-    fi
 
     MPV_EXE=$(suji_find_mpv)
     if [ "$action" = install ] && [ -z "$MPV_EXE" ] && { [ "$OS" = Darwin ] || ! { suji_flatpak_mpv || suji_snap_mpv; }; }; then

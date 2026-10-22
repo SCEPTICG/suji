@@ -92,6 +92,7 @@ suji_fetch() {
     [ -n "$f" ] && cp "$f" "$2"
 }
 suji_uname() { printf '%s' "${SUJI_TEST_OS:-Linux}"; }
+suji_euid() { printf '%s' "${SUJI_TEST_EUID:-1000}"; }
 suji_apple_languages() { [ -z "${SUJI_TEST_APPLE_LANGS:-}" ] || printf '%b\n' "$SUJI_TEST_APPLE_LANGS"; }
 suji_find_mpv() { printf '%s' "${SUJI_TEST_MPV-/usr/bin/mpv}"; }
 suji_flatpak_mpv() { [ -n "${SUJI_TEST_FLATPAK:-}" ]; }
@@ -403,38 +404,64 @@ for broken in begin end twice; do
     check "mpv.conf with a broken block ($broken): uninstall stops too" test "$rc" = 1 -a "$(backups "$cfg")" = 0
 done
 
-# --- symbolic links: never written, copied or moved through -------------------------------
+# --- symbolic links (dotfiles): written through, never replaced -----------------------------
 
-for link in mpv.conf suji-installed.txt scripts scripts/suji scripts/thumbfast.lua script-opts \
-    script-opts/thumbfast.conf scripts-apartados-suji scripts-apartados-suji/script-opts; do
-    name=$(printf '%s' "$link" | tr '/' '-')
-    h=$(newhome "link-$name")
-    cfg="$h/.config/mpv"
-    mkdir -p "$cfg/scripts" "$h/elsewhere/dir/script-opts"
-    printf '%s\n' '-- osc' >"$cfg/scripts/osc.lua"
-    printf 'volume=50\n' >"$h/elsewhere/file"
-    case $link in
-        scripts | scripts/suji | script-opts | scripts-apartados-suji | scripts-apartados-suji/script-opts) target="$h/elsewhere/dir" ;;
-        *) target="$h/elsewhere/file" ;;
-    esac
-    [ "$link" != scripts ] || rm -rf "$cfg/scripts"
-    mkdir -p "$(dirname "$cfg/$link")"
-    ln -s "$target" "$cfg/$link"
-    listing "$cfg" >"$tmp/link-before.txt"
-    listing "$h/elsewhere" >"$tmp/link-else-before.txt"
-    run "$h" --yes
-    check "link at $link: exit 1" is "$rc" 1
-    check "link at $link: said so" has "$out" 'is a symbolic link'
-    listing "$cfg" >"$tmp/link-after.txt"
-    listing "$h/elsewhere" >"$tmp/link-else-after.txt"
-    check "link at $link: the folder untouched" same "$tmp/link-before.txt" "$tmp/link-after.txt"
-    check "link at $link: what it points to untouched" same "$tmp/link-else-before.txt" "$tmp/link-else-after.txt"
-    check "link at $link: no backup" is "$(backups "$cfg")" 0
-    run "$h" --yes --action uninstall --target "$cfg"
-    listing "$h/elsewhere" >"$tmp/link-else-after.txt"
-    check "link at $link: uninstall refused too" test "$rc" = 1 -a "$(backups "$cfg")" = 0
-    check "link at $link: uninstall leaves what it points to" same "$tmp/link-else-before.txt" "$tmp/link-else-after.txt"
-done
+h=$(newhome links)
+cfg="$h/.config/mpv"
+dots="$h/dotfiles"
+mkdir -p "$dots/scripts" "$dots/script-opts"
+printf 'volume=50\n' >"$dots/mpv.conf"
+cp "$dots/mpv.conf" "$tmp/dots-mpv.conf"
+printf 'network=no\n' >"$dots/thumbfast.conf"
+ln -s ../../dotfiles/mpv.conf "$cfg/mpv.conf"
+ln -s "$dots/scripts" "$cfg/scripts"
+ln -s "$dots/thumbfast.conf" "$dots/script-opts/thumbfast.conf"
+ln -s "$dots/script-opts" "$cfg/script-opts"
+printf '%s\n' '-- osc' >"$dots/scripts/osc.lua"
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes
+check 'links: exit 0' is "$rc" 0
+check 'links: mpv.conf still a link' test -L "$cfg/mpv.conf"
+check 'links: the block written in the file it points to' block_first "$dots/mpv.conf"
+check 'links: scripts still a link, suji in the folder it points to' test -L "$cfg/scripts" -a -f "$dots/scripts/suji/main.lua"
+check 'links: a linked thumbfast.conf still a link' test -L "$dots/script-opts/thumbfast.conf"
+check 'links: mpv_path written in the file it points to' grep -qx 'mpv_path=/opt/homebrew/bin/mpv' "$dots/thumbfast.conf"
+check 'links: interfaces set aside inside the linked folder too' test -f "$cfg/scripts-apartados-suji/osc.lua" -a ! -e "$dots/scripts/osc.lua"
+check 'links: no temporary file left' test -z "$(find "$h" -name '*.suji-tmp.*' -print)"
+ln -s "$dots/record.txt" "$cfg/suji-installed.txt.new" && mv "$cfg/suji-installed.txt" "$dots/record.txt" && mv "$cfg/suji-installed.txt.new" "$cfg/suji-installed.txt"
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes
+check 'links: a linked record still a link, updated' test -L "$cfg/suji-installed.txt" -a "$(grep -c '^suji_version=' "$dots/record.txt")" = 1
+check 'links, update: one block' is "$(count_of "$dots/mpv.conf" '# >>> suji')" 1
+SUJI_TEST_OS=Darwin run "$h" --yes --action uninstall
+check 'links, uninstall: exit 0' is "$rc" 0
+check 'links, uninstall: mpv.conf still a link, the file back as it was' test -L "$cfg/mpv.conf" -a "$(cat "$dots/mpv.conf")" = volume=50
+check 'links, uninstall: scripts still a link' test -L "$cfg/scripts" -a ! -e "$dots/scripts/suji"
+check 'links, uninstall: interfaces back' test -f "$dots/scripts/osc.lua"
+
+# A linked scripts/suji (a copy of the repository, say): the link goes, never what it points to.
+h=$(newhome link-suji)
+cfg="$h/.config/mpv"
+mkdir -p "$cfg/scripts" "$h/work/suji"
+printf '%s\n' '-- my work' >"$h/work/suji/main.lua"
+ln -s "$h/work/suji" "$cfg/scripts/suji"
+run "$h" --yes
+check 'linked scripts/suji: replaced by the release' test "$rc" = 0 -a ! -L "$cfg/scripts/suji" -a -f "$cfg/scripts/suji/core/state.lua"
+check 'linked scripts/suji: what it pointed to untouched' test "$(cat "$h/work/suji/main.lua")" = '-- my work' -a ! -e "$h/work/suji/core"
+
+# --- root -------------------------------------------------------------------------------------
+
+h=$(newhome root)
+cfg="$h/.config/mpv"
+printf 'volume=50\n' >"$cfg/mpv.conf"
+listing "$cfg" >"$tmp/root-before.txt"
+SUJI_TEST_EUID=0 run "$h" --yes
+check 'root: exit 2' is "$rc" 2
+check 'root: says to run it without sudo' has "$out" 'without sudo'
+listing "$cfg" >"$tmp/root-after.txt"
+check 'root: nothing changed' same "$tmp/root-before.txt" "$tmp/root-after.txt"
+answers '1\n1\ny\n'
+SUJI_TEST_EUID=0 run "$h"
+check 'root, with a terminal: refused too, without asking' test "$rc" = 2 -a ! -e "$cfg/scripts" -a -z "$(grep -F 'Choose an option' "$out")"
+no_answers
 
 # --- thumbfast.conf and mpv_path on macOS -----------------------------------------------------------
 
