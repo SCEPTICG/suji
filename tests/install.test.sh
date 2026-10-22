@@ -437,15 +437,74 @@ check 'links, uninstall: mpv.conf still a link, the file back as it was' test -L
 check 'links, uninstall: scripts still a link' test -L "$cfg/scripts" -a ! -e "$dots/scripts/suji"
 check 'links, uninstall: interfaces back' test -f "$dots/scripts/osc.lua"
 
-# A linked scripts/suji (a copy of the repository, say): the link goes, never what it points to.
+# A linked scripts/suji (a copy of the repository, say): the link stays and the
+# folder it points to gets the release; on uninstall only the link goes.
 h=$(newhome link-suji)
 cfg="$h/.config/mpv"
 mkdir -p "$cfg/scripts" "$h/work/suji"
 printf '%s\n' '-- my work' >"$h/work/suji/main.lua"
-ln -s "$h/work/suji" "$cfg/scripts/suji"
+printf '%s\n' '-- stale' >"$h/work/suji/old.lua"
+ln -s ../../../work/suji "$cfg/scripts/suji"
 run "$h" --yes
-check 'linked scripts/suji: replaced by the release' test "$rc" = 0 -a ! -L "$cfg/scripts/suji" -a -f "$cfg/scripts/suji/core/state.lua"
-check 'linked scripts/suji: what it pointed to untouched' test "$(cat "$h/work/suji/main.lua")" = '-- my work' -a ! -e "$h/work/suji/core"
+check 'linked scripts/suji: still a link' test "$rc" = 0 -a -L "$cfg/scripts/suji"
+check 'linked scripts/suji: the folder it points to has the release' \
+    test -f "$h/work/suji/core/state.lua" -a ! -e "$h/work/suji/old.lua" -a "$(cat "$h/work/suji/main.lua")" = '-- fake suji 9.9.9'
+check 'linked scripts/suji: no temporary folder left' test -z "$(ls -A "$h/work" | grep -v '^suji$')"
+run "$h" --yes --action uninstall
+check 'linked scripts/suji, uninstall: the link goes' test "$rc" = 0 -a ! -e "$cfg/scripts/suji" -a ! -L "$cfg/scripts/suji"
+check 'linked scripts/suji, uninstall: what it pointed to stays' test -f "$h/work/suji/main.lua" -a -f "$h/work/suji/core/state.lua"
+h=$(newhome link-suji-odd)
+cfg="$h/.config/mpv"
+mkdir -p "$cfg/scripts" "$h/notsuji"
+printf 'x\n' >"$h/notsuji/file"
+ln -s "$h/notsuji" "$cfg/scripts/suji"
+run "$h" --yes
+check 'scripts/suji linked to something else: exit 1, untouched' test "$rc" = 1 -a -f "$h/notsuji/file" -a "$(backups "$cfg")" = 0
+check 'scripts/suji linked to something else: said so' has "$out" 'not a suji folder'
+
+# --- Flatpak and Snap: the sandboxed mpv can write there, so no links are followed ---------
+
+fp=.var/app/io.mpv.Mpv/config/mpv
+for link in mpv.conf scripts script-opts/thumbfast.conf scripts/suji folder; do
+    name=$(printf '%s' "$link" | tr '/' '-')
+    h=$(newhome "sandbox-$name")
+    cfg="$h/$fp"
+    mkdir -p "$cfg/scripts" "$cfg/script-opts" "$h/outside/suji"
+    printf '%s\n' '-- fake' >"$h/outside/suji/main.lua"
+    printf 'export SECRET=1\n' >"$h/outside/bashrc"
+    case $link in
+        mpv.conf) ln -s "$h/outside/bashrc" "$cfg/mpv.conf" ;;
+        scripts) rm -rf "$cfg/scripts"; ln -s "$h/outside" "$cfg/scripts" ;;
+        script-opts/thumbfast.conf) ln -s "$h/outside/bashrc" "$cfg/script-opts/thumbfast.conf" ;;
+        scripts/suji) ln -s "$h/outside/suji" "$cfg/scripts/suji" ;;
+        folder) rm -rf "$h/.var/app/io.mpv.Mpv/config"; mkdir -p "$h/outside/mpv"; ln -s "$h/outside" "$h/.var/app/io.mpv.Mpv/config" ;;
+    esac
+    listing "$h/outside" >"$tmp/sandbox-before.txt"
+    run "$h" --yes --target "$cfg"
+    check "Flatpak, link at $link: exit 1" is "$rc" 1
+    check "Flatpak, link at $link: said so" has "$out" 'follows no links there'
+    listing "$h/outside" >"$tmp/sandbox-after.txt"
+    check "Flatpak, link at $link: nothing changed outside" same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
+    check "Flatpak, link at $link: no backup" test -z "$(ls -d "$h/.var/app/io.mpv.Mpv/config/mpv"-respaldo-* "$h/outside/mpv"-respaldo-* 2>/dev/null)"
+    run "$h" --yes --action uninstall --target "$cfg"
+    listing "$h/outside" >"$tmp/sandbox-after.txt"
+    check "Flatpak, link at $link: uninstall refused too" test "$rc" = 1
+    check "Flatpak, link at $link: uninstall changed nothing outside" same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
+done
+h=$(newhome flatpak)
+SUJI_TEST_FLATPAK=1 SUJI_TEST_MPV='' run "$h" --yes --target "$h/$fp"
+check 'Flatpak without links: installed' test "$rc" = 0 -a -f "$h/$fp/scripts/suji/main.lua"
+# Snap: ~/snap/mpv/current is a link to the revision, inside the sandbox.
+h=$(newhome snap)
+mkdir -p "$h/snap/mpv/123/.config/mpv"
+ln -s 123 "$h/snap/mpv/current"
+SUJI_TEST_SNAP=1 SUJI_TEST_MPV='' run "$h" --yes --target "$h/snap/mpv/current/.config/mpv"
+check 'Snap: the current link inside the sandbox is fine' test "$rc" = 0 -a -f "$h/snap/mpv/123/.config/mpv/scripts/suji/main.lua"
+h=$(newhome snap-out)
+mkdir -p "$h/snap/mpv" "$h/outside/.config/mpv"
+ln -s "$h/outside" "$h/snap/mpv/current"
+run "$h" --yes --target "$h/snap/mpv/current/.config/mpv"
+check 'Snap leading out of the sandbox: refused' test "$rc" = 1 -a ! -e "$h/outside/.config/mpv/scripts"
 
 # --- root -------------------------------------------------------------------------------------
 
@@ -455,7 +514,7 @@ printf 'volume=50\n' >"$cfg/mpv.conf"
 listing "$cfg" >"$tmp/root-before.txt"
 SUJI_TEST_EUID=0 run "$h" --yes
 check 'root: exit 2' is "$rc" 2
-check 'root: says to run it without sudo' has "$out" 'without sudo'
+check 'root: says to run it without sudo' has "$out" 'Run it as your normal user, without sudo.'
 listing "$cfg" >"$tmp/root-after.txt"
 check 'root: nothing changed' same "$tmp/root-before.txt" "$tmp/root-after.txt"
 answers '1\n1\ny\n'

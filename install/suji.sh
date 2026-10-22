@@ -32,8 +32,11 @@
 # Written for the bash 3.2 of macOS and for BSD and GNU tools alike: no
 # associative arrays, no sed -i, no GNU-only options. Everything is inside
 # functions and the last line calls main, so a download cut short runs nothing.
-# No sudo: it only touches the config folder, the backups next to it and a
-# temporary folder that it deletes when it ends. Needs bash, curl and unzip.
+# No sudo: it refuses to run as root, and it only touches the config folder,
+# the backups next to it and a temporary folder that it deletes when it ends.
+# Symbolic links (dotfiles) are written through, except in the Flatpak and
+# Snap folders, which the sandboxed mpv can write: there a link stops it.
+# Needs bash, curl and unzip.
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -66,6 +69,15 @@ suji_defaults() {
     BACKUP_ITEMS=(
         'mpv.conf' 'suji-installed.txt' 'scripts/suji' 'scripts/thumbfast.lua'
         'script-opts/thumbfast.conf' 'script-opts/suji.conf' 'suji-size' 'scripts-apartados-suji'
+    )
+    # In a Flatpak or Snap folder, which the mpv in the sandbox can write,
+    # none of these may be a symbolic link (check_sandbox): every path the
+    # installer writes, copies, creates, deletes or moves things into, and the
+    # folders on the way.
+    SANDBOX_CHECKED=(
+        'mpv.conf' 'suji-installed.txt' 'suji-size' 'scripts' 'scripts/suji' 'scripts/thumbfast.lua'
+        'script-opts' 'script-opts/thumbfast.conf' 'script-opts/suji.conf' 'fonts'
+        'scripts-apartados-suji' 'scripts-apartados-suji/script-opts' 'scripts-apartados-suji/fonts'
     )
     MPV_CONFIG_FILES=('mpv.conf' 'input.conf' 'suji-installed.txt')
     MPV_CONFIG_DIRS=('scripts' 'script-opts')
@@ -175,7 +187,9 @@ suji_text_en() {
         not_mpv_confirm) s='Use it anyway?' ;;
         not_mpv_yes) s='Without questions such a folder is refused: run it in a terminal to confirm it.' ;;
         hikari_here) s='%s has hikari: nothing is changed there. hikari installs suji itself: use the hikari installer with -Interface suji.' ;;
-        root_refused) s='The installer is running as root (sudo). It does not need it, and as root it would write through links into files that are not yours: nothing is done. Run it as your own user, without sudo.' ;;
+        root_refused) s='The installer is running as root: nothing is done. Run it as your normal user, without sudo.' ;;
+        sandbox_link) s='%s is a symbolic link or leads out of %s. The Flatpak or Snap mpv can write in that folder, so the installer follows no links there: nothing was changed in it.' ;;
+        suji_link_odd) s='%s is a symbolic link to something that is not a suji folder (no main.lua): nothing was changed in that folder.' ;;
         record_bad) s='Ignored an invalid entry in suji-installed.txt: %s' ;;
         unsupported_os) s='This installer is for macOS and Linux (this system is %s). On Windows use suji.ps1: see the README.' ;;
         missing_tool) s='%s is needed and was not found.' ;;
@@ -253,7 +267,9 @@ suji_text_es() {
         not_mpv_confirm) s='¿Usarla de todos modos?' ;;
         not_mpv_yes) s='Sin preguntas se rechaza una carpeta así: ejecútalo en un terminal para confirmarla.' ;;
         hikari_here) s='%s tiene hikari: no se cambia nada ahí. hikari ya instala suji: usa el instalador de hikari con -Interface suji.' ;;
-        root_refused) s='El instalador se está ejecutando como root (sudo). No le hace falta, y como root escribiría a través de enlaces en ficheros que no son tuyos: no se hace nada. Ejecútalo con tu usuario, sin sudo.' ;;
+        root_refused) s='El instalador se está ejecutando como root: no se hace nada. Ejecútalo con tu usuario normal, sin sudo.' ;;
+        sandbox_link) s='%s es un enlace simbólico o lleva fuera de %s. El mpv de Flatpak o Snap puede escribir en esa carpeta, así que el instalador no sigue enlaces ahí: no se ha cambiado nada en ella.' ;;
+        suji_link_odd) s='%s es un enlace simbólico a algo que no es una carpeta de suji (no tiene main.lua): no se ha cambiado nada en esa carpeta.' ;;
         record_bad) s='Se ignora una entrada no válida de suji-installed.txt: %s' ;;
         unsupported_os) s='Este instalador es para macOS y Linux (este sistema es %s). En Windows usa suji.ps1: mira el README.' ;;
         missing_tool) s='Hace falta %s y no se encuentra.' ;;
@@ -478,7 +494,8 @@ link_target() {
 # failure never leaves half a file. The file keeps its permissions (a new one
 # gets the usual ones for the umask). A link stays a link: the file it points
 # to is the one written (dotfile managers link mpv.conf). Never as root (main
-# refuses to run as root), so a link only leads where the user could write.
+# refuses to run as root), so a link only leads where the user could write,
+# and never in a Flatpak or Snap folder, where check_sandbox refuses links.
 write_file() {
     local path tmp
     path=$(link_target "$1")
@@ -490,6 +507,45 @@ write_file() {
     fi
     if ! cat >"$tmp"; then rm -f "$tmp"; return 1; fi
     mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
+}
+
+# The sandbox folder of a Flatpak or Snap config folder ($HOME/.var/app/<id>
+# or $HOME/snap/<name>), or nothing for any other folder.
+sandbox_base() {
+    local home rest
+    home=$(abs_path "$HOME")
+    case $1 in
+        "$home"/.var/app/?*) rest=${1#"$home"/.var/app/}; printf '%s' "$home/.var/app/${rest%%/*}" ;;
+        "$home"/snap/?*) rest=${1#"$home"/snap/}; printf '%s' "$home/snap/${rest%%/*}" ;;
+    esac
+}
+
+# The physical path of a folder (links resolved), or nothing.
+physical() { (cd -P "$1" 2>/dev/null && pwd -P); }
+
+# In a Flatpak or Snap folder (the mpv in the sandbox can write there, and
+# plant links that lead out of it), fails with SUJI_ERR set when the folder
+# leads out of its sandbox or anything in SANDBOX_CHECKED is a link. Any
+# other folder: nothing to check, links are followed (dotfiles). Run before
+# anything in the folder changes.
+check_sandbox() {
+    local base a pa pb rel
+    base=$(sandbox_base "$CFG")
+    [ -n "$base" ] || return 0
+    # The nearest part of CFG that exists must lead inside the sandbox.
+    a=$CFG
+    while [ ! -e "$a" ] && [ ! -L "$a" ]; do a=${a%/*}; done
+    if [ "$a" = "$base" ] || is_inside "$a" "$base"; then
+        pa=$(physical "$a")
+        pb=$(physical "$base")
+        if [ -z "$pa" ] || [ -z "$pb" ] || { [ "$pa" != "$pb" ] && ! is_inside "$pa" "$pb"; }; then
+            SUJI_ERR=$(T sandbox_link "$(clean_text "$a")" "$(clean_text "$base")")
+            return 1
+        fi
+    fi
+    for rel in "${SANDBOX_CHECKED[@]}"; do
+        if [ -L "$CFG/$rel" ]; then SUJI_ERR=$(T sandbox_link "$(clean_text "$CFG/$rel")" "$(clean_text "$base")"); return 1; fi
+    done
 }
 
 # The lines of a text file: F_LINE (content, without line break), F_EOL (crlf,
@@ -1100,10 +1156,21 @@ install_target() {
     KIND=${C_KIND[$1]}
     local exe=${C_EXE[$1]} c moving
     BACKUP=''
-    mkdir -p "$CFG" || { SUJI_ERR=$(clean_text "$CFG"); return 1; }
-    # Checked before anything changes: a broken block stops it here.
+    # Checked before anything changes: a link in a sandbox, a linked suji
+    # that is not one or a broken block stops it here.
+    check_sandbox || return 1
+    if [ -L "$CFG/scripts/suji" ]; then
+        SUJI_DEST=$(link_target "$CFG/scripts/suji")
+        if [ ! -f "$SUJI_DEST/main.lua" ] || [ -L "$SUJI_DEST" ] || forbidden_target "$SUJI_DEST"; then
+            SUJI_ERR=$(T suji_link_odd "$(clean_text "$CFG/scripts/suji")")
+            return 1
+        fi
+    else
+        SUJI_DEST="$CFG/scripts/suji"
+    fi
     load_file "$CFG/mpv.conf"
     find_block || return 1
+    mkdir -p "$CFG" || { SUJI_ERR=$(clean_text "$CFG"); return 1; }
 
     moving=()
     find_conflicts
@@ -1160,13 +1227,19 @@ install_steps() {
     fi
 
     # suji: copied next to the old one first, so a failed copy leaves the old
-    # one in place.
-    tmp=$(mktemp -d "$CFG/scripts/.suji-new.XXXXXX") || return 1
+    # one in place. A linked scripts/suji (outside a sandbox; install_target
+    # checked it leads to a suji folder) stays a link: the folder it points
+    # to (SUJI_DEST) is the one replaced.
+    tmp=$(mktemp -d "${SUJI_DEST%/*}/.suji-new.XXXXXX") || return 1
     if ! cp -R "$SRC_DIR/." "$tmp/"; then rm -rf "$tmp"; return 1; fi
-    remove_item "$CFG/scripts/suji" "$CFG" || { rm -rf "$tmp"; return 1; }
-    mv "$tmp" "$CFG/scripts/suji" || { rm -rf "$tmp"; return 1; }
+    if [ "$SUJI_DEST" = "$CFG/scripts/suji" ]; then
+        remove_item "$SUJI_DEST" "$CFG" || { rm -rf "$tmp"; return 1; }
+    else
+        rm -rf "$SUJI_DEST" || { rm -rf "$tmp"; return 1; }
+    fi
+    mv "$tmp" "$SUJI_DEST" || { rm -rf "$tmp"; return 1; }
     # mktemp -d made it private: the usual permissions for the umask.
-    chmod "$(printf '%o' $((0777 & ~0$(umask))))" "$CFG/scripts/suji" 2>/dev/null || :
+    chmod "$(printf '%o' $((0777 & ~0$(umask))))" "$SUJI_DEST" 2>/dev/null || :
 
     # thumbfast.conf: written when missing; else only mpv_path added when it
     # has none. thumbfast starts a second mpv for the thumbnails, and an mpv
@@ -1208,7 +1281,9 @@ mpv_path_lines() {
 uninstall_target() {
     CFG=${C_DIR[$1]}
     BACKUP=''
-    # Checked before anything changes: a broken block stops it here.
+    # Checked before anything changes: a link in a sandbox or a broken block
+    # stops it here.
+    check_sandbox || return 1
     load_file "$CFG/mpv.conf"
     find_block || return 1
     backup_step || return 1
@@ -1232,6 +1307,7 @@ uninstall_steps() {
     REC_KEYS=(); REC_VALS=(); REC_DISABLED=()
     read_record "$CFG" && HAS_RECORD=1
 
+    # A link is removed as a link: what it points to stays.
     remove_item "$CFG/scripts/suji" "$CFG" || return 1
     created=0; [ "$(was_there mpv_conf_preexisting)" = no ] && created=1
     remove_mpv_block "$CFG/mpv.conf" "$created" || return 1
