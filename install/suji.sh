@@ -171,8 +171,8 @@ suji_text_en() {
         summary) s='Done: %s of %s folders.' ;;
         restart) s='Restart the player to see the changes.' ;;
         ask_remove_thumbfast) s='Remove thumbfast too?' ;;
-        ask_delete_settings) s='Delete your suji settings (%s)?' ;;
-        state_size_left) s='The size suji remembers is also in %s: that file stays (the installer only changes the config folder). Delete it by hand if you want.' ;;
+        ask_delete_settings) s='Delete %s too (your suji settings and the size you chose)?' ;;
+        state_size_left) s="This file stays: %s (the size suji remembers, in mpv's state folder). Delete it yourself if you do not want it." ;;
         ask_restore) s='Move back the interfaces suji set aside (%s)?' ;;
         restore_skipped) s='%s not moved back: %s already exists.' ;;
         nothing_to_uninstall) s='suji does not seem to be installed in any detected folder.' ;;
@@ -255,8 +255,8 @@ suji_text_es() {
         summary) s='Hecho: %s de %s carpetas.' ;;
         restart) s='Reinicia el reproductor para ver los cambios.' ;;
         ask_remove_thumbfast) s='¿Quitar también thumbfast?' ;;
-        ask_delete_settings) s='¿Borrar tus ajustes de suji (%s)?' ;;
-        state_size_left) s='El tamaño que recuerda suji también está en %s: ese fichero se queda (el instalador solo cambia la carpeta de configuración). Bórralo a mano si quieres.' ;;
+        ask_delete_settings) s='¿Borrar también %s (tus ajustes de suji y el tamaño elegido)?' ;;
+        state_size_left) s='Este fichero se queda: %s (el tamaño que recuerda suji, en la carpeta de estado de mpv). Bórralo tú si no lo quieres.' ;;
         ask_restore) s='¿Devolver a su sitio las interfaces que suji apartó (%s)?' ;;
         restore_skipped) s='%s no se devuelve: ya existe %s.' ;;
         nothing_to_uninstall) s='No parece que suji esté instalado en ninguna de las carpetas encontradas.' ;;
@@ -529,16 +529,23 @@ physical_path() {
 # would lead the installer out of the sandbox. When where it leads cannot be
 # told, it counts as one too (SANDBOX_WHY=unknown): such a path is refused.
 sandboxed() {
-    local home phome p pp h
+    local home phome p pp pre pres
     SANDBOX_WHY=unknown
     home=$(abs_path "$HOME") || return 0
     phome=$(physical_path "$home") || return 0
     p=$(abs_path "$1") || return 0
     pp=$(physical_path "$p") || return 0
+    # The sandbox folders as written and with their own links resolved (~/.var
+    # may be a link to another disk).
+    pres=("$home/.var/app" "$home/snap" "$phome/.var/app" "$phome/snap")
+    pre=$(physical_path "$home/.var/app") || return 0
+    pres[${#pres[@]}]=$pre
+    pre=$(physical_path "$home/snap") || return 0
+    pres[${#pres[@]}]=$pre
     SANDBOX_WHY=sandbox
     for p in "$p" "$pp"; do
-        for h in "$home" "$phome"; do
-            case $p in "$h"/.var/app/?* | "$h"/snap/?*) return 0 ;; esac
+        for pre in "${pres[@]}"; do
+            case $p in "$pre"/?*) return 0 ;; esac
         done
     done
     SANDBOX_WHY=''
@@ -1327,6 +1334,7 @@ mpv_path_lines() {
 
 uninstall_target() {
     CFG=${C_DIR[$1]}
+    KIND=${C_KIND[$1]}
     BACKUP=''
     # Checked before anything changes: a path into Flatpak or Snap or a
     # broken block stops it here.
@@ -1385,9 +1393,13 @@ uninstall_steps() {
         remove_item "$CFG/script-opts/suji.conf" "$CFG" || return 1
         remove_item "$CFG/suji-size" "$CFG" || return 1
     fi
-    # On Linux suji may keep its size in mpv's state folder: never touched.
+    # On Linux suji may keep its size in mpv's state folder: never touched,
+    # only named. Only for the usual folder of a native mpv (with --target or
+    # MPV_HOME that state folder may be another player's).
     f="${XDG_STATE_HOME:-$HOME/.local/state}/mpv/suji-size"
-    if [ "$OS" = Linux ] && [ -f "$f" ]; then notice_size "$f"; fi
+    if [ "$OS" = Linux ] && [ "$KIND" = mpv ] && [ -z "${MPV_HOME:-}" ] && [ "${#OPT_TARGETS[@]}" -eq 0 ] && [ -f "$f" ]; then
+        notice_size "$f"
+    fi
 
     if [ "${#REC_DISABLED[@]}" -gt 0 ]; then
         names=''

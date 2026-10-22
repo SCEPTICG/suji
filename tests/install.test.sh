@@ -242,7 +242,7 @@ answers '2\n1\ny\ny\n'
 run "$h"
 check 'uninstall (menu): exit 0' is "$rc" 0
 check 'uninstall (menu): suji.conf and suji-size deleted on yes' test ! -e "$cfg/script-opts/suji.conf" -a ! -e "$cfg/suji-size"
-check 'uninstall (menu): the question names what it deletes' has "$out" 'Delete your suji settings (script-opts/suji.conf, suji-size)?'
+check 'uninstall (menu): the question names what it deletes' has "$out" 'Delete script-opts/suji.conf, suji-size too (your suji settings and the size you chose)?'
 no_answers
 # suji-size in the state folder: never deleted, and said so.
 mkdir -p "$h/.local/state/mpv"
@@ -252,9 +252,12 @@ printf 'scale=1.5\n' >"$cfg/script-opts/suji.conf"
 answers '2\n1\ny\ny\n'
 run "$h"
 check 'uninstall: suji-size of the state folder stays' test -f "$h/.local/state/mpv/suji-size"
-check 'uninstall: and the path is given' has "$out" "also in $h/.local/state/mpv/suji-size: that file stays"
-check 'uninstall: the question offers only what is there' has "$out" 'Delete your suji settings (script-opts/suji.conf)?'
+check 'uninstall: and the path is given' has "$out" "This file stays: $h/.local/state/mpv/suji-size (the size suji remembers"
+check 'uninstall: the question offers only what is there' has "$out" 'Delete script-opts/suji.conf too (your suji settings and the size you chose)?'
 check 'uninstall (menu): the folder lists suji' has "$out" 'Folders with suji:'
+run "$h" --yes --action install
+run "$h" --yes --action uninstall --target "$cfg"
+check 'uninstall with --target: the state folder is not named' hasnt "$out" 'This file stays'
 no_answers
 
 # thumbfast that was there before suji stays by default.
@@ -577,6 +580,27 @@ SUJI_TEST_NOPHYS=mpv.conf run "$h" --yes --action install
 check 'physical path of mpv.conf unknown: the folder fails' test "$rc" = 1 -a -n "$(grep -F 'could not tell' "$out")"
 listing "$h" >"$tmp/nophys-after.txt"
 check 'physical path unknown: nothing touched' same "$tmp/nophys-before.txt" "$tmp/nophys-after.txt"
+
+# ~/.var a link to another disk, the config folder a link into it: still Flatpak.
+h=$(newhome var-link)
+disk="$tmp/disk-var"
+mkdir -p "$disk/.var/app/io.mpv.Mpv/config/mpv"
+ln -s "$disk/.var" "$h/.var"
+printf 'my shell rc\n' >"$h/.bashrc"
+cp "$h/.bashrc" "$tmp/bashrc2"
+ln -s "$h/.bashrc" "$disk/.var/app/io.mpv.Mpv/config/mpv/mpv.conf"
+rm -rf "$h/.config/mpv"
+ln -s "$h/.var/app/io.mpv.Mpv/config/mpv" "$h/.config/mpv"
+SUJI_TEST_FLATPAK=1 run "$h" --yes --action install
+check 'home .var linked elsewhere: the Flatpak folder still refused' test "$rc" = 2 -a -n "$(grep -F 'not supported' "$out")"
+check 'home .var linked elsewhere: the planted file untouched' same "$h/.bashrc" "$tmp/bashrc2"
+check 'home .var linked elsewhere: nothing installed' test ! -e "$disk/.var/app/io.mpv.Mpv/config/mpv/scripts"
+h=$(newhome var-link2)
+disk="$tmp/disk-var2"
+mkdir -p "$disk/.var/app/io.mpv.Mpv/config/mpv"
+ln -s "$disk/.var" "$h/.var"
+SUJI_TEST_FLATPAK=1 run "$h" --yes --action install --target "$disk/.var/app/io.mpv.Mpv/config/mpv"
+check 'home .var linked elsewhere, --target to the real folder: refused' test "$rc" = 2 -a ! -e "$disk/.var/app/io.mpv.Mpv/config/mpv/scripts"
 
 # --- root -------------------------------------------------------------------------------------
 
