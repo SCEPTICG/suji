@@ -33,7 +33,7 @@ Delete the `scripts/suji` folder (and `script-opts/suji.conf`, if you made one, 
 
 ## Usage
 
-- **Timeline:** click to seek, or drag. While the cursor is on the timeline, the time in the row shows the time under the cursor, dimmed.
+- **Timeline:** click to seek, or drag. While the cursor is on the timeline, the time in the row shows the time under the cursor, dimmed; with [thumbnails](#thumbnails), that time goes in the thumbnail's box instead.
 - **Play/pause:** the button on the left.
 - **Time:** click it to switch between the duration and the remaining time.
 - **Volume:** click the speaker to mute, click or drag the slider to set the volume, and use the wheel over either to change it by 5.
@@ -70,6 +70,16 @@ suji remembers the size on each computer, in a file of its own, `suji-size`. It 
 
 A file that cannot be read or holds anything else gives 100%. If the file cannot be written, suji says so once in the mpv console and the size lasts until mpv is closed. With `--no-config` mpv has neither folder, and the size is not remembered.
 
+## Thumbnails
+
+With [thumbfast](https://github.com/po5/thumbfast) installed, suji shows thumbnails on the timeline. thumbfast is a separate script that makes them: put `thumbfast.lua` in the `scripts` folder, as its page explains. suji makes no thumbnails of its own.
+
+While the cursor is on the timeline, or dragging it, a box comes up just above the bar, centred on the cursor: the frame at that time and, under it, the time and the chapter of that moment if the file has chapters (cut if it does not fit). At both ends of the bar the box stays inside the window. It covers the row while it is there, and the row's time shows the position again. The box goes when the cursor leaves the timeline, when the controls hide, when the file changes, when a menu opens and when suji is turned off.
+
+suji asks thumbfast for the frame and where to put it, and draws the box and the line under it; thumbfast draws the image. Everything else is up to thumbfast and its own options, in `script-opts/thumbfast.conf`: the size of the image (it already includes the system's HiDPI scale: suji's `scale` and *Size* grow the box around it, not the image), and whether it works on network files or audio files (both off by default). For mpv.net and other frontends, see thumbfast's page.
+
+Without thumbfast, when thumbfast cannot make thumbnails for the file, or with `thumbnails=no`, there is no box and no warning, and the row shows the time under the cursor as before. With `thumbnails=no` suji sends thumbfast nothing.
+
 ## Options
 
 All options, with their defaults and what they do, are in [`docs/suji.conf`](docs/suji.conf):
@@ -84,6 +94,7 @@ All options, with their defaults and what they do, are in [`docs/suji.conf`](doc
 | `hide_delay` | `1.5` | seconds without movement before hiding |
 | `proximity` | `120` | distance in px where the bar reacts |
 | `scale` | `1` | size, times the system's HiDPI scale and the size chosen in More |
+| `thumbnails` | `yes` | thumbnails on the timeline, made by thumbfast (see [Thumbnails](#thumbnails)) |
 | `debug` | `no` | log to the mpv console |
 
 `script-opts/suji.conf` is read when mpv starts; changes to the file apply the next time mpv is opened. While mpv runs, options can be changed through the `script-opts` property, with a `suji-` prefix, and suji applies them at once:
