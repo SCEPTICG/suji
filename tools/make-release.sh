@@ -67,6 +67,10 @@ fi
 for f in suji/main.lua LICENSE install/suji.ps1 install/suji.sh; do
     git cat-file -e "HEAD:$f" 2>/dev/null || die "$f is not in the commit"
 done
+# What suji tells the other scripts (suji-version) must be the release's.
+main_version="$(git show HEAD:suji/main.lua | sed -n 's/^local VERSION = "\([^"]*\)".*$/\1/p' | head -n 1)"
+[[ "$main_version" == "$version" ]] ||
+    die "suji/main.lua has local VERSION = \"$main_version\", not \"$version\": change it in a commit first"
 
 mkdir -p dist
 cleanup() { rm -f dist/suji.zip dist/suji.ps1.tmp dist/suji.sh.tmp; }

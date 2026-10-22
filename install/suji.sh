@@ -18,11 +18,12 @@
 #     --action install|uninstall   skip the first menu
 #     --target <folder>            mpv config folder to work on (repeat it for several)
 #     --yes                        no questions: take the default answer to everything
+#                                  (needs --action)
 #     --help
 #
 # Questions are read from the terminal (/dev/tty), also when this file comes
 # through a pipe as above. With no terminal at all it runs as with --yes: the
-# default (safe) answer to every question, and install when no action is given.
+# default (safe) answer to every question; --action is then needed.
 #
 # A folder with hikari in it is never touched: hikari installs suji itself.
 #
@@ -60,6 +61,9 @@ suji_defaults() {
     BLOCK_BEGIN='# >>> suji (managed block, do not edit) >>>'
     BLOCK_END='# <<< suji (managed block, do not edit) <<<'
     MPV_CONF_LINES=('osc=no')
+    # The line above the mpv_path the installer adds to thumbfast.conf: how
+    # uninstall finds it again (the same as install/suji.ps1).
+    MPV_PATH_MARK='# Added by the suji installer: mpv started from another app may not find mpv in its PATH.'
     BACKUP_KEEP=3
     RECORD_NAME='suji-installed.txt'
     RECORD_HEADER='# Written by the suji installer. Used to update and uninstall; do not edit.'
@@ -146,7 +150,7 @@ suji_text_en() {
         backup_pruned) s='Old backup deleted: %s' ;;
         backup_prune_failed) s='Could not delete the old backup %s.' ;;
         link_skipped) s='Not copied to the backup: %s is a symbolic link.' ;;
-        conflicts_found) s='These interfaces draw their own controls and clash with suji:' ;;
+        conflicts_found) s='These scripts replace the mpv controls and clash with suji:' ;;
         conflicts_confirm) s='Move them to %s? Nothing is deleted, and they come back when you uninstall.' ;;
         conflicts_kept) s='Left in place: suji and that interface will both draw controls.' ;;
         moved) s='Moved %s -> %s' ;;
@@ -164,8 +168,9 @@ suji_text_en() {
         restore_hint) s='Your previous files are in %s.' ;;
         summary) s='Done: %s of %s folders.' ;;
         restart) s='Restart the player to see the changes.' ;;
-        ask_remove_thumbfast) s='Remove thumbfast (the thumbnails) too?' ;;
-        ask_delete_settings) s='Delete your suji settings and saved size (script-opts/suji.conf, suji-size)?' ;;
+        ask_remove_thumbfast) s='Remove thumbfast too?' ;;
+        ask_delete_settings) s='Delete your suji settings (%s)?' ;;
+        state_size_left) s='The size suji remembers is also in %s: that file stays (the installer only changes the config folder). Delete it by hand if you want.' ;;
         ask_restore) s='Move back the interfaces suji set aside (%s)?' ;;
         restore_skipped) s='%s not moved back: %s already exists.' ;;
         nothing_to_uninstall) s='suji does not seem to be installed in any detected folder.' ;;
@@ -179,9 +184,9 @@ suji_text_en() {
         not_mpv_folder) s='%s does not look like an mpv config folder: no mpv.conf, input.conf, scripts or script-opts in it.' ;;
         not_mpv_confirm) s='Use it anyway?' ;;
         not_mpv_yes) s='Without questions such a folder is refused: run it in a terminal to confirm it.' ;;
-        hikari_here) s='%s has hikari: nothing is changed there. hikari installs suji itself: use the hikari installer with -Interface suji.' ;;
+        hikari_here) s='%s has hikari: nothing is changed there. hikari installs suji itself: use the hikari installer with --interface suji.' ;;
         root_refused) s='The installer is running as root: nothing is done. Run it as your normal user, without sudo.' ;;
-        suji_link_odd) s='%s is a symbolic link to something that is not a suji folder (no main.lua): nothing was changed in that folder.' ;;
+        action_needed) s='Without questions, say what to do: --action install or --action uninstall.' ;;
         record_bad) s='Ignored an invalid entry in suji-installed.txt: %s' ;;
         unsupported_os) s='This installer is for macOS and Linux (this system is %s). On Windows use suji.ps1: see the README.' ;;
         missing_tool) s='%s is needed and was not found.' ;;
@@ -227,7 +232,7 @@ suji_text_es() {
         backup_pruned) s='Borrada la copia de seguridad antigua %s' ;;
         backup_prune_failed) s='No se ha podido borrar la copia de seguridad antigua %s.' ;;
         link_skipped) s='No se copia a la copia de seguridad: %s es un enlace simbólico.' ;;
-        conflicts_found) s='Estas interfaces dibujan sus propios controles y chocan con suji:' ;;
+        conflicts_found) s='Estos scripts sustituyen los controles de mpv y chocan con suji:' ;;
         conflicts_confirm) s='¿Moverlas a %s? No se borra nada y vuelven a su sitio al desinstalar.' ;;
         conflicts_kept) s='Se quedan donde están: suji y esa interfaz dibujarán controles a la vez.' ;;
         moved) s='Movido %s -> %s' ;;
@@ -245,8 +250,9 @@ suji_text_es() {
         restore_hint) s='Tus ficheros de antes están en %s.' ;;
         summary) s='Hecho: %s de %s carpetas.' ;;
         restart) s='Reinicia el reproductor para ver los cambios.' ;;
-        ask_remove_thumbfast) s='¿Quitar también thumbfast (las miniaturas)?' ;;
-        ask_delete_settings) s='¿Borrar tus ajustes de suji y el tamaño guardado (script-opts/suji.conf, suji-size)?' ;;
+        ask_remove_thumbfast) s='¿Quitar también thumbfast?' ;;
+        ask_delete_settings) s='¿Borrar tus ajustes de suji (%s)?' ;;
+        state_size_left) s='El tamaño que recuerda suji también está en %s: ese fichero se queda (el instalador solo cambia la carpeta de configuración). Bórralo a mano si quieres.' ;;
         ask_restore) s='¿Devolver a su sitio las interfaces que suji apartó (%s)?' ;;
         restore_skipped) s='%s no se devuelve: ya existe %s.' ;;
         nothing_to_uninstall) s='No parece que suji esté instalado en ninguna de las carpetas encontradas.' ;;
@@ -260,9 +266,9 @@ suji_text_es() {
         not_mpv_folder) s='%s no parece una carpeta de configuración de mpv: no tiene mpv.conf, input.conf, scripts ni script-opts.' ;;
         not_mpv_confirm) s='¿Usarla de todos modos?' ;;
         not_mpv_yes) s='Sin preguntas se rechaza una carpeta así: ejecútalo en un terminal para confirmarla.' ;;
-        hikari_here) s='%s tiene hikari: no se cambia nada ahí. hikari ya instala suji: usa el instalador de hikari con -Interface suji.' ;;
+        hikari_here) s='%s tiene hikari: no se cambia nada ahí. hikari ya instala suji: usa el instalador de hikari con --interface suji.' ;;
         root_refused) s='El instalador se está ejecutando como root: no se hace nada. Ejecútalo con tu usuario normal, sin sudo.' ;;
-        suji_link_odd) s='%s es un enlace simbólico a algo que no es una carpeta de suji (no tiene main.lua): no se ha cambiado nada en esa carpeta.' ;;
+        action_needed) s='Sin preguntas, di qué hacer: --action install o --action uninstall.' ;;
         record_bad) s='Se ignora una entrada no válida de suji-installed.txt: %s' ;;
         unsupported_os) s='Este instalador es para macOS y Linux (este sistema es %s). En Windows usa suji.ps1: mira el README.' ;;
         missing_tool) s='Hace falta %s y no se encuentra.' ;;
@@ -472,14 +478,17 @@ sha256_of() {
 
 # The file a path leads to once its symbolic links are followed (at most 40),
 # relative links taken from the folder of the link. Prints the path itself
-# when it is no link.
+# when it is no link. Fails when a step of the way, or the physical path it
+# ends at, is in a Flatpak or Snap folder (see sandboxed).
 link_target() {
     local p=$1 t n=0
     while [ -L "$p" ] && [ "$n" -lt 40 ]; do
         t=$(readlink "$p") || break
         case $t in /*) p=$t ;; *) p=${p%/*}/$t ;; esac
+        sandboxed "$p" && return 1
         n=$((n + 1))
     done
+    sandboxed "$p" && return 1
     printf '%s' "$p"
 }
 
@@ -490,7 +499,7 @@ link_target() {
 # refuses to run as root), so a link only leads where the user could write.
 write_file() {
     local path tmp
-    path=$(link_target "$1")
+    if ! path=$(link_target "$1"); then SUJI_ERR=$(T sandbox_here "$(clean_text "$1")"); return 1; fi
     tmp=$(mktemp "$path.suji-tmp.XXXXXX") || return 1
     if [ -f "$path" ]; then
         cp -p "$path" "$tmp" 2>/dev/null || :
@@ -501,14 +510,43 @@ write_file() {
     mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
 }
 
-# Is folder $1 one of mpv from Flatpak ($HOME/.var/app/...) or Snap
-# ($HOME/snap/...)? Those are not supported: the sandboxed mpv can write
-# there, and plant links that would lead the installer out of the sandbox.
+# $1 with the links of the part that exists resolved (the physical path of
+# its nearest existing folder, then the rest as it is).
+physical_path() {
+    local p=$1 rest='' d
+    while [ -n "$p" ] && [ ! -d "$p" ]; do rest="/${p##*/}$rest"; p=${p%/*}; done
+    d=$(cd -P "${p:-/}" 2>/dev/null && pwd -P) || return 1
+    printf '%s' "${d%/}$rest"
+}
+
+# Is $1 in a folder of mpv from Flatpak ($HOME/.var/app/...) or Snap
+# ($HOME/snap/...), as it is written or once its links are resolved? Those
+# are not supported: the sandboxed mpv can write there, and plant links that
+# would lead the installer out of the sandbox.
 sandboxed() {
-    local home
+    local home phome p h
     home=$(abs_path "$HOME")
-    case $(abs_path "$1") in "$home"/.var/app/?* | "$home"/snap/?*) return 0 ;; esac
+    phome=$(physical_path "$home") || phome=$home
+    p=$(abs_path "$1") || return 1
+    for p in "$p" "$(physical_path "$p")"; do
+        for h in "$home" "$phome"; do
+            case $p in "$h"/.var/app/?* | "$h"/snap/?*) return 0 ;; esac
+        done
+    done
     return 1
+}
+
+# Fails, with SUJI_ERR set, when a file the installer writes through (or a
+# folder it works in) leads into a Flatpak or Snap folder. Run before
+# anything in CFG changes.
+check_paths() {
+    local rel
+    for rel in mpv.conf suji-installed.txt script-opts/thumbfast.conf scripts script-opts fonts "$DISABLED_DIR"; do
+        if ! link_target "$CFG/$rel" >/dev/null || sandboxed "$CFG/$rel"; then
+            SUJI_ERR=$(T sandbox_here "$(clean_text "$CFG/$rel")")
+            return 1
+        fi
+    done
 }
 
 # The lines of a text file: F_LINE (content, without line break), F_EOL (crlf,
@@ -762,6 +800,7 @@ record_text() {
     printf 'thumbfast_preexisting=%s\n' "$THUMB_BEFORE"
     printf 'thumbfast_conf_preexisting=%s\n' "$TCONF_BEFORE"
     printf 'mpv_conf_preexisting=%s\n' "$MPV_BEFORE"
+    printf 'thumbfast_conf_final_eol=%s\n' "$TCONF_EOL"
     for d in ${DISABLED[@]+"${DISABLED[@]}"}; do printf 'disabled=%s\n' "$d"; done
 }
 
@@ -1124,17 +1163,9 @@ install_target() {
     KIND=${C_KIND[$1]}
     local exe=${C_EXE[$1]} c moving
     BACKUP=''
-    # Checked before anything changes: a linked suji that is not one or a
+    # Checked before anything changes: a path into Flatpak or Snap or a
     # broken block stops it here.
-    if [ -L "$CFG/scripts/suji" ]; then
-        SUJI_DEST=$(link_target "$CFG/scripts/suji")
-        if [ ! -f "$SUJI_DEST/main.lua" ] || [ -L "$SUJI_DEST" ] || forbidden_target "$SUJI_DEST"; then
-            SUJI_ERR=$(T suji_link_odd "$(clean_text "$CFG/scripts/suji")")
-            return 1
-        fi
-    else
-        SUJI_DEST="$CFG/scripts/suji"
-    fi
+    check_paths || return 1
     load_file "$CFG/mpv.conf"
     find_block || return 1
     mkdir -p "$CFG" || { SUJI_ERR=$(clean_text "$CFG"); return 1; }
@@ -1175,6 +1206,8 @@ install_steps() {
     TCONF_BEFORE=$(prev_flag thumbfast_conf_preexisting "$now")
     now=0; [ -f "$CFG/mpv.conf" ] && now=1
     MPV_BEFORE=$(prev_flag mpv_conf_preexisting "$now")
+    if [ "$FIRST" = 0 ] && rec_get thumbfast_conf_final_eol; then TCONF_EOL=$REC_VALUE
+    else TCONF_EOL=$(final_eol_state "$CFG/script-opts/thumbfast.conf"); fi
 
     # Interfaces set aside, each one recorded as soon as it moves.
     write_record || return 1
@@ -1190,23 +1223,20 @@ install_steps() {
         info "$(T thumbfast_uptodate)"
     else
         [ -f "$TEMP_DIR/thumbfast.lua" ] || { SUJI_ERR=$(T source_missing "$THUMBFAST_URL"); return 1; }
+        # A linked one is replaced by the file, never written through.
+        remove_item "$CFG/scripts/thumbfast.lua" "$CFG" || return 1
         write_file "$CFG/scripts/thumbfast.lua" <"$TEMP_DIR/thumbfast.lua" || return 1
     fi
 
     # suji: copied next to the old one first, so a failed copy leaves the old
-    # one in place. A linked scripts/suji (install_target checked it leads
-    # to a suji folder) stays a link: the folder it points to (SUJI_DEST) is
-    # the one replaced.
-    tmp=$(mktemp -d "${SUJI_DEST%/*}/.suji-new.XXXXXX") || return 1
+    # one in place. A linked scripts/suji loses the link only: what it points
+    # to is never written or deleted.
+    tmp=$(mktemp -d "$CFG/scripts/.suji-new.XXXXXX") || return 1
     if ! cp -R "$SRC_DIR/." "$tmp/"; then rm -rf "$tmp"; return 1; fi
-    if [ "$SUJI_DEST" = "$CFG/scripts/suji" ]; then
-        remove_item "$SUJI_DEST" "$CFG" || { rm -rf "$tmp"; return 1; }
-    else
-        rm -rf "$SUJI_DEST" || { rm -rf "$tmp"; return 1; }
-    fi
-    mv "$tmp" "$SUJI_DEST" || { rm -rf "$tmp"; return 1; }
+    remove_item "$CFG/scripts/suji" "$CFG" || { rm -rf "$tmp"; return 1; }
+    mv "$tmp" "$CFG/scripts/suji" || { rm -rf "$tmp"; return 1; }
     # mktemp -d made it private: the usual permissions for the umask.
-    chmod "$(printf '%o' $((0777 & ~0$(umask))))" "$SUJI_DEST" 2>/dev/null || :
+    chmod "$(printf '%o' $((0777 & ~0$(umask))))" "$CFG/scripts/suji" 2>/dev/null || :
 
     # thumbfast.conf: written when missing; else only mpv_path added when it
     # has none. thumbfast starts a second mpv for the thumbnails, and an mpv
@@ -1230,12 +1260,49 @@ install_steps() {
     write_record
 }
 
+# no when the file exists, is not empty and lacks a final line break; else yes.
+final_eol_state() {
+    if [ -s "$1" ] && [ "$(tail -c 1 "$1" | wc -l | tr -d ' ')" = 0 ]; then printf no; else printf yes; fi
+}
+
+# Takes the mpv_path the installer added (MPV_PATH_MARK, the mpv_path line
+# under it and the blank line above it) out of a thumbfast.conf that was
+# there before suji. $2: yes or no, whether it ended in a line break then.
+# A file without those lines is left as it is.
+remove_mpv_path() {
+    local path=$1 final_eol=$2 i=0 at=-1 from n lines eols
+    [ -f "$path" ] || return 0
+    load_file "$path"
+    while [ "$i" -lt $((F_COUNT - 1)) ]; do
+        trim "${F_LINE[i]}"
+        if [ "$TRIMMED" = "$MPV_PATH_MARK" ]; then
+            trim "${F_LINE[i + 1]}"
+            case $TRIMMED in mpv_path=*) at=$i; break ;; esac
+        fi
+        i=$((i + 1))
+    done
+    [ "$at" -ge 0 ] || return 0
+    from=$at
+    if [ "$at" -gt 0 ]; then trim "${F_LINE[at - 1]}"; [ -n "$TRIMMED" ] || from=$((at - 1)); fi
+    lines=(); eols=(); n=0; i=0
+    while [ "$i" -lt "$F_COUNT" ]; do
+        if [ "$i" -lt "$from" ] || [ "$i" -gt $((at + 1)) ]; then lines[n]=${F_LINE[i]}; eols[n]=${F_EOL[i]}; n=$((n + 1)); fi
+        i=$((i + 1))
+    done
+    # The lines were the last ones: the file ends as it did before them.
+    if [ $((at + 2)) -eq "$F_COUNT" ] && [ "$final_eol" = no ] && [ "$n" -gt 0 ]; then eols[n - 1]=''; fi
+    F_LINE=(${lines[@]+"${lines[@]}"})
+    F_EOL=(${eols[@]+"${eols[@]}"})
+    F_COUNT=$n
+    save_file "$path"
+}
+
 printf_eol() { if [ "$1" = crlf ]; then printf '\r\n'; else printf '\n'; fi; }
 
 # The lines added for mpv_path, with line break $2 (lf or crlf).
 mpv_path_lines() {
     printf_eol "$2"
-    printf '%s' '# Added by the suji installer: mpv started from another app may not find mpv in its PATH.'
+    printf '%s' "$MPV_PATH_MARK"
     printf_eol "$2"
     printf 'mpv_path=%s' "$1"
     printf_eol "$2"
@@ -1248,7 +1315,9 @@ mpv_path_lines() {
 uninstall_target() {
     CFG=${C_DIR[$1]}
     BACKUP=''
-    # Checked before anything changes: a broken block stops it here.
+    # Checked before anything changes: a path into Flatpak or Snap or a
+    # broken block stops it here.
+    check_paths || return 1
     load_file "$CFG/mpv.conf"
     find_block || return 1
     backup_step || return 1
@@ -1265,6 +1334,8 @@ was_there() {
         if [ "$REC_VALUE" = yes ]; then printf yes; else printf no; fi
     fi
 }
+
+notice_size() { warn "$(T state_size_left "$(clean_text "$1")")"; }
 
 uninstall_steps() {
     local def created d e names f
@@ -1286,13 +1357,24 @@ uninstall_steps() {
             fi
         fi
     fi
-
-    if [ -e "$CFG/script-opts/suji.conf" ] || [ -e "$CFG/suji-size" ]; then
-        if confirm "$(T ask_delete_settings)" no; then
-            remove_item "$CFG/script-opts/suji.conf" "$CFG" || return 1
-            remove_item "$CFG/suji-size" "$CFG" || return 1
-        fi
+    # A thumbfast.conf of the user's goes back to how it was.
+    if [ "$(was_there thumbfast_conf_preexisting)" = yes ]; then
+        rec_get thumbfast_conf_final_eol || REC_VALUE=yes
+        remove_mpv_path "$CFG/script-opts/thumbfast.conf" "$REC_VALUE" || return 1
     fi
+
+    # Only what is there, in the config folder, is offered.
+    names=''
+    for f in script-opts/suji.conf suji-size; do
+        if [ -e "$CFG/$f" ] || [ -L "$CFG/$f" ]; then names="$names${names:+, }$f"; fi
+    done
+    if [ -n "$names" ] && confirm "$(T ask_delete_settings "$names")" no; then
+        remove_item "$CFG/script-opts/suji.conf" "$CFG" || return 1
+        remove_item "$CFG/suji-size" "$CFG" || return 1
+    fi
+    # On Linux suji may keep its size in mpv's state folder: never touched.
+    f="${XDG_STATE_HOME:-$HOME/.local/state}/mpv/suji-size"
+    if [ "$OS" = Linux ] && [ -f "$f" ]; then notice_size "$f"; fi
 
     if [ "${#REC_DISABLED[@]}" -gt 0 ]; then
         names=''
@@ -1507,6 +1589,7 @@ main() {
     trap 'suji_cleanup' EXIT
     trap 'suji_cleanup; trap - EXIT; exit 130' INT
     trap 'suji_cleanup; trap - EXIT; exit 143' TERM
+    trap 'suji_cleanup; trap - EXIT; exit 129' HUP
 
     OS=$(suji_uname)
     case $OS in Darwin | Linux) ;; *) error "$(T unsupported_os "$(clean_text "$OS")")"; return 2 ;; esac
@@ -1520,7 +1603,9 @@ main() {
     [ "$HAVE_INPUT" = 1 ] || [ "$OPT_YES" = 1 ] || warn "$(T no_input)"
     if [ -z "$action" ]; then
         if [ "$NONINTERACTIVE" = 1 ]; then
-            action=install
+            error "$(T action_needed)"
+            error "$(T usage)"
+            return 2
         else
             while [ -z "$action" ]; do
                 printf '%b\n' "$(T menu)"

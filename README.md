@@ -51,7 +51,7 @@ curl -fsSL https://github.com/SCEPTICG/suji/releases/latest/download/suji.sh | b
 
 It backs up again, removes `scripts/suji` and the block in `mpv.conf`, and asks whether to remove thumbfast too, whether to delete your settings (`script-opts/suji.conf` and `suji-size`) and whether to move back the interfaces it set aside.
 
-Options for scripts, the same on every system: `-Action install|uninstall` (`--action`), `-Target <folder>` (`--target`, to work on that folder instead of choosing) and `-Yes` (`--yes`, no questions: the default answer to everything). On macOS and Linux they go after `bash -s --`, as above. Exit codes: 0 done or cancelled, 1 a folder failed, 2 wrong usage or nothing to do.
+Options for scripts, the same on every system: `-Action install|uninstall` (`--action`), `-Target <folder>` (`--target`, to work on that folder instead of choosing) and `-Yes` (`--yes`, no questions: the default answer to everything; it needs `-Action`). On macOS and Linux they go after `bash -s --`, as above. Exit codes: 0 done or cancelled, 1 a folder failed, 2 wrong usage or nothing to do.
 
 ### Checking the installer first
 

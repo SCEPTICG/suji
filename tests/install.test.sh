@@ -162,8 +162,13 @@ check '--action with another value: exit 2' is "$rc" 2
 run "$h" --target
 check '--target without a folder: exit 2' is "$rc" 2
 check 'usage errors change nothing' test ! -e "$h/.config/mpv/scripts" -a "$(backups "$h/.config/mpv")" = 0
-SUJI_TEST_OS=FreeBSD run "$h" --yes
+SUJI_TEST_OS=FreeBSD run "$h" --yes --action install
 check 'another system: exit 2' test "$rc" = 2 -a -n "$(grep -F 'FreeBSD' "$out")"
+run "$h" --yes
+check '--yes without --action: exit 2, says what is missing' test "$rc" = 2 -a -n "$(grep -F -- '--action install or --action uninstall' "$out")"
+run "$h"
+check 'no terminal and no --action: exit 2' test "$rc" = 2 -a -n "$(grep -F 'Usage: suji.sh' "$out")"
+check 'without --action nothing is done' test ! -e "$h/.config/mpv/scripts" -a ! -s "$fake/downloads.log"
 
 # --- install, update, uninstall ---------------------------------------------------------
 
@@ -171,7 +176,7 @@ h=$(newhome basic)
 cfg="$h/.config/mpv"
 printf 'volume=50\n' >"$cfg/mpv.conf"
 cp "$cfg/mpv.conf" "$tmp/basic-mpv.conf"
-run "$h" --yes
+run "$h" --yes --action install
 check 'install: exit 0' is "$rc" 0
 check 'install: scripts/suji from the release zip' same "$cfg/scripts/suji/main.lua" "$fake/zip/suji/main.lua"
 check 'install: its sub-folders too' same "$cfg/scripts/suji/core/state.lua" "$fake/zip/suji/core/state.lua"
@@ -200,7 +205,7 @@ check 'install: temporary folder removed' tmp_empty
 
 printf '%s\n' '-- left by an old version' >"$cfg/scripts/suji/old.lua"
 printf '%s\n' '# my thumbfast settings' >"$cfg/script-opts/thumbfast.conf"
-run "$h" --yes
+run "$h" --yes --action install
 check 'update: exit 0' is "$rc" 0
 check 'update: one block' is "$(count_of "$cfg/mpv.conf" '# >>> suji')" 1
 check 'update: the old suji folder replaced' test ! -e "$cfg/scripts/suji/old.lua" -a -f "$cfg/scripts/suji/main.lua"
@@ -227,11 +232,23 @@ check 'uninstall: its backup has scripts/suji and the record' test -f "$b/script
 check 'uninstall: the last line says to restart' test "$(tail -n 1 "$out")" = 'Restart the player to see the changes.'
 
 # Uninstall answering yes to everything, through the terminal.
-run "$h" --yes
+run "$h" --yes --action install
 answers '2\n1\ny\ny\n'
 run "$h"
 check 'uninstall (menu): exit 0' is "$rc" 0
 check 'uninstall (menu): suji.conf and suji-size deleted on yes' test ! -e "$cfg/script-opts/suji.conf" -a ! -e "$cfg/suji-size"
+check 'uninstall (menu): the question names what it deletes' has "$out" 'Delete your suji settings (script-opts/suji.conf, suji-size)?'
+no_answers
+# suji-size in the state folder: never deleted, and said so.
+mkdir -p "$h/.local/state/mpv"
+printf '150\n' >"$h/.local/state/mpv/suji-size"
+run "$h" --yes --action install
+printf 'scale=1.5\n' >"$cfg/script-opts/suji.conf"
+answers '2\n1\ny\ny\n'
+run "$h"
+check 'uninstall: suji-size of the state folder stays' test -f "$h/.local/state/mpv/suji-size"
+check 'uninstall: and the path is given' has "$out" "also in $h/.local/state/mpv/suji-size: that file stays"
+check 'uninstall: the question offers only what is there' has "$out" 'Delete your suji settings (script-opts/suji.conf)?'
 check 'uninstall (menu): the folder lists suji' has "$out" 'Folders with suji:'
 no_answers
 
@@ -241,7 +258,7 @@ cfg="$h/.config/mpv"
 mkdir -p "$cfg/scripts" "$cfg/script-opts"
 printf '%s\n' '-- my own thumbfast' >"$cfg/scripts/thumbfast.lua"
 printf '%s\n' 'network=no' >"$cfg/script-opts/thumbfast.conf"
-run "$h" --yes
+run "$h" --yes --action install
 check 'thumbfast of the user: replaced by the pinned one' same "$cfg/scripts/thumbfast.lua" "$fake/thumbfast.lua"
 check 'thumbfast of the user: the backup keeps it' test -f "$(ls -d "$cfg"-respaldo-suji-*)/scripts/thumbfast.lua"
 check 'thumbfast of the user: thumbfast.conf untouched on Linux' test "$(cat "$cfg/script-opts/thumbfast.conf")" = 'network=no'
@@ -254,7 +271,7 @@ h=$(newhome backups)
 cfg="$h/.config/mpv"
 printf 'volume=50\n' >"$cfg/mpv.conf"
 mkdir -p "$cfg-respaldo-suji-20200101-000000" "$cfg-respaldo-suji-notes" "$h/.config/other-respaldo-suji-20200101-000000"
-for _ in 1 2 3 4 5; do run "$h" --yes; done
+for _ in 1 2 3 4 5; do run "$h" --yes --action install; done
 check 'backups: the newest three are kept' is "$(ls -d "$cfg"-respaldo-suji-[0-9]* | wc -l | tr -d ' ')" 3
 check 'backups: the oldest one is gone' test ! -e "$cfg-respaldo-suji-20200101-000000"
 check 'backups: a folder not named like one stays' test -d "$cfg-respaldo-suji-notes"
@@ -276,7 +293,7 @@ printf '%s\n' 'z=1' >"$cfg/script-opts/other.conf"
 printf 'font\n' >"$cfg/fonts/modernz-icons.ttf"
 printf 'font\n' >"$cfg/fonts/other.ttf"
 listing "$cfg" >"$tmp/aside-before.txt"
-run "$h" --yes
+run "$h" --yes --action install
 check 'aside: exit 0' is "$rc" 0
 d="$cfg/scripts-apartados-suji"
 check 'aside: uosc folder set aside' test -f "$d/uosc/main.lua" -a ! -e "$cfg/scripts/uosc"
@@ -291,7 +308,7 @@ check 'aside: record format for options' grep -qx 'disabled=scripts-apartados-su
 b=$(ls -d "$cfg"-respaldo-suji-*)
 check 'aside: the backup has what was set aside' test -f "$b/scripts/uosc/main.lua" -a -f "$b/scripts/ModernZ.lua" -a -f "$b/fonts/modernz-icons.ttf"
 check 'aside: the backup has nothing it did not touch' test ! -e "$b/scripts/other.lua" -a ! -e "$b/fonts/other.ttf"
-run "$h" --yes
+run "$h" --yes --action install
 check 'aside, update: the record keeps them' test "$(grep -c '^disabled=' "$cfg/suji-installed.txt")" = 6
 run "$h" --yes --action uninstall
 check 'aside, uninstall: exit 0' is "$rc" 0
@@ -310,7 +327,7 @@ run "$h"
 check 'aside, no: left in place' test -f "$cfg/scripts/modernx.lua" -a ! -e "$cfg/scripts-apartados-suji"
 check 'aside, no: said so' has "$out" 'Left in place'
 no_answers
-run "$h" --yes
+run "$h" --yes --action install
 printf '%s\n' '-- a new modernx' >"$cfg/scripts/modernx.lua"
 run "$h" --yes --action uninstall
 check 'aside, restore over a file: not overwritten' test "$(cat "$cfg/scripts/modernx.lua")" = '-- a new modernx'
@@ -319,7 +336,7 @@ check 'aside, restore over a file: the set-aside copy stays' test -f "$cfg/scrip
 # A record edited to point outside the folder is not followed.
 h=$(newhome aside3)
 cfg="$h/.config/mpv"
-run "$h" --yes
+run "$h" --yes --action install
 printf '%s\n' 'secret' >"$h/outside.txt"
 printf 'volume=50\n' >"$cfg/mpv.conf.mine"
 printf 'disabled=../../outside.txt|scripts/x.lua\ndisabled=scripts-apartados-suji/a|/etc/passwd\n' >>"$cfg/suji-installed.txt"
@@ -334,7 +351,7 @@ check 'record: said so' has "$out" 'Ignored an invalid entry'
 
 h=$(newhome conf-new)
 cfg="$h/.config/mpv"
-run "$h" --yes
+run "$h" --yes --action install
 check 'mpv.conf missing: created with the block only' test "$(cat "$cfg/mpv.conf")" = "$(printf '%s\n' '# >>> suji (managed block, do not edit) >>>' osc=no '# <<< suji (managed block, do not edit) <<<')"
 check 'mpv.conf missing: recorded' is "$(rec "$cfg" mpv_conf_preexisting)" no
 run "$h" --yes --action uninstall
@@ -344,7 +361,7 @@ h=$(newhome conf-profile)
 cfg="$h/.config/mpv"
 printf 'volume=50\n[anime]\nprofile-cond=1\n' >"$cfg/mpv.conf"
 cp "$cfg/mpv.conf" "$tmp/profile.conf"
-run "$h" --yes
+run "$h" --yes --action install
 check 'mpv.conf ending in a profile: the block goes first' block_first "$cfg/mpv.conf"
 check 'mpv.conf ending in a profile: no [default] added' hasnt "$cfg/mpv.conf" '[default]'
 run "$h" --yes --action uninstall
@@ -354,7 +371,7 @@ h=$(newhome conf-crlf)
 cfg="$h/.config/mpv"
 printf 'volume=50\r\nmute=yes\r\n' >"$cfg/mpv.conf"
 cp "$cfg/mpv.conf" "$tmp/crlf.conf"
-run "$h" --yes
+run "$h" --yes --action install
 check 'mpv.conf CRLF: every line still CRLF' test "$(crlf_lines "$cfg/mpv.conf")" = 5 -a "$(wc -l <"$cfg/mpv.conf" | tr -d ' ')" = 5
 run "$h" --yes --action uninstall
 check 'mpv.conf CRLF: back as it was' same "$cfg/mpv.conf" "$tmp/crlf.conf"
@@ -363,21 +380,21 @@ h=$(newhome conf-noeol)
 cfg="$h/.config/mpv"
 printf '\357\273\277volume=50' >"$cfg/mpv.conf"
 cp "$cfg/mpv.conf" "$tmp/noeol.conf"
-run "$h" --yes
+run "$h" --yes --action install
 check 'mpv.conf with a BOM: the BOM stays first' test "$(head -c 3 "$cfg/mpv.conf" | od -An -tx1 | tr -d ' \n')" = efbbbf
 check 'mpv.conf with a BOM: the block still found' test "$(count_of "$cfg/mpv.conf" '# >>> suji')" = 1
-run "$h" --yes
+run "$h" --yes --action install
 check 'mpv.conf with a BOM: one block after an update' test "$(count_of "$cfg/mpv.conf" '# >>> suji')" = 1
 run "$h" --yes --action uninstall
 check 'mpv.conf with a BOM and no final line break: back as it was' same "$cfg/mpv.conf" "$tmp/noeol.conf"
 
 h=$(newhome conf-moved)
 cfg="$h/.config/mpv"
-run "$h" --yes
+run "$h" --yes --action install
 printf 'volume=50\n' >"$cfg/mpv.conf.new"
 cat "$cfg/mpv.conf" >>"$cfg/mpv.conf.new"
 mv "$cfg/mpv.conf.new" "$cfg/mpv.conf"
-run "$h" --yes
+run "$h" --yes --action install
 check 'mpv.conf, block moved by the user: updated where it is' test "$(head -n 1 "$cfg/mpv.conf")" = volume=50 -a "$(count_of "$cfg/mpv.conf" '# >>> suji')" = 1
 
 for broken in begin end twice; do
@@ -394,7 +411,7 @@ for broken in begin end twice; do
     mkdir -p "$cfg/scripts"
     printf '%s\n' '-- osc' >"$cfg/scripts/osc.lua"
     listing "$cfg" >"$tmp/broken-before.txt"
-    run "$h" --yes
+    run "$h" --yes --action install
     check "mpv.conf with a broken block ($broken): exit 1" is "$rc" 1
     check "mpv.conf with a broken block ($broken): said so" has "$out" 'incomplete or repeated suji block'
     listing "$cfg" >"$tmp/broken-after.txt"
@@ -418,7 +435,7 @@ ln -s "$dots/scripts" "$cfg/scripts"
 ln -s "$dots/thumbfast.conf" "$dots/script-opts/thumbfast.conf"
 ln -s "$dots/script-opts" "$cfg/script-opts"
 printf '%s\n' '-- osc' >"$dots/scripts/osc.lua"
-SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes --action install
 check 'links: exit 0' is "$rc" 0
 check 'links: mpv.conf still a link' test -L "$cfg/mpv.conf"
 check 'links: the block written in the file it points to' block_first "$dots/mpv.conf"
@@ -428,7 +445,7 @@ check 'links: mpv_path written in the file it points to' grep -qx 'mpv_path=/opt
 check 'links: interfaces set aside inside the linked folder too' test -f "$cfg/scripts-apartados-suji/osc.lua" -a ! -e "$dots/scripts/osc.lua"
 check 'links: no temporary file left' test -z "$(find "$h" -name '*.suji-tmp.*' -print)"
 ln -s "$dots/record.txt" "$cfg/suji-installed.txt.new" && mv "$cfg/suji-installed.txt" "$dots/record.txt" && mv "$cfg/suji-installed.txt.new" "$cfg/suji-installed.txt"
-SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes --action install
 check 'links: a linked record still a link, updated' test -L "$cfg/suji-installed.txt" -a "$(grep -c '^suji_version=' "$dots/record.txt")" = 1
 check 'links, update: one block' is "$(count_of "$dots/mpv.conf" '# >>> suji')" 1
 SUJI_TEST_OS=Darwin run "$h" --yes --action uninstall
@@ -437,30 +454,41 @@ check 'links, uninstall: mpv.conf still a link, the file back as it was' test -L
 check 'links, uninstall: scripts still a link' test -L "$cfg/scripts" -a ! -e "$dots/scripts/suji"
 check 'links, uninstall: interfaces back' test -f "$dots/scripts/osc.lua"
 
-# A linked scripts/suji (a copy of the repository, say): the link stays and the
-# folder it points to gets the release; on uninstall only the link goes.
+# A linked scripts/suji (a copy of the repository, say): only the link goes,
+# a new folder takes its place; what it pointed to is never written or deleted.
 h=$(newhome link-suji)
 cfg="$h/.config/mpv"
 mkdir -p "$cfg/scripts" "$h/work/suji"
 printf '%s\n' '-- my work' >"$h/work/suji/main.lua"
 printf '%s\n' '-- stale' >"$h/work/suji/old.lua"
 ln -s ../../../work/suji "$cfg/scripts/suji"
-run "$h" --yes
-check 'linked scripts/suji: still a link' test "$rc" = 0 -a -L "$cfg/scripts/suji"
-check 'linked scripts/suji: the folder it points to has the release' \
-    test -f "$h/work/suji/core/state.lua" -a ! -e "$h/work/suji/old.lua" -a "$(cat "$h/work/suji/main.lua")" = '-- fake suji 9.9.9'
-check 'linked scripts/suji: no temporary folder left' test -z "$(ls -A "$h/work" | grep -v '^suji$')"
+listing "$h/work" >"$tmp/work-before.txt"
+run "$h" --yes --action install
+check 'linked scripts/suji: replaced by a folder' test "$rc" = 0 -a ! -L "$cfg/scripts/suji" -a -f "$cfg/scripts/suji/core/state.lua"
+listing "$h/work" >"$tmp/work-after.txt"
+check 'linked scripts/suji: what it pointed to untouched' same "$tmp/work-before.txt" "$tmp/work-after.txt"
+ln -s ../../../work/suji "$cfg/scripts/suji.new" && rm -rf "$cfg/scripts/suji" && mv "$cfg/scripts/suji.new" "$cfg/scripts/suji"
 run "$h" --yes --action uninstall
 check 'linked scripts/suji, uninstall: the link goes' test "$rc" = 0 -a ! -e "$cfg/scripts/suji" -a ! -L "$cfg/scripts/suji"
-check 'linked scripts/suji, uninstall: what it pointed to stays' test -f "$h/work/suji/main.lua" -a -f "$h/work/suji/core/state.lua"
-h=$(newhome link-suji-odd)
+listing "$h/work" >"$tmp/work-after.txt"
+check 'linked scripts/suji, uninstall: what it pointed to untouched' same "$tmp/work-before.txt" "$tmp/work-after.txt"
+# A linked thumbfast.lua is replaced by the file, never written through.
+h=$(newhome link-thumb)
 cfg="$h/.config/mpv"
-mkdir -p "$cfg/scripts" "$h/notsuji"
-printf 'x\n' >"$h/notsuji/file"
-ln -s "$h/notsuji" "$cfg/scripts/suji"
-run "$h" --yes
-check 'scripts/suji linked to something else: exit 1, untouched' test "$rc" = 1 -a -f "$h/notsuji/file" -a "$(backups "$cfg")" = 0
-check 'scripts/suji linked to something else: said so' has "$out" 'not a suji folder'
+mkdir -p "$cfg/scripts"
+printf '%s\n' '-- elsewhere' >"$h/thumb.lua"
+ln -s "$h/thumb.lua" "$cfg/scripts/thumbfast.lua"
+run "$h" --yes --action install
+check 'linked thumbfast.lua: replaced by the pinned file' test "$rc" = 0 -a ! -L "$cfg/scripts/thumbfast.lua" -a -n "$(grep -F 'fake thumbfast' "$cfg/scripts/thumbfast.lua")"
+check 'linked thumbfast.lua: what it pointed to untouched' test "$(cat "$h/thumb.lua")" = '-- elsewhere'
+# A linked mpv.conf goes to the backup with its content.
+h=$(newhome link-backup)
+cfg="$h/.config/mpv"
+printf 'volume=50\n' >"$h/dot-mpv.conf"
+ln -s "$h/dot-mpv.conf" "$cfg/mpv.conf"
+run "$h" --yes --action install
+b=$(ls -d "$cfg"-respaldo-suji-*)
+check 'linked mpv.conf: the backup has its content' test ! -L "$b/mpv.conf" -a "$(cat "$b/mpv.conf")" = volume=50
 
 # --- Flatpak and Snap: not supported, never touched ------------------------------------------
 
@@ -470,11 +498,11 @@ mkdir -p "$h/$fp"
 rm -rf "$h/.config" # no native mpv
 printf 'volume=50\n' >"$h/$fp/mpv.conf"
 listing "$h" >"$tmp/fp-before.txt"
-SUJI_TEST_FLATPAK=1 SUJI_TEST_MPV='' run "$h" --yes
+SUJI_TEST_FLATPAK=1 SUJI_TEST_MPV='' run "$h" --yes --action install
 check 'Flatpak only, without questions: exit 2' is "$rc" 2
 check 'Flatpak: says to install suji by hand' has "$out" 'mpv from Flatpak or Snap is not supported by the installer: install suji by hand'
 check 'Flatpak: points to the README' has "$out" 'https://github.com/SCEPTICG/suji#by-hand'
-SUJI_TEST_FLATPAK=1 run "$h" --yes --target "$h/$fp"
+SUJI_TEST_FLATPAK=1 run "$h" --yes --action install --target "$h/$fp"
 check 'Flatpak with --target: exit 2' test "$rc" = 2 -a -n "$(grep -F 'not supported' "$out")"
 SUJI_TEST_FLATPAK=1 run "$h" --yes --action uninstall --target "$h/$fp"
 check 'Flatpak, uninstall with --target: exit 2' is "$rc" 2
@@ -483,7 +511,7 @@ check 'Flatpak: nothing touched' same "$tmp/fp-before.txt" "$tmp/fp-after.txt"
 # With a native mpv too: that one is installed, the Flatpak listed apart.
 h=$(newhome flatpak-native)
 mkdir -p "$h/$fp"
-SUJI_TEST_FLATPAK=1 run "$h" --yes
+SUJI_TEST_FLATPAK=1 run "$h" --yes --action install
 check 'native and Flatpak, without questions: the native one installed' test "$rc" = 0 -a -f "$h/.config/mpv/scripts/suji/main.lua"
 check 'native and Flatpak, without questions: the Flatpak one untouched' test -z "$(ls -A "$h/$fp")"
 h=$(newhome flatpak-menu)
@@ -500,12 +528,36 @@ rm -rf "$h/.config" # no native mpv
 mkdir -p "$h/snap/mpv/123/.config/mpv"
 ln -s 123 "$h/snap/mpv/current"
 listing "$h" >"$tmp/snap-before.txt"
-SUJI_TEST_SNAP=1 SUJI_TEST_MPV='' run "$h" --yes --target "$h/snap/mpv/current/.config/mpv"
+SUJI_TEST_SNAP=1 SUJI_TEST_MPV='' run "$h" --yes --action install --target "$h/snap/mpv/current/.config/mpv"
 check 'Snap: exit 2, install by hand' test "$rc" = 2 -a -n "$(grep -F 'install suji by hand' "$out")"
-SUJI_TEST_SNAP=1 SUJI_TEST_MPV='' run "$h" --yes
+SUJI_TEST_SNAP=1 SUJI_TEST_MPV='' run "$h" --yes --action install
 check 'Snap only, without questions: exit 2' is "$rc" 2
 listing "$h" >"$tmp/snap-after.txt"
 check 'Snap: nothing touched' same "$tmp/snap-before.txt" "$tmp/snap-after.txt"
+
+# Into Flatpak or Snap through a link: refused the same.
+h=$(newhome flatpak-linked)
+mkdir -p "$h/$fp/scripts"
+printf 'export X=1\n' >"$h/.bashrc"
+ln -s "$h/.bashrc" "$h/$fp/scripts/thumbfast.lua"
+rm -rf "$h/.config/mpv"
+ln -s "$h/$fp" "$h/.config/mpv"
+cp "$h/.bashrc" "$tmp/bashrc"
+listing "$h/$fp" >"$tmp/fp-before.txt"
+run "$h" --yes --action install
+check 'config folder linked into Flatpak: refused' test "$rc" = 2 -a -n "$(grep -F 'not supported' "$out")"
+check 'config folder linked into Flatpak: .bashrc untouched' same "$h/.bashrc" "$tmp/bashrc"
+listing "$h/$fp" >"$tmp/fp-after.txt"
+check 'config folder linked into Flatpak: nothing changed there' same "$tmp/fp-before.txt" "$tmp/fp-after.txt"
+h=$(newhome flatpak-hop)
+cfg="$h/.config/mpv"
+mkdir -p "$h/.var/app/x" "$h/dotfiles"
+printf 'volume=50\n' >"$h/dotfiles/mpv.conf"
+ln -s "$h/dotfiles/mpv.conf" "$h/.var/app/x/mpv.conf"
+ln -s "$h/.var/app/x/mpv.conf" "$cfg/mpv.conf"
+run "$h" --yes --action install
+check 'mpv.conf linked through a Flatpak folder: exit 1' test "$rc" = 1 -a -n "$(grep -F 'not supported' "$out")"
+check 'mpv.conf linked through a Flatpak folder: nothing changed' test "$(cat "$h/dotfiles/mpv.conf")" = volume=50 -a ! -e "$cfg/scripts" -a "$(backups "$cfg")" = 0
 
 # --- root -------------------------------------------------------------------------------------
 
@@ -513,7 +565,7 @@ h=$(newhome root)
 cfg="$h/.config/mpv"
 printf 'volume=50\n' >"$cfg/mpv.conf"
 listing "$cfg" >"$tmp/root-before.txt"
-SUJI_TEST_EUID=0 run "$h" --yes
+SUJI_TEST_EUID=0 run "$h" --yes --action install
 check 'root: exit 2' is "$rc" 2
 check 'root: says to run it without sudo' has "$out" 'Run it as your normal user, without sudo.'
 listing "$cfg" >"$tmp/root-after.txt"
@@ -527,28 +579,42 @@ no_answers
 
 h=$(newhome mac)
 cfg="$h/.config/mpv"
-SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes --action install
 check 'macOS: exit 0' is "$rc" 0
 check 'macOS: new thumbfast.conf has mpv_path' grep -qx 'mpv_path=/opt/homebrew/bin/mpv' "$cfg/script-opts/thumbfast.conf"
 check 'macOS: and the usual settings' grep -qx 'max_width=200' "$cfg/script-opts/thumbfast.conf"
-SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes --action install
 check 'macOS: mpv_path not added twice' test "$(grep -c mpv_path= "$cfg/script-opts/thumbfast.conf")" = 1
 
 h=$(newhome mac-conf)
 cfg="$h/.config/mpv"
 mkdir -p "$cfg/script-opts"
 printf 'network=no\r\nmax_width=300' >"$cfg/script-opts/thumbfast.conf"
-SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/Applications/mpv.app/Contents/MacOS/mpv run "$h" --yes
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/Applications/mpv.app/Contents/MacOS/mpv run "$h" --yes --action install
 check 'macOS, thumbfast.conf of the user: kept' test "$(head -n 2 "$cfg/script-opts/thumbfast.conf" | tr -d '\r')" = "$(printf 'network=no\nmax_width=300')"
 check 'macOS, thumbfast.conf of the user: mpv_path of mpv.app added' grep -q '^mpv_path=/Applications/mpv.app/Contents/MacOS/mpv' "$cfg/script-opts/thumbfast.conf"
 check 'macOS, thumbfast.conf of the user: CRLF kept' test "$(crlf_lines "$cfg/script-opts/thumbfast.conf")" = "$(wc -l <"$cfg/script-opts/thumbfast.conf" | tr -d ' ')"
 check 'macOS, thumbfast.conf of the user: in the backup' test -f "$(ls -d "$cfg"-respaldo-suji-*)/script-opts/thumbfast.conf"
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/Applications/mpv.app/Contents/MacOS/mpv run "$h" --yes --action install
+SUJI_TEST_OS=Darwin run "$h" --yes --action uninstall
+check 'macOS, thumbfast.conf of the user: back as it was on uninstall' \
+    test "$(od -An -c "$cfg/script-opts/thumbfast.conf" | tr -d ' \n')" = "$(printf 'network=no\r\nmax_width=300' | od -An -c | tr -d ' \n')"
+h=$(newhome mac-conf2)
+cfg="$h/.config/mpv"
+mkdir -p "$cfg/scripts" "$cfg/script-opts"
+printf '%s\n' '-- my own thumbfast' >"$cfg/scripts/thumbfast.lua"
+printf 'network=no\n\n# mine\nmax_width=300\n' >"$cfg/script-opts/thumbfast.conf"
+cp "$cfg/script-opts/thumbfast.conf" "$tmp/tconf"
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes --action install
+check 'macOS, thumbfast.conf with a final line break: marked mpv_path added' grep -qxF '# Added by the suji installer: mpv started from another app may not find mpv in its PATH.' "$cfg/script-opts/thumbfast.conf"
+SUJI_TEST_OS=Darwin run "$h" --yes --action uninstall
+check 'macOS, thumbfast kept: thumbfast.conf back as it was all the same' same "$cfg/script-opts/thumbfast.conf" "$tmp/tconf"
 
 h=$(newhome mac-path)
 cfg="$h/.config/mpv"
 mkdir -p "$cfg/script-opts"
 printf 'mpv_path=/somewhere/mpv\n' >"$cfg/script-opts/thumbfast.conf"
-SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes
+SUJI_TEST_OS=Darwin SUJI_TEST_MPV=/opt/homebrew/bin/mpv run "$h" --yes --action install
 check 'macOS, thumbfast.conf with mpv_path: untouched' test "$(cat "$cfg/script-opts/thumbfast.conf")" = 'mpv_path=/somewhere/mpv'
 
 # --- hikari ---------------------------------------------------------------------------------------
@@ -560,9 +626,9 @@ printf '%s\n' '-- hikari' >"$cfg/scripts/hikari-palettes.lua"
 printf '%s\n' '-- uosc' >"$cfg/scripts/uosc/main.lua"
 printf 'osc=no\n' >"$cfg/mpv.conf"
 listing "$cfg" >"$tmp/hikari-before.txt"
-run "$h" --yes
+run "$h" --yes --action install
 check 'hikari: exit 2 (nothing to do)' is "$rc" 2
-check 'hikari: points to its installer' has "$out" '-Interface suji'
+check 'hikari: points to its installer' has "$out" '--interface suji'
 listing "$cfg" >"$tmp/hikari-after.txt"
 check 'hikari: the folder untouched' same "$tmp/hikari-before.txt" "$tmp/hikari-after.txt"
 check 'hikari: no backup' is "$(backups "$cfg")" 0
@@ -571,7 +637,7 @@ run "$h" --yes --action uninstall --target "$cfg"
 check 'hikari: uninstall refused too' test "$rc" = 2 -a "$(backups "$cfg")" = 0
 rm "$cfg/scripts/hikari-palettes.lua"
 printf 'hikari_version=0.6.0\n' >"$cfg/hikari-installed.txt"
-run "$h" --yes
+run "$h" --yes --action install
 check 'hikari (record only): refused' test "$rc" = 2 -a ! -e "$cfg/scripts/suji"
 # In a menu, the folder is listed with a tag and refused when chosen.
 answers '1\n1\n'
@@ -590,7 +656,7 @@ for what in zip thumbfast; do
     printf '%s\n' '-- osc' >"$cfg/scripts/osc.lua"
     listing "$cfg" >"$tmp/bad-before.txt"
     if [ "$what" = zip ]; then bad=$zip_url; else bad=$(sed -n "s/^    THUMBFAST_URL='\(.*\)'\$/\1/p" "$rel"); fi
-    SUJI_TEST_BAD=$bad run "$h" --yes
+    SUJI_TEST_BAD=$bad run "$h" --yes --action install
     check "hash mismatch ($what): exit 1" is "$rc" 1
     check "hash mismatch ($what): said so" has "$out" 'does not match its expected SHA256'
     listing "$cfg" >"$tmp/bad-after.txt"
@@ -599,7 +665,7 @@ for what in zip thumbfast; do
     check "hash mismatch ($what): temporary folder removed" tmp_empty
 done
 h=$(newhome fail)
-SUJI_TEST_FAIL=$zip_url run "$h" --yes
+SUJI_TEST_FAIL=$zip_url run "$h" --yes --action install
 check 'failed download: exit 1, nothing installed' test "$rc" = 1 -a ! -e "$h/.config/mpv/scripts"
 check 'failed download: said so' has "$out" 'Could not download'
 
@@ -625,14 +691,14 @@ no_answers
 h=$(newhome target)
 mkdir -p "$h/notmpv"
 printf 'x\n' >"$h/notmpv/file.txt"
-run "$h" --yes --target "$h/notmpv"
+run "$h" --yes --action install --target "$h/notmpv"
 check 'a folder that is not mpv'"'"'s, without questions: exit 2' test "$rc" = 2 -a ! -e "$h/notmpv/scripts"
-run "$h" --yes --target "$h"
+run "$h" --yes --action install --target "$h"
 check 'the home folder: refused' test "$rc" = 2 -a ! -e "$h/scripts"
-run "$h" --yes --target "$h/custom/mpv"
+run "$h" --yes --action install --target "$h/custom/mpv"
 check '--target: a new folder' test "$rc" = 0 -a -f "$h/custom/mpv/scripts/suji/main.lua"
 check '--target: no backup for a new folder' is "$(backups "$h/custom/mpv")" 0
-SUJI_TEST_MPV='' run "$h" --yes --target "$h/custom/mpv"
+SUJI_TEST_MPV='' run "$h" --yes --action install --target "$h/custom/mpv"
 check 'no mpv: only a warning' test "$rc" = 0 -a -n "$(grep -F 'mpv was not found' "$out")"
 
 h=$(newhome nothing)
@@ -642,13 +708,13 @@ check 'uninstall with nothing installed: exit 2' test "$rc" = 2 -a -n "$(grep -F
 # --- the repository copy, and the language ---------------------------------------------------------
 
 h=$(newhome dev)
-SUJI_TEST_COPY=dev run "$h" --yes
+SUJI_TEST_COPY=dev run "$h" --yes --action install
 check 'repository copy: installs its suji folder' diff -r "$repo/suji" "$h/.config/mpv/scripts/suji"
 check 'repository copy: records dev' is "$(rec "$h/.config/mpv" suji_version)" dev
 check 'repository copy: downloads thumbfast only' test "$(wc -l <"$fake/downloads.log" | tr -d ' ')" = 1
 
 h=$(newhome es)
-SUJI_LANG=es run "$h" --yes
+SUJI_LANG=es run "$h" --yes --action install
 check 'Spanish: the messages' has "$out" 'Reinicia el reproductor para ver los cambios.'
 h=$(newhome lang)
 SUJI_TEST_NOLANG=1 LANG=es_ES.UTF-8 run "$h" --help
