@@ -41,6 +41,8 @@ local MAX_SIDE = 4096    -- px; a larger thumbnail is not believed
 local MAX_JSON = 4096    -- bytes of thumbfast-info read
 local MAX_CHAPTER = 200  -- characters kept from a chapter's title
 
+-- From the last thumbfast-info, kept for every file after it; nil before
+-- the first, as if there were no thumbfast.
 local info     -- { width, height } while thumbfast can make thumbnails, else nil
 local sent     -- the thumbnail asked for: { ts, x, y, box }, nil when none
 local caption  -- the line under it, kept until the time or the width changes

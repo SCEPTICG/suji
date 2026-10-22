@@ -78,6 +78,8 @@ While the cursor is on the timeline, or dragging it, a box comes up just above t
 
 suji asks thumbfast for the frame and where to put it, and draws the box and the line under it; thumbfast draws the image. Everything else is up to thumbfast and its own options, in `script-opts/thumbfast.conf`: the size of the image (it already includes the system's HiDPI scale: suji's `scale` and *Size* grow the box around it, not the image), and whether it works on network files or audio files (both off by default). For mpv.net and other frontends, see thumbfast's page.
 
+suji learns that thumbfast is there, and the size of its images, from the `thumbfast-info` message that thumbfast sends to the other scripts. Until one has arrived, suji acts as if thumbfast were not installed; after that, it keeps the last one.
+
 Without thumbfast, when thumbfast cannot make thumbnails for the file, or with `thumbnails=no`, there is no box and no warning, and the row shows the time under the cursor as before. With `thumbnails=no` suji sends thumbfast nothing.
 
 ## Options
