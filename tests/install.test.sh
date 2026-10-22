@@ -93,17 +93,6 @@ suji_fetch() {
 }
 suji_uname() { printf '%s' "${SUJI_TEST_OS:-Linux}"; }
 suji_euid() { printf '%s' "${SUJI_TEST_EUID:-1000}"; }
-suji_sandbox_running() { return "${SUJI_TEST_SANDBOX_RUNNING:-1}"; }
-# A link planted by the sandboxed mpv while the installer works: just before
-# the change of a path ending in SUJI_TEST_PLANT_AT, SUJI_TEST_PLANT_LINK (in
-# the config folder) becomes a link to SUJI_TEST_PLANT_TO.
-suji_before_change() {
-    [ -n "${SUJI_TEST_PLANT_AT:-}" ] || return 0
-    case $1 in */"$SUJI_TEST_PLANT_AT") ;; *) return 0 ;; esac
-    [ ! -L "$CFG/$SUJI_TEST_PLANT_LINK" ] || return 0
-    mv "$CFG/$SUJI_TEST_PLANT_LINK" "$CFG/$SUJI_TEST_PLANT_LINK.real"
-    ln -s "$SUJI_TEST_PLANT_TO" "$CFG/$SUJI_TEST_PLANT_LINK"
-}
 suji_apple_languages() { [ -z "${SUJI_TEST_APPLE_LANGS:-}" ] || printf '%b\n' "$SUJI_TEST_APPLE_LANGS"; }
 suji_find_mpv() { printf '%s' "${SUJI_TEST_MPV-/usr/bin/mpv}"; }
 suji_flatpak_mpv() { [ -n "${SUJI_TEST_FLATPAK:-}" ]; }
@@ -473,90 +462,50 @@ run "$h" --yes
 check 'scripts/suji linked to something else: exit 1, untouched' test "$rc" = 1 -a -f "$h/notsuji/file" -a "$(backups "$cfg")" = 0
 check 'scripts/suji linked to something else: said so' has "$out" 'not a suji folder'
 
-# --- Flatpak and Snap: the sandboxed mpv can write there, so no links are followed ---------
+# --- Flatpak and Snap: not supported, never touched ------------------------------------------
 
 fp=.var/app/io.mpv.Mpv/config/mpv
-for link in mpv.conf scripts script-opts/thumbfast.conf scripts/suji folder; do
-    name=$(printf '%s' "$link" | tr '/' '-')
-    h=$(newhome "sandbox-$name")
-    cfg="$h/$fp"
-    mkdir -p "$cfg/scripts" "$cfg/script-opts" "$h/outside/suji"
-    printf '%s\n' '-- fake' >"$h/outside/suji/main.lua"
-    printf 'export SECRET=1\n' >"$h/outside/bashrc"
-    case $link in
-        mpv.conf) ln -s "$h/outside/bashrc" "$cfg/mpv.conf" ;;
-        scripts) rm -rf "$cfg/scripts"; ln -s "$h/outside" "$cfg/scripts" ;;
-        script-opts/thumbfast.conf) ln -s "$h/outside/bashrc" "$cfg/script-opts/thumbfast.conf" ;;
-        scripts/suji) ln -s "$h/outside/suji" "$cfg/scripts/suji" ;;
-        folder) rm -rf "$h/.var/app/io.mpv.Mpv/config"; mkdir -p "$h/outside/mpv"; ln -s "$h/outside" "$h/.var/app/io.mpv.Mpv/config" ;;
-    esac
-    listing "$h/outside" >"$tmp/sandbox-before.txt"
-    run "$h" --yes --target "$cfg"
-    check "Flatpak, link at $link: exit 1" is "$rc" 1
-    check "Flatpak, link at $link: said so" has "$out" 'follows no links there'
-    listing "$h/outside" >"$tmp/sandbox-after.txt"
-    check "Flatpak, link at $link: nothing changed outside" same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
-    check "Flatpak, link at $link: no backup" test -z "$(ls -d "$h/.var/app/io.mpv.Mpv/config/mpv"-respaldo-* "$h/outside/mpv"-respaldo-* 2>/dev/null)"
-    run "$h" --yes --action uninstall --target "$cfg"
-    listing "$h/outside" >"$tmp/sandbox-after.txt"
-    check "Flatpak, link at $link: uninstall refused too" test "$rc" = 1
-    check "Flatpak, link at $link: uninstall changed nothing outside" same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
-done
-# A conflicting script that is a link out of the sandbox: not followed, not copied.
-h=$(newhome sandbox-conflict)
-cfg="$h/$fp"
-mkdir -p "$cfg/scripts" "$h/outside"
-printf '%s\n' 'SECRET' >"$h/outside/secret.lua"
-ln -s "$h/outside/secret.lua" "$cfg/scripts/osc.lua"
-listing "$h/outside" >"$tmp/sandbox-before.txt"
-run "$h" --yes --target "$cfg"
-check 'Flatpak, linked conflict: installed, the link left alone' test "$rc" = 0 -a -L "$cfg/scripts/osc.lua"
-check 'Flatpak, linked conflict: nothing of it in the backup' test -z "$(grep -rl SECRET "$h/.var/app/io.mpv.Mpv/config"/mpv-respaldo-suji-* 2>/dev/null)"
-listing "$h/outside" >"$tmp/sandbox-after.txt"
-check 'Flatpak, linked conflict: what it points to untouched' same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
-# The sandboxed mpv running: it could swap things for links while we work.
-h=$(newhome sandbox-running)
-cfg="$h/$fp"
-mkdir -p "$cfg"
-SUJI_TEST_SANDBOX_RUNNING=0 run "$h" --yes --target "$cfg"
-check 'Flatpak with mpv running: exit 1, asks to close it' test "$rc" = 1 -a -n "$(grep -F 'is running' "$out")" -a ! -e "$cfg/scripts"
-SUJI_TEST_SANDBOX_RUNNING=2 run "$h" --yes --target "$cfg"
-check 'Flatpak, cannot tell, --yes: taken as closed and said so' test "$rc" = 0 -a -n "$(grep -F 'taken as closed' "$out")"
-h=$(newhome sandbox-ask)
-cfg="$h/$fp"
-mkdir -p "$cfg"
-answers '1\nn\n'
-SUJI_TEST_SANDBOX_RUNNING=2 run "$h" --target "$cfg"
-check 'Flatpak, cannot tell, answered not closed: exit 1, nothing done' test "$rc" = 1 -a ! -e "$cfg/scripts"
-no_answers
-# A link planted in a parent folder just before a change: stops there.
-for at in scripts/suji mpv.conf; do
-    h=$(newhome "sandbox-race-$(printf '%s' "$at" | tr '/' '-')")
-    cfg="$h/$fp"
-    mkdir -p "$cfg/scripts" "$h/outside"
-    printf 'export SECRET=1\n' >"$h/outside/mpv.conf"
-    listing "$h/outside" >"$tmp/sandbox-before.txt"
-    if [ "$at" = mpv.conf ]; then link=mpv.conf; to="$h/outside/mpv.conf"; else link=scripts; to="$h/outside"; fi
-    : >"$cfg/mpv.conf"
-    SUJI_TEST_PLANT_AT=$at SUJI_TEST_PLANT_LINK=$link SUJI_TEST_PLANT_TO=$to run "$h" --yes --target "$cfg"
-    check "Flatpak, link planted at $link during the install: exit 1" test "$rc" = 1 -a -n "$(grep -F 'follows no links there' "$out")"
-    listing "$h/outside" >"$tmp/sandbox-after.txt"
-    check "Flatpak, link planted at $link during the install: nothing written outside" same "$tmp/sandbox-before.txt" "$tmp/sandbox-after.txt"
-done
 h=$(newhome flatpak)
-SUJI_TEST_FLATPAK=1 SUJI_TEST_MPV='' run "$h" --yes --target "$h/$fp"
-check 'Flatpak without links: installed' test "$rc" = 0 -a -f "$h/$fp/scripts/suji/main.lua"
-# Snap: ~/snap/mpv/current is a link to the revision, inside the sandbox.
+mkdir -p "$h/$fp"
+rm -rf "$h/.config" # no native mpv
+printf 'volume=50\n' >"$h/$fp/mpv.conf"
+listing "$h" >"$tmp/fp-before.txt"
+SUJI_TEST_FLATPAK=1 SUJI_TEST_MPV='' run "$h" --yes
+check 'Flatpak only, without questions: exit 2' is "$rc" 2
+check 'Flatpak: says to install suji by hand' has "$out" 'mpv from Flatpak or Snap is not supported by the installer: install suji by hand'
+check 'Flatpak: points to the README' has "$out" 'https://github.com/SCEPTICG/suji#by-hand'
+SUJI_TEST_FLATPAK=1 run "$h" --yes --target "$h/$fp"
+check 'Flatpak with --target: exit 2' test "$rc" = 2 -a -n "$(grep -F 'not supported' "$out")"
+SUJI_TEST_FLATPAK=1 run "$h" --yes --action uninstall --target "$h/$fp"
+check 'Flatpak, uninstall with --target: exit 2' is "$rc" 2
+listing "$h" >"$tmp/fp-after.txt"
+check 'Flatpak: nothing touched' same "$tmp/fp-before.txt" "$tmp/fp-after.txt"
+# With a native mpv too: that one is installed, the Flatpak listed apart.
+h=$(newhome flatpak-native)
+mkdir -p "$h/$fp"
+SUJI_TEST_FLATPAK=1 run "$h" --yes
+check 'native and Flatpak, without questions: the native one installed' test "$rc" = 0 -a -f "$h/.config/mpv/scripts/suji/main.lua"
+check 'native and Flatpak, without questions: the Flatpak one untouched' test -z "$(ls -A "$h/$fp")"
+h=$(newhome flatpak-menu)
+mkdir -p "$h/$fp"
+answers '1\n2\n1\n'
+SUJI_TEST_FLATPAK=1 run "$h"
+check 'Flatpak in the menu: tagged, without a number' has "$out" ' -) mpv (Flatpak)  [not supported: install suji by hand]'
+check 'Flatpak in the menu: it cannot be chosen' has "$out" 'Invalid option.'
+check 'Flatpak in the menu: the native one installed, the Flatpak one not' \
+    test "$rc" = 0 -a -f "$h/.config/mpv/scripts/suji/main.lua" -a -z "$(ls -A "$h/$fp")"
+no_answers
 h=$(newhome snap)
+rm -rf "$h/.config" # no native mpv
 mkdir -p "$h/snap/mpv/123/.config/mpv"
 ln -s 123 "$h/snap/mpv/current"
+listing "$h" >"$tmp/snap-before.txt"
 SUJI_TEST_SNAP=1 SUJI_TEST_MPV='' run "$h" --yes --target "$h/snap/mpv/current/.config/mpv"
-check 'Snap: the current link inside the sandbox is fine' test "$rc" = 0 -a -f "$h/snap/mpv/123/.config/mpv/scripts/suji/main.lua"
-h=$(newhome snap-out)
-mkdir -p "$h/snap/mpv" "$h/outside/.config/mpv"
-ln -s "$h/outside" "$h/snap/mpv/current"
-run "$h" --yes --target "$h/snap/mpv/current/.config/mpv"
-check 'Snap leading out of the sandbox: refused' test "$rc" = 1 -a ! -e "$h/outside/.config/mpv/scripts"
+check 'Snap: exit 2, install by hand' test "$rc" = 2 -a -n "$(grep -F 'install suji by hand' "$out")"
+SUJI_TEST_SNAP=1 SUJI_TEST_MPV='' run "$h" --yes
+check 'Snap only, without questions: exit 2' is "$rc" 2
+listing "$h" >"$tmp/snap-after.txt"
+check 'Snap: nothing touched' same "$tmp/snap-before.txt" "$tmp/snap-after.txt"
 
 # --- root -------------------------------------------------------------------------------------
 
@@ -657,17 +606,13 @@ check 'failed download: said so' has "$out" 'Could not download'
 # --- choosing folders -------------------------------------------------------------------------------
 
 h=$(newhome many)
-mkdir -p "$h/.var/app/io.mpv.Mpv/config/mpv"
-SUJI_TEST_FLATPAK=1 run "$h" --yes
-check 'several folders without questions: exit 2' is "$rc" 2
-check 'several folders without questions: lists them' has "$out" 'mpv (Flatpak)'
-answers '1\n1,2\n'
-SUJI_TEST_FLATPAK=1 run "$h"
+mkdir -p "$h/second"
+answers "1\n1,o\n$h/second/mpv\n"
+run "$h"
 check 'several folders, both chosen: exit 0' is "$rc" 0
-check 'several folders, both chosen: both installed' test -f "$h/.config/mpv/scripts/suji/main.lua" -a -f "$h/.var/app/io.mpv.Mpv/config/mpv/scripts/suji/main.lua"
+check 'several folders, both chosen: both installed' test -f "$h/.config/mpv/scripts/suji/main.lua" -a -f "$h/second/mpv/scripts/suji/main.lua"
 check 'several folders, both chosen: the summary' has "$out" 'Done: 2 of 2 folders.'
 check 'several folders: downloaded once' test "$(wc -l <"$fake/downloads.log" | tr -d ' ')" = 2
-check 'Flatpak: no mpv_path' test ! -e "$h/.var/app/io.mpv.Mpv/config/mpv/script-opts/thumbfast.conf" -o -z "$(grep mpv_path "$h/.var/app/io.mpv.Mpv/config/mpv/script-opts/thumbfast.conf")"
 answers '0\n'
 run "$h"
 check 'menu: exit chosen, exit 0' test "$rc" = 0 -a -n "$(grep -F 'Cancelled.' "$out")"

@@ -22,7 +22,9 @@ On **macOS and Linux**, open a terminal and run:
 curl -fsSL https://github.com/SCEPTICG/suji/releases/latest/download/suji.sh | bash
 ```
 
-The installer asks whether to install (or update) or uninstall, then lists the players it finds with their configuration folders (mpv, mpv.net and AnimeJaNai on Windows; mpv from Homebrew or mpv.app on macOS; mpv from a package, Flatpak or Snap on Linux) and works on the ones you choose. Its messages are in Spanish when the system is, in English otherwise. It needs no administrator rights and never uses `sudo`. Run the same line again to update.
+The installer asks whether to install (or update) or uninstall, then lists the players it finds with their configuration folders (mpv, mpv.net and AnimeJaNai on Windows; mpv from Homebrew or mpv.app on macOS; mpv from a package on Linux) and works on the ones you choose. Its messages are in Spanish when the system is, in English otherwise. It needs no administrator rights and refuses to run with them (or with `sudo`). Run the same line again to update.
+
+mpv from **Flatpak or Snap** is not supported by the installer: it leaves those folders alone. Install suji there [by hand](#by-hand).
 
 When it installs or updates suji in a folder, it:
 
@@ -76,6 +78,8 @@ suji is a folder of Lua scripts. It goes in the `scripts` folder inside mpv's co
 | System | mpv configuration folder |
 | --- | --- |
 | Linux and BSD | `~/.config/mpv/` (or `$XDG_CONFIG_HOME/mpv/`) |
+| Linux, mpv from Flatpak | `~/.var/app/io.mpv.Mpv/config/mpv/` |
+| Linux, mpv from Snap | `~/snap/mpv/current/.config/mpv/` |
 | macOS | `~/.config/mpv/` |
 | Windows | `%APPDATA%\mpv\` (for example `C:\Users\<name>\AppData\Roaming\mpv\`), or the `portable_config` folder next to `mpv.exe` if there is one |
 
