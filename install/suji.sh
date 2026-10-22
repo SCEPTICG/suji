@@ -67,6 +67,13 @@ suji_defaults() {
         'mpv.conf' 'suji-installed.txt' 'scripts/suji' 'scripts/thumbfast.lua'
         'script-opts/thumbfast.conf' 'script-opts/suji.conf' 'suji-size' 'scripts-apartados-suji'
     )
+    # What check_links refuses as a symbolic link: every path the installer
+    # writes, copies, creates or moves things into, and the folders on the way.
+    LINK_CHECKED=(
+        'mpv.conf' 'suji-installed.txt' 'suji-size' 'scripts' 'scripts/suji' 'scripts/thumbfast.lua'
+        'script-opts' 'script-opts/thumbfast.conf' 'script-opts/suji.conf' 'fonts'
+        'scripts-apartados-suji' 'scripts-apartados-suji/script-opts' 'scripts-apartados-suji/fonts'
+    )
     MPV_CONFIG_FILES=('mpv.conf' 'input.conf' 'suji-installed.txt')
     MPV_CONFIG_DIRS=('scripts' 'script-opts')
     # Scripts that replace mpv's on-screen controller and clash with suji (file
@@ -141,6 +148,7 @@ suji_text_en() {
         backup_pruned) s='Old backup deleted: %s' ;;
         backup_prune_failed) s='Could not delete the old backup %s.' ;;
         link_skipped) s='Not copied to the backup: %s is a symbolic link.' ;;
+        link_refused) s='%s is a symbolic link: the installer does not write or move anything through links. Nothing was changed in that folder.' ;;
         conflicts_found) s='These interfaces draw their own controls and clash with suji:' ;;
         conflicts_confirm) s='Move them to %s? Nothing is deleted, and they come back when you uninstall.' ;;
         conflicts_kept) s='Left in place: suji and that interface will both draw controls.' ;;
@@ -221,6 +229,7 @@ suji_text_es() {
         backup_pruned) s='Borrada la copia de seguridad antigua %s' ;;
         backup_prune_failed) s='No se ha podido borrar la copia de seguridad antigua %s.' ;;
         link_skipped) s='No se copia a la copia de seguridad: %s es un enlace simbólico.' ;;
+        link_refused) s='%s es un enlace simbólico: el instalador no escribe ni mueve nada a través de enlaces. No se ha cambiado nada en esa carpeta.' ;;
         conflicts_found) s='Estas interfaces dibujan sus propios controles y chocan con suji:' ;;
         conflicts_confirm) s='¿Moverlas a %s? No se borra nada y vuelven a su sitio al desinstalar.' ;;
         conflicts_kept) s='Se quedan donde están: suji y esa interfaz dibujarán controles a la vez.' ;;
@@ -467,10 +476,11 @@ sha256_of() {
 
 # Writes stdin to $1 through a temporary file next to it and a rename, so a
 # failure never leaves half a file. The file keeps its permissions (a new one
-# gets the usual ones for the umask); a link is written through (dotfile
-# managers link mpv.conf), not replaced.
+# gets the usual ones for the umask). Never through a link (check_links has
+# refused the folder already; this is the last guard).
 write_file() {
     local path=$1 tmp
+    if [ -L "$path" ]; then SUJI_ERR=$(T link_refused "$(clean_text "$path")"); return 1; fi
     tmp=$(mktemp "$1.suji-tmp.XXXXXX") || return 1
     if [ -f "$path" ]; then
         cp -p "$path" "$tmp" 2>/dev/null || :
@@ -478,12 +488,17 @@ write_file() {
         chmod "$(printf '%o' $((0666 & ~0$(umask))))" "$tmp" 2>/dev/null || :
     fi
     if ! cat >"$tmp"; then rm -f "$tmp"; return 1; fi
-    if [ -L "$path" ]; then
-        cat "$tmp" >"$path" || { rm -f "$tmp"; return 1; }
-        rm -f "$tmp"
-    else
-        mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
-    fi
+    mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
+}
+
+# Fails, with SUJI_ERR set, when anything the installer may write, copy,
+# create or move in CFG is a symbolic link: the files themselves and every
+# folder between them and CFG. Run before anything in the folder changes.
+check_links() {
+    local rel
+    for rel in "${LINK_CHECKED[@]}"; do
+        if [ -L "$CFG/$rel" ]; then SUJI_ERR=$(T link_refused "$(clean_text "$CFG/$rel")"); return 1; fi
+    done
 }
 
 # The lines of a text file: F_LINE (content, without line break), F_EOL (crlf,
@@ -1094,7 +1109,8 @@ install_target() {
     local exe=${C_EXE[$1]} c moving
     BACKUP=''
     mkdir -p "$CFG" || { SUJI_ERR=$(clean_text "$CFG"); return 1; }
-    # Checked before anything changes: a broken block stops it here.
+    # Checked before anything changes: a link or a broken block stops it here.
+    check_links || return 1
     load_file "$CFG/mpv.conf"
     find_block || return 1
 
@@ -1202,7 +1218,8 @@ mpv_path_lines() {
 uninstall_target() {
     CFG=${C_DIR[$1]}
     BACKUP=''
-    # Checked before anything changes: a broken block stops it here.
+    # Checked before anything changes: a link or a broken block stops it here.
+    check_links || return 1
     load_file "$CFG/mpv.conf"
     find_block || return 1
     backup_step || return 1

@@ -403,6 +403,39 @@ for broken in begin end twice; do
     check "mpv.conf with a broken block ($broken): uninstall stops too" test "$rc" = 1 -a "$(backups "$cfg")" = 0
 done
 
+# --- symbolic links: never written, copied or moved through -------------------------------
+
+for link in mpv.conf suji-installed.txt scripts scripts/suji scripts/thumbfast.lua script-opts \
+    script-opts/thumbfast.conf scripts-apartados-suji scripts-apartados-suji/script-opts; do
+    name=$(printf '%s' "$link" | tr '/' '-')
+    h=$(newhome "link-$name")
+    cfg="$h/.config/mpv"
+    mkdir -p "$cfg/scripts" "$h/elsewhere/dir/script-opts"
+    printf '%s\n' '-- osc' >"$cfg/scripts/osc.lua"
+    printf 'volume=50\n' >"$h/elsewhere/file"
+    case $link in
+        scripts | scripts/suji | script-opts | scripts-apartados-suji | scripts-apartados-suji/script-opts) target="$h/elsewhere/dir" ;;
+        *) target="$h/elsewhere/file" ;;
+    esac
+    [ "$link" != scripts ] || rm -rf "$cfg/scripts"
+    mkdir -p "$(dirname "$cfg/$link")"
+    ln -s "$target" "$cfg/$link"
+    listing "$cfg" >"$tmp/link-before.txt"
+    listing "$h/elsewhere" >"$tmp/link-else-before.txt"
+    run "$h" --yes
+    check "link at $link: exit 1" is "$rc" 1
+    check "link at $link: said so" has "$out" 'is a symbolic link'
+    listing "$cfg" >"$tmp/link-after.txt"
+    listing "$h/elsewhere" >"$tmp/link-else-after.txt"
+    check "link at $link: the folder untouched" same "$tmp/link-before.txt" "$tmp/link-after.txt"
+    check "link at $link: what it points to untouched" same "$tmp/link-else-before.txt" "$tmp/link-else-after.txt"
+    check "link at $link: no backup" is "$(backups "$cfg")" 0
+    run "$h" --yes --action uninstall --target "$cfg"
+    listing "$h/elsewhere" >"$tmp/link-else-after.txt"
+    check "link at $link: uninstall refused too" test "$rc" = 1 -a "$(backups "$cfg")" = 0
+    check "link at $link: uninstall leaves what it points to" same "$tmp/link-else-before.txt" "$tmp/link-else-after.txt"
+done
+
 # --- thumbfast.conf and mpv_path on macOS -----------------------------------------------------------
 
 h=$(newhome mac)
