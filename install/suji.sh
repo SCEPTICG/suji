@@ -132,6 +132,8 @@ suji_text_en() {
         tag_installed) s='[suji %s installed]' ;;
         tag_hikari) s='[hikari: use its installer]' ;;
         tag_sandbox) s='[not supported: install suji by hand]' ;;
+        path_unknown) s='%s: could not tell where that folder really leads (its links cannot be followed), so it is refused. Nothing was changed there.' ;;
+        link_refused) s='%s is a link that leads into a Flatpak or Snap folder, or where it leads cannot be told: nothing was changed in that folder.' ;;
         sandbox_here) s='%s: mpv from Flatpak or Snap is not supported by the installer: install suji by hand (https://github.com/SCEPTICG/suji#by-hand). Nothing was changed there.' ;;
         tag_readonly) s='[no write permission]' ;;
         tag_new) s='[will be created]' ;;
@@ -214,6 +216,8 @@ suji_text_es() {
         tag_installed) s='[suji %s instalado]' ;;
         tag_hikari) s='[hikari: usa su instalador]' ;;
         tag_sandbox) s='[no compatible: instala suji a mano]' ;;
+        path_unknown) s='%s: no se ha podido saber adónde lleva de verdad esa carpeta (no se pueden seguir sus enlaces), así que se rechaza. No se ha cambiado nada ahí.' ;;
+        link_refused) s='%s es un enlace que lleva a una carpeta de Flatpak o Snap, o no se puede saber adónde lleva: no se ha cambiado nada en esa carpeta.' ;;
         sandbox_here) s='%s: el instalador no es compatible con mpv de Flatpak o Snap: instala suji a mano (https://github.com/SCEPTICG/suji#by-hand). No se ha cambiado nada ahí.' ;;
         tag_readonly) s='[sin permiso de escritura]' ;;
         tag_new) s='[se creará]' ;;
@@ -499,7 +503,7 @@ link_target() {
 # refuses to run as root), so a link only leads where the user could write.
 write_file() {
     local path tmp
-    if ! path=$(link_target "$1"); then SUJI_ERR=$(T sandbox_here "$(clean_text "$1")"); return 1; fi
+    if ! path=$(link_target "$1"); then SUJI_ERR=$(T link_refused "$(clean_text "$1")"); return 1; fi
     tmp=$(mktemp "$path.suji-tmp.XXXXXX") || return 1
     if [ -f "$path" ]; then
         cp -p "$path" "$tmp" 2>/dev/null || :
@@ -522,18 +526,29 @@ physical_path() {
 # Is $1 in a folder of mpv from Flatpak ($HOME/.var/app/...) or Snap
 # ($HOME/snap/...), as it is written or once its links are resolved? Those
 # are not supported: the sandboxed mpv can write there, and plant links that
-# would lead the installer out of the sandbox.
+# would lead the installer out of the sandbox. When where it leads cannot be
+# told, it counts as one too (SANDBOX_WHY=unknown): such a path is refused.
 sandboxed() {
-    local home phome p h
-    home=$(abs_path "$HOME")
-    phome=$(physical_path "$home") || phome=$home
-    p=$(abs_path "$1") || return 1
-    for p in "$p" "$(physical_path "$p")"; do
+    local home phome p pp h
+    SANDBOX_WHY=unknown
+    home=$(abs_path "$HOME") || return 0
+    phome=$(physical_path "$home") || return 0
+    p=$(abs_path "$1") || return 0
+    pp=$(physical_path "$p") || return 0
+    SANDBOX_WHY=sandbox
+    for p in "$p" "$pp"; do
         for h in "$home" "$phome"; do
             case $p in "$h"/.var/app/?* | "$h"/snap/?*) return 0 ;; esac
         done
     done
+    SANDBOX_WHY=''
     return 1
+}
+
+# Why folder $1 is refused, after sandboxed said so: Flatpak or Snap, or a
+# path that cannot be followed.
+refusal_text() {
+    if [ "$SANDBOX_WHY" = unknown ]; then T path_unknown "$(clean_text "$1")"; else T sandbox_here "$(clean_text "$1")"; fi
 }
 
 # Fails, with SUJI_ERR set, when a file the installer writes through (or a
@@ -542,10 +557,8 @@ sandboxed() {
 check_paths() {
     local rel
     for rel in mpv.conf suji-installed.txt script-opts/thumbfast.conf scripts script-opts fonts "$DISABLED_DIR"; do
-        if ! link_target "$CFG/$rel" >/dev/null || sandboxed "$CFG/$rel"; then
-            SUJI_ERR=$(T sandbox_here "$(clean_text "$CFG/$rel")")
-            return 1
-        fi
+        if sandboxed "$CFG/$rel"; then SUJI_ERR=$(refusal_text "$CFG/$rel"); return 1; fi
+        if ! link_target "$CFG/$rel" >/dev/null; then SUJI_ERR=$(T link_refused "$(clean_text "$CFG/$rel")"); return 1; fi
     done
 }
 
@@ -1460,7 +1473,7 @@ choose_targets() {
     if [ "$NONINTERACTIVE" = 1 ]; then
         if [ "${#LIST[@]}" -eq 1 ]; then CHOSEN=("${LIST[0]}"); return 0; fi
         if [ "${#LIST[@]}" -eq 0 ]; then
-            for i in ${UNSUPPORTED[@]+"${UNSUPPORTED[@]}"}; do warn "$(T sandbox_here "$(clean_text "${C_DIR[i]}")")"; done
+            for i in ${UNSUPPORTED[@]+"${UNSUPPORTED[@]}"}; do sandboxed "${C_DIR[i]}"; warn "$(refusal_text "${C_DIR[i]}")"; done
             if [ "$mode" = uninstall ]; then error "$(T nothing_to_uninstall)"; else error "$(T usage_none)"; fi
         else
             error "$(T usage_many)"
@@ -1519,7 +1532,7 @@ check_targets() {
         [ "$dup" = 0 ] || continue
         dir=${C_DIR[i]}
         if forbidden_target "$dir"; then error "$(T target_root "$(clean_text "$dir")")"; REFUSED=1; continue; fi
-        if sandboxed "$dir"; then warn "$(T sandbox_here "$(clean_text "$dir")")"; REFUSED=1; continue; fi
+        if sandboxed "$dir"; then warn "$(refusal_text "$dir")"; REFUSED=1; continue; fi
         if hikari_present "$dir"; then warn "$(T hikari_here "$(clean_text "$dir")")"; REFUSED=1; continue; fi
         if ! looks_like_mpv_config "$dir"; then
             warn "$(T not_mpv_folder "$(clean_text "$dir")")"
@@ -1577,6 +1590,7 @@ main() {
     SUJI_LANG_CODE=$(suji_language)
     SCRIPT_FILE=${BASH_SOURCE[0]:-}
     SUJI_ERR=''
+    SANDBOX_WHY=''
     TEMP_DIR=''
     REFUSED=0
     USAGE_ERROR=0

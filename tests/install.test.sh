@@ -97,6 +97,11 @@ suji_apple_languages() { [ -z "${SUJI_TEST_APPLE_LANGS:-}" ] || printf '%b\n' "$
 suji_find_mpv() { printf '%s' "${SUJI_TEST_MPV-/usr/bin/mpv}"; }
 suji_flatpak_mpv() { [ -n "${SUJI_TEST_FLATPAK:-}" ]; }
 suji_snap_mpv() { [ -n "${SUJI_TEST_SNAP:-}" ]; }
+# Where a path really leads cannot be told for paths with SUJI_TEST_NOPHYS in them.
+if [ -n "${SUJI_TEST_NOPHYS:-}" ]; then
+    eval "real_$(declare -f physical_path)"
+    physical_path() { case $1 in *"$SUJI_TEST_NOPHYS"*) return 1 ;; esac; real_physical_path "$1"; }
+fi
 if [ -n "${SUJI_TEST_TTY+x}" ]; then suji_tty_path() { printf '%s' "$SUJI_TEST_TTY"; }; fi
 EOF
 
@@ -556,8 +561,22 @@ printf 'volume=50\n' >"$h/dotfiles/mpv.conf"
 ln -s "$h/dotfiles/mpv.conf" "$h/.var/app/x/mpv.conf"
 ln -s "$h/.var/app/x/mpv.conf" "$cfg/mpv.conf"
 run "$h" --yes --action install
-check 'mpv.conf linked through a Flatpak folder: exit 1' test "$rc" = 1 -a -n "$(grep -F 'not supported' "$out")"
+check 'mpv.conf linked through a Flatpak folder: exit 1' test "$rc" = 1 -a -n "$(grep -F 'leads into a Flatpak or Snap folder' "$out")"
 check 'mpv.conf linked through a Flatpak folder: nothing changed' test "$(cat "$h/dotfiles/mpv.conf")" = volume=50 -a ! -e "$cfg/scripts" -a "$(backups "$cfg")" = 0
+
+# Where a folder or file really leads cannot be told: refused, nothing touched.
+h=$(newhome nophys)
+cfg="$h/.config/mpv"
+printf 'volume=50\n' >"$cfg/mpv.conf"
+listing "$h" >"$tmp/nophys-before.txt"
+SUJI_TEST_NOPHYS=.config/mpv run "$h" --yes --action install
+check 'physical path unknown: refused (exit 2)' test "$rc" = 2 -a -n "$(grep -F 'could not tell where that folder really leads' "$out")"
+SUJI_TEST_NOPHYS=.config/mpv run "$h" --yes --action uninstall --target "$cfg"
+check 'physical path unknown: uninstall refused too' is "$rc" 2
+SUJI_TEST_NOPHYS=mpv.conf run "$h" --yes --action install
+check 'physical path of mpv.conf unknown: the folder fails' test "$rc" = 1 -a -n "$(grep -F 'could not tell' "$out")"
+listing "$h" >"$tmp/nophys-after.txt"
+check 'physical path unknown: nothing touched' same "$tmp/nophys-before.txt" "$tmp/nophys-after.txt"
 
 # --- root -------------------------------------------------------------------------------------
 
