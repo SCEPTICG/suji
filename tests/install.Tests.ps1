@@ -446,6 +446,11 @@ Test-Case 'uninstall: the settings question names only what it deletes; a suji-s
     }
     $c = [pscustomobject]@{ Kind = 'folder'; Exe = ''; ConfigDir = (P @($fake.AppData, 'mpv.net')); Portable = $false }
     Assert-Equal (Get-SujiStateDir -Env $fake -Candidate $c) '' 'the mpv.net folder, no player'
+    # With MPV_HOME the state folder may be another one: nothing is named.
+    $fake.MpvHome = P @($d, 'home')
+    $c = [pscustomobject]@{ Kind = 'mpv'; Exe = 'x'; ConfigDir = $fake.MpvHome; Portable = $false }
+    Assert-Equal (Get-SujiStateDir -Env $fake -Candidate $c) '' 'MPV_HOME'
+    $fake.MpvHome = $null
     # Through the whole run: mpv.net says nothing of a suji-size in %LOCALAPPDATA%\mpv.
     $netCfg = P @($fake.AppData, 'mpv.net')
     Install-Test $netCfg -Kind 'mpv.net'
