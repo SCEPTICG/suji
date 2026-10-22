@@ -8,6 +8,69 @@ A minimal on-screen controller for [mpv](https://mpv.io), written from scratch i
 
 ## Installation
 
+If you use [hikari](https://github.com/SCEPTICG/hikari-mpv), install suji with the hikari installer (`-Interface suji`) instead: it knows how to put suji in without breaking hikari. The suji installer leaves any folder with hikari in it untouched.
+
+On **Windows**, open PowerShell and run:
+
+```
+irm https://github.com/SCEPTICG/suji/releases/latest/download/suji.ps1 | iex
+```
+
+On **macOS and Linux**, open a terminal and run:
+
+```
+curl -fsSL https://github.com/SCEPTICG/suji/releases/latest/download/suji.sh | bash
+```
+
+The installer asks whether to install (or update) or uninstall, then lists the players it finds with their configuration folders (mpv, mpv.net and AnimeJaNai on Windows; mpv from Homebrew or mpv.app on macOS; mpv from a package, Flatpak or Snap on Linux) and works on the ones you choose. Its messages are in Spanish when the system is, in English otherwise. It needs no administrator rights and never uses `sudo`. Run the same line again to update.
+
+When it installs or updates suji in a folder, it:
+
+1. Backs up the files it is about to change, next to the folder (`mpv-respaldo-suji-<date>`, for example). It keeps the three newest backups.
+2. Downloads the `suji.zip` of the same release and [thumbfast](https://github.com/po5/thumbfast) (a fixed version), and checks the SHA256 of each before using it. A thumbfast that is already that exact file is not downloaded again.
+3. Moves other interfaces that draw their own controls (uosc, ModernZ, the `osc.lua` of mpv and similar) to `scripts-apartados-suji`, after asking. Nothing is deleted, and they go back when you uninstall.
+4. Copies `scripts/suji` and `scripts/thumbfast.lua`.
+5. Adds a marked block with `osc=no` at the start of `mpv.conf` and leaves the rest of the file as it was.
+6. Writes `script-opts/thumbfast.conf` when there is none (network streams, decoding on the GPU, thumbnails up to 200×200). If there is one, it only adds `mpv_path` when the player needs it (mpv on macOS, mpv.net and AnimeJaNai). It never touches `suji.conf`.
+
+What it did is noted in `suji-installed.txt`, in the same folder, so it can be undone.
+
+### Uninstalling
+
+Run the installer again and choose *Uninstall*, or go straight to it:
+
+```
+& ([scriptblock]::Create((irm https://github.com/SCEPTICG/suji/releases/latest/download/suji.ps1))) -Action uninstall
+```
+
+```
+curl -fsSL https://github.com/SCEPTICG/suji/releases/latest/download/suji.sh | bash -s -- --action uninstall
+```
+
+It backs up again, removes `scripts/suji` and the block in `mpv.conf`, and asks whether to remove thumbfast too, whether to delete your settings (`script-opts/suji.conf` and `suji-size`) and whether to move back the interfaces it set aside.
+
+Options for scripts, the same on every system: `-Action install|uninstall` (`--action`), `-Target <folder>` (`--target`, to work on that folder instead of choosing) and `-Yes` (`--yes`, no questions: the default answer to everything). On macOS and Linux they go after `bash -s --`, as above. Exit codes: 0 done or cancelled, 1 a folder failed, 2 wrong usage or nothing to do.
+
+### Checking the installer first
+
+Both lines run whatever the server sends without checking it: the installer verifies everything it downloads, but it cannot verify itself. The addresses always point to files attached to a tagged release, never to the `main` branch. To check it yourself, download the installer and `SHA256SUMS` from the [release page](https://github.com/SCEPTICG/suji/releases/latest), compare the hash and run the file:
+
+```
+Get-FileHash .\suji.ps1 -Algorithm SHA256
+Get-Content .\SHA256SUMS
+powershell -ExecutionPolicy Bypass -File .\suji.ps1
+```
+
+```
+shasum -a 256 suji.sh        # sha256sum suji.sh on Linux
+cat SHA256SUMS
+bash suji.sh
+```
+
+The hash must be the one `SHA256SUMS` lists for that file. Each release's installer only installs the `suji.zip` of that same release, and only if its SHA256 matches the one written inside it. `SHA256SUMS` comes from the same release as the installer, so this catches a file that was damaged or changed on the way to you, but not a compromised account; reading the installer before running it is the only check that does not depend on the account.
+
+### By hand
+
 suji is a folder of Lua scripts. It goes in the `scripts` folder inside mpv's configuration folder, which is:
 
 | System | mpv configuration folder |
@@ -23,13 +86,9 @@ If `$MPV_HOME` is set, that folder is used instead on every system. Create the f
 
 There is no need to touch `mpv.conf`: suji turns off mpv's built-in controller (the OSC) by itself.
 
-### One interface at a time
-
 suji turns off mpv's OSC, but it cannot know whether another interface is installed (uosc, ModernZ or any other script that draws controls). If there is one, remove it from `scripts/`, or set `enabled=no` in the options of one of the two.
 
-### Uninstalling
-
-Delete the `scripts/suji` folder (and `script-opts/suji.conf`, if you made one, and `suji-size` in mpv's state or configuration folder, if you chose a size: see [Size](#size)).
+To uninstall by hand, delete the `scripts/suji` folder (and `script-opts/suji.conf`, if you made one, and `suji-size` in mpv's state or configuration folder, if you chose a size: see [Size](#size)).
 
 ## Usage
 
