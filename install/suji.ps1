@@ -266,6 +266,7 @@ $script:SujiStringsEn = @{
     admin_confirm        = 'Continue as administrator?'
     admin_refused        = 'As administrator with -Yes, only folders under Program Files or ProgramData are allowed: {0}. Run it without administrator rights.'
     link_in_path         = 'Refusing to delete or move {0}: {1} is a link (junction or symbolic link) and the installer is running as administrator.'
+    link_write           = 'Refusing to write {0}: {1} is a link (junction or symbolic link), and the installer never writes through one. Nothing was changed in that folder.'
     record_bad           = 'Ignored an invalid entry in suji-installed.txt: {0}'
 }
 
@@ -349,6 +350,7 @@ $script:SujiStringsEs = @{
     admin_confirm        = '\u00bfSeguir como administrador?'
     admin_refused        = 'Como administrador y con -Yes solo se admiten carpetas dentro de Program Files o ProgramData: {0}. Ejec\u00fatalo sin permisos de administrador.'
     link_in_path         = 'No se borra ni se mueve {0}: {1} es un enlace (uni\u00f3n o enlace simb\u00f3lico) y el instalador se est\u00e1 ejecutando como administrador.'
+    link_write           = 'No se escribe {0}: {1} es un enlace (uni\u00f3n o enlace simb\u00f3lico) y el instalador nunca escribe a trav\u00e9s de uno. No se ha cambiado nada en esa carpeta.'
     record_bad           = 'Se ignora una entrada no v\u00e1lida de suji-installed.txt: {0}'
 }
 
@@ -522,16 +524,15 @@ function Assert-SujiNoLink {
     if ($link) { throw (T 'link_in_path' @($Path, $link)) }
 }
 
-# Before writing to $Path, or making a folder there, inside $Root: running as
-# administrator, neither $Path itself nor a folder between it and $Root may be
-# a link. Without administrator rights a link is written through, with the
-# user's own rights: a config kept as links to another folder keeps working.
+# Before writing to $Path, or making a folder there, inside $Root: neither
+# $Path itself nor a folder between it and $Root may be a link (junction or
+# symbolic link), so nothing is ever written outside the config folder.
 function Assert-SujiWriteTarget {
     param([string]$Path, [string]$Root)
-    if (-not $script:SujiElevated) { return }
-    Assert-SujiNoLink -Path $Path -Root $Root
+    $link = Find-SujiLinkInPath -Path $Path -Root $Root
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-    if ($null -ne $item -and (Test-SujiLink $item)) { throw (T 'link_in_path' @($Path, $Path)) }
+    if ($null -ne $item -and (Test-SujiLink $item)) { $link = $Path }
+    if ($link) { throw (T 'link_write' @($Path, $link)) }
 }
 
 # Deletes a file or folder inside $Root. Links (junctions, symlinks) are removed
@@ -623,7 +624,7 @@ function Read-SujiText {
 # Writes text without BOM unless $Bom is set (only to keep a BOM the file already
 # had), into $Path inside the config folder $Root. The text goes to a temporary
 # file next to it that then replaces it, so a failed write never leaves half a
-# file; a link (only allowed without administrator rights) is written through.
+# file.
 function Write-SujiText {
     param([string]$Path, [string]$Text, [Parameter(Mandatory = $true)][string]$Root, [string]$Encoding = 'utf8', [bool]$Bom = $false)
     Assert-SujiInside -Path $Path -Root $Root
@@ -633,7 +634,6 @@ function Write-SujiText {
     $body = $enc.GetBytes($Text)
     if ($Bom) { $body = [byte[]](@(0xEF, 0xBB, 0xBF) + $body) }
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-    if ($null -ne $item -and (Test-SujiLink $item)) { [System.IO.File]::WriteAllBytes($Path, $body); return }
     $tmp = $Path + '.suji-' + [guid]::NewGuid().ToString('N') + '.tmp'
     try {
         [System.IO.File]::WriteAllBytes($tmp, $body)
@@ -1153,12 +1153,12 @@ function Test-SujiRecordPath {
 }
 
 # "aside|original": something set aside, so in the folder of set-aside things
-# (never another file of the folder), and where it came from.
+# (never another file of the folder), from scripts, script-opts or fonts.
 function Test-SujiAsidePair {
     param([string]$Value)
     $pair = $Value -split '\|'
     return ($pair.Count -eq 2 -and (Test-SujiRecordPath $pair[0]) -and (Test-SujiRecordPath $pair[1]) -and
-        $pair[0].StartsWith($script:AsideDir + '/'))
+        $pair[0].StartsWith($script:AsideDir + '/') -and $pair[1] -match '^(scripts|script-opts|fonts)/')
 }
 
 function Read-SujiRecord {
@@ -1541,8 +1541,8 @@ function Get-SujiRestoreMessage {
     return $Message
 }
 
-# Running as administrator, every place the installer writes to in the folder
-# is checked for links before anything changes (and again at each write).
+# Every place the installer writes to in the folder is checked for links before
+# anything changes, as a broken block is (and again at each write).
 function Assert-SujiWriteTargets {
     param([string]$ConfigDir)
     foreach ($rel in @('mpv.conf', $script:RecordName, 'scripts/suji', 'scripts/thumbfast.lua', 'script-opts/thumbfast.conf', $script:AsideDir)) {

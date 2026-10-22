@@ -491,9 +491,8 @@ Test-Case 'a link inside the folder is not followed by the backup' {
     catch { Write-Host '     (symlinks not available, skipped)'; return }
     $b = New-SujiBackup -ConfigDir $cfg -Stamp '20260101-000000'
     Assert-True (-not (Test-Exists (P @($b, 'scripts')))) 'link not copied'
-    Install-Test $cfg -Stamp '20260101-000001'
-    Assert-Equal (Get-TestText (P @($outside, 'secret.txt'))) 'secret' 'target untouched'
-    Assert-True (-not ((Get-Item -LiteralPath (P @($cfg, 'scripts', 'suji')) -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) 'a real folder now'
+    Assert-Throws { Install-Test $cfg -Stamp '20260101-000001' } -Like '*is a link*' -What 'install'
+    Assert-Equal (Get-TreeState $outside) ('secret.txt=' + (Get-SujiFileSha256 (P @($outside, 'secret.txt')))) 'target untouched'
 }
 
 # ---------------------------------------------------------------------------
@@ -560,8 +559,7 @@ Test-Case 'a tampered record cannot move things outside the folder' {
     $text = Get-TestText $rec
     $text += "disabled=../victim.txt|scripts/x.lua`r`ndisabled=scripts-apartados-suji/a|../../x`r`ndisabled=scripts-apartados-suji/a|mpv.conf`r`n"
     Set-TestFile $rec $text
-    # Only an entry that moves something out of the set-aside folder is taken.
-    Assert-Equal ([string]::Join(' ', @((Read-SujiRecord $cfg -NoWarn).Aside))) 'scripts-apartados-suji/a|mpv.conf' 'two refused'
+    Assert-Equal @((Read-SujiRecord $cfg -NoWarn).Aside).Count 0 'all three refused'
     Uninstall-Test $cfg
     Assert-Equal (Get-TestText (P @($d, 'victim.txt'))) 'victim' 'untouched'
 }
@@ -587,50 +585,42 @@ function New-LinkedConfig {
     return [pscustomobject]@{ Dir = $d; Config = $cfg; Outside = $outside }
 }
 
-Test-Case 'as administrator, a link at mpv.conf, script-opts or thumbfast.conf: refused before anything changes' {
-    foreach ($case in @(@('mpv.conf', $false), @('script-opts', $true), @('script-opts/thumbfast.conf', $false), @('suji-installed.txt', $false))) {
-        $t = New-LinkedConfig ('link-admin-' + ($case[0] -replace '[/.]', '-')) $case[0] -Folder:($case[1])
-        if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
-        $before = Get-TreeState $t.Outside
-        $cfgBefore = Get-TreeState $t.Config
-        $script:SujiElevated = $true
-        try {
-            Assert-Throws { Install-Test $t.Config } -Like '*is a link*' -What ('install ' + $case[0])
-            Assert-Throws { Uninstall-Test $t.Config } -Like '*is a link*' -What ('uninstall ' + $case[0])
+Test-Case 'a link at mpv.conf, script-opts, thumbfast.conf, scripts\suji or the record: refused before anything changes' {
+    $cases = @(@('mpv.conf', $false), @('script-opts', $true), @('script-opts/thumbfast.conf', $false), @('scripts/suji', $true),
+        @('suji-installed.txt', $false))
+    foreach ($elevated in @($false, $true)) {
+        foreach ($case in $cases) {
+            $name = 'link-' + $elevated + '-' + ($case[0] -replace '[/.]', '-')
+            $t = New-LinkedConfig $name $case[0] -Folder:($case[1])
+            if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
+            $before = Get-TreeState $t.Outside
+            $cfgBefore = Get-TreeState $t.Config
+            $script:SujiElevated = $elevated
+            try {
+                Assert-Throws { Install-Test $t.Config } -Like '*is a link*Nothing was changed*' -What ('install ' + $name)
+                Assert-Throws { Uninstall-Test $t.Config } -Like '*is a link*' -What ('uninstall ' + $name)
+            }
+            finally { $script:SujiElevated = $false }
+            Assert-Equal (Get-TreeState $t.Outside) $before ('outside untouched ' + $name)
+            Assert-Equal (Get-TreeState $t.Config) $cfgBefore ('folder untouched ' + $name)
+            Assert-Equal @(Get-ChildItem -LiteralPath $t.Dir -Directory -Filter 'mpv-respaldo-suji-*').Count 0 ('no backup ' + $name)
         }
-        finally { $script:SujiElevated = $false }
-        Assert-Equal (Get-TreeState $t.Outside) $before ('outside untouched ' + $case[0])
-        Assert-Equal (Get-TreeState $t.Config) $cfgBefore ('folder untouched ' + $case[0])
-        Assert-Equal @(Get-ChildItem -LiteralPath $t.Dir -Directory -Filter 'mpv-respaldo-suji-*').Count 0 ('no backup ' + $case[0])
     }
 }
 
-Test-Case 'as administrator, each write checks again, not only the check at the start' {
-    $t = New-LinkedConfig 'link-admin-write' 'mpv.conf'
+Test-Case 'each write checks again, not only the check at the start' {
+    $t = New-LinkedConfig 'link-write' 'mpv.conf'
     if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
-    $script:SujiElevated = $true
-    try {
-        Assert-Throws { Update-SujiMpvConf $t.Config } -Like '*is a link*' -What 'mpv.conf'
-        Assert-Throws { Write-SujiText -Path (P @($t.Config, 'mpv.conf')) -Text 'x' -Root $t.Config } -Like '*is a link*' -What 'Write-SujiText'
-    }
-    finally { $script:SujiElevated = $false }
+    Assert-Throws { Update-SujiMpvConf $t.Config } -Like '*is a link*' -What 'mpv.conf'
+    New-Item -ItemType SymbolicLink -Path (P @($t.Config, 'suji-installed.txt')) -Target (P @($t.Outside, 'file.conf')) | Out-Null
+    Assert-Throws { Write-SujiRecord -ConfigDir $t.Config -Values ([ordered]@{ suji_version = 'dev' }) -Aside @() } -Like '*is a link*' -What 'record'
+    Assert-Throws { Write-SujiText -Path (P @($t.Config, 'mpv.conf')) -Text 'x' -Root $t.Config } -Like '*is a link*' -What 'Write-SujiText'
     Assert-Equal (Get-TestText (P @($t.Outside, 'file.conf'))) "volume=50`n" 'outside untouched'
-    $u = New-LinkedConfig 'link-admin-dir' 'script-opts' -Folder
-    $script:SujiElevated = $true
-    try { Assert-Throws { Update-SujiThumbfastConf -ConfigDir $u.Config -MpvPath 'C:\mpv\mpvnet.exe' } -Like '*is a link*' -What 'thumbfast.conf' }
-    finally { $script:SujiElevated = $false }
+    $u = New-LinkedConfig 'link-write-dir' 'script-opts' -Folder
+    Assert-Throws { Update-SujiThumbfastConf -ConfigDir $u.Config -MpvPath 'C:\mpv\mpvnet.exe' } -Like '*is a link*' -What 'thumbfast.conf'
+    Assert-Throws { New-SujiDirectory (P @($u.Config, 'script-opts', 'sub')) -Root $u.Config } -Like '*is a link*' -What 'folder'
+    Assert-Equal (Get-TreeState $u.Outside) ('thumbfast.conf=' + (Get-SujiFileSha256 (P @($u.Outside, 'thumbfast.conf')))) 'outside folder untouched'
     Assert-Equal (Get-TestText (P @($u.Outside, 'thumbfast.conf'))) "network=no`n" 'outside conf untouched'
-}
-
-Test-Case 'without administrator rights a linked mpv.conf is written through and stays a link' {
-    $t = New-LinkedConfig 'link-user' 'mpv.conf'
-    if ($null -eq $t) { Write-Host '     (symlinks not available, skipped)'; return }
-    Install-Test $t.Config
-    $link = Get-Item -LiteralPath (P @($t.Config, 'mpv.conf')) -Force
-    Assert-True (($link.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) 'still a link'
-    Assert-Equal (Get-TestText (P @($t.Outside, 'file.conf'))) ($Block + "`nvolume=50`n") 'written through'
-    Uninstall-Test $t.Config
-    Assert-Equal (Get-TestText (P @($t.Outside, 'file.conf'))) "volume=50`n" 'and taken out again'
 }
 
 Test-Case 'writes leave no temporary file behind' {
