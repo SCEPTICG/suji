@@ -92,7 +92,7 @@ after(0.4, function()
     local probe = mp.commandv("script-message-to", "suji", "hikari-probe")
     local margins = mp.get_property_native("user-data/suji/margins")
     local bottom = type(margins) == "table" and margins.bottom
-    finish(version == "0.4.0" and version_prop == version and missing == nil and probe == true and bottom == 62
+    finish(version == "0.5.0" and version_prop == version and missing == nil and probe == true and bottom == 62
         and at_file == "true",
         ("suji-version %s, user-data/suji/version %s on the first file-loaded, picked %s, types %s, button clicked,"
             .. " a message to no script gives %s, to suji %s, margins.bottom %s, enabled %s at load and %s on the"
