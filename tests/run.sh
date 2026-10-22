@@ -1,5 +1,6 @@
 #!/bin/sh
-# Runs the unit tests with Lua 5.1 (or $LUA), a smoke test with a windowless
+# Runs the unit tests with Lua 5.1 (or $LUA), the tests of install/suji.sh
+# (tests/install.test.sh, which needs bash and zip), a smoke test with a windowless
 # mpv and, if xvfb-run is installed, a real drag and click test, a test of
 # the messages other scripts send, a menu test (which also needs ffmpeg and
 # mkvmerge), a test of the size the more menu remembers, a thumbnail test
@@ -19,6 +20,13 @@ MENU_ROW=pause,time,space,subtitles,audio,playlist,speed,volume,fullscreen
 for t in tests/test_*.lua; do
     "$LUA" "$t" || status=1
 done
+
+# The macOS and Linux installer, on temporary folders (no mpv needed).
+if command -v bash >/dev/null 2>&1; then
+    bash tests/install.test.sh || status=1
+else
+    echo "install: skipped (no bash)"
+fi
 
 if ! command -v mpv >/dev/null 2>&1; then
     echo "smoke: skipped (no mpv)"
