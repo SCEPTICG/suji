@@ -341,6 +341,38 @@ local function test(flag, p)
 end
 T.check(not test("-L", link .. "/" .. NAME) and test("-f", link .. "/" .. NAME), "suji-size is a regular file now")
 T.eq(io.open(link .. "/" .. NAME .. ".tmp"), nil, "no .tmp left")
+-- A symbolic link as the .tmp: removed, not followed
+link = folder()
+put(link, "keep")
+os.rename(link .. "/" .. NAME, link .. "/victim")
+os.execute(("ln -s victim '%s/%s.tmp'"):format(link, NAME))
+start(link)
+package.loaded["core.size"].set(110)
+f = io.open(link .. "/victim", "rb")
+T.eq(f:read("*a"), "keep", "the file the .tmp link pointed to is left alone")
+f:close()
+T.eq(get(link), "110\n", "the size written")
+T.check(not test("-e", link .. "/" .. NAME .. ".tmp") and not test("-L", link .. "/" .. NAME .. ".tmp"), "no .tmp left")
+-- A write that fails half way (a full disk): no .tmp left
+dir = folder()
+put(dir, "90")
+start(dir)
+local counted_open = io.open
+io.open = function(p, mode)
+    if mode == "wb" and p:sub(-4) == ".tmp" then
+        local real = counted_open(p, mode)
+        return { write = function(_, s) real:write(s:sub(1, 1)); return nil, "No space left on device" end,
+                 close = function() return real:close() end }
+    end
+    return counted_open(p, mode)
+end
+package.loaded["core.size"].set(110)
+io.open = counted_open
+T.check(not test("-e", dir .. "/" .. NAME .. ".tmp"), "a failed write: no .tmp left")
+T.eq(get(dir), "90", "the file is left as it was")
+T.eq(#warnings(), 1, "one warning")
+T.near(scale(), 1.1, "the size applies anyway")
+
 -- Windows: no rename over a file that exists
 local real_rename = os.rename
 os.rename = function(a, b)

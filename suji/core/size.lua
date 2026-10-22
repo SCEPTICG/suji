@@ -125,8 +125,13 @@ local function save(n)
         warn(("size: %s is not a regular file, the size is not saved"):format(draw.printable(p, 300)))
         return
     end
+    -- A symbolic link named NAME.tmp would be followed: removed (the link,
+    -- not what it points to) before writing. A half write is removed too.
+    os.remove(tmp)
     local ok, err = write(tmp, text)
-    if ok then
+    if not ok then
+        os.remove(tmp)
+    else
         ok, err = os.rename(tmp, p)
         if not ok then
             os.remove(p)
