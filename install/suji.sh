@@ -67,7 +67,7 @@ suji_defaults() {
         'mpv.conf' 'suji-installed.txt' 'scripts/suji' 'scripts/thumbfast.lua'
         'script-opts/thumbfast.conf' 'script-opts/suji.conf' 'suji-size' 'scripts-apartados-suji'
     )
-    MPV_CONFIG_FILES=('mpv.conf' 'input.conf')
+    MPV_CONFIG_FILES=('mpv.conf' 'input.conf' 'suji-installed.txt')
     MPV_CONFIG_DIRS=('scripts' 'script-opts')
     # Scripts that replace mpv's on-screen controller and clash with suji (file
     # names in scripts/, case-insensitive), as the hikari installer lists them,
