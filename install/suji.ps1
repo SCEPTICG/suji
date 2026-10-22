@@ -117,46 +117,56 @@ $script:BlockBegin = '# >>> suji (managed block, do not edit) >>>'
 $script:BlockEnd = '# <<< suji (managed block, do not edit) <<<'
 $script:MpvConfLines = @('osc=no')
 
-# thumbfast.conf when there is none: thumbnails on network streams too, decoded
-# on the GPU, the thumbnailer started on first hover, at most 200x200.
+# thumbfast.conf as suji writes it when there is none (the same as install/suji.sh).
 $script:ThumbfastConfLines = @(
-    '# suji settings for thumbfast (https://github.com/po5/thumbfast), which draws the',
-    '# timeline thumbnails for suji. Written by the suji installer; yours to change.',
-    '# Anything not set here keeps thumbfast''s default.',
+    '# suji settings for thumbfast (https://github.com/po5/thumbfast), which makes the',
+    '# timeline thumbnails suji shows. thumbfast itself is not part of suji: the',
+    '# installer downloads it. Anything not set here keeps thumbfast''s default.',
     '',
+    '# Thumbnails on network streams too. thumbfast opens a second, hidden mpv with',
+    '# its own connection to the stream, so it uses some extra bandwidth.',
     'network=yes',
+    '',
+    '# Decode thumbnails on the GPU instead of the CPU.',
     'hwdec=yes',
+    '',
+    '# Only start the thumbnailer when the timeline is first hovered.',
     'spawn_first=no',
+    '',
+    '# Maximum thumbnail size in pixels (scaled down to fit, scaled up with hidpi).',
     'max_height=200',
     'max_width=200'
 )
+# Above the mpv_path line the installer adds.
+$script:MpvPathComment = '# Added by the suji installer: mpv started from another app may not find mpv in its PATH.'
 
 $script:RecordName = 'suji-installed.txt'
-$script:AsideDir = 'suji-apartados'
+# Interfaces set aside go here: scripts\ ones straight in, the others in their
+# sub-folder (script-opts\, fonts\).
+$script:AsideDir = 'scripts-apartados-suji'
 $script:BackupKeep = 3
 # suji's own settings and the size it remembers: only removed when the user says so.
 $script:UserFiles = @('script-opts/suji.conf', 'suji-size')
 # What a backup copies when it is there: what the installer may change.
-$script:BackupItems = @('mpv.conf', 'scripts/suji', 'scripts/thumbfast.lua', 'script-opts/thumbfast.conf',
-    'script-opts/suji.conf', 'suji-size', 'suji-installed.txt', 'suji-apartados')
+$script:BackupItems = @('mpv.conf', 'suji-installed.txt', 'scripts/suji', 'scripts/thumbfast.lua',
+    'script-opts/thumbfast.conf', 'script-opts/suji.conf', 'suji-size', 'scripts-apartados-suji')
 
 # Signs that a folder belongs to mpv (any of them is enough).
-$script:MpvConfigFiles = @('mpv.conf', 'input.conf', 'suji-installed.txt', 'hikari-installed.txt')
+$script:MpvConfigFiles = @('mpv.conf', 'input.conf', 'suji-installed.txt')
 $script:MpvConfigDirs = @('scripts', 'script-opts')
 $script:PlayerExes = @('mpvnet.exe', 'mpv.exe')
 
 # On-screen controllers that clash with suji, the ones hikari sets aside plus
-# uosc. Matched against names in scripts/ (wildcards, case-insensitive); each
-# one's script-opts/<name>.conf goes with it, and the fonts that clearly belong
-# to one of them.
+# uosc (scripts/uosc or scripts/uosc.lua). Matched against names in scripts/
+# (wildcards, case-insensitive); each one's script-opts/<name>.conf goes with
+# it, and the fonts that clearly belong to one of them.
 $script:ConflictPatterns = @(
     'osc.lua', 'osc_*.lua', 'osc-*.lua', 'oscc.lua', 'oscc_*.lua', 'oscc-*.lua',
     'modernx*.lua', 'modernz*.lua', 'mordenx*.lua', 'mpv-osc-*.lua',
     'mfpbar.lua', 'mpv_thumbnail_script_client_osc*.lua', 'uosc.lua'
 )
-$script:ConflictDirs = @('uosc', 'uosc_shared')
+$script:ConflictDirs = @('uosc')
 $script:ConflictFontPatterns = @('modernx*', 'modernz*', 'mordenx*')
-$script:UoscFonts = @('uosc_icons.otf', 'uosc_textures.ttf')
 
 # Folder of this file; empty when run through iex or [scriptblock]::Create.
 $script:SujiScriptRoot = $PSScriptRoot
@@ -188,7 +198,7 @@ $script:SujiStringsEn = @{
     kind_folder          = 'config folder'
     tag_installed        = '[suji {0} installed]'
     tag_manual           = '[suji files present, no installer record]'
-    tag_hikari           = '[hikari installed: use the hikari installer]'
+    tag_hikari           = '[hikari: use its installer]'
     tag_readonly         = '[no write permission]'
     tag_new              = '[will be created]'
     opt_other            = 'O) Other folder'
@@ -223,7 +233,7 @@ $script:SujiStringsEn = @{
     thumbfast_uptodate   = 'thumbfast is already installed, unchanged: not copied again.'
     mpvpath_set          = 'thumbfast.conf: mpv_path={0}'
     malformed_block      = '{0} has an incomplete or repeated suji block (a start or end marker is missing or twice). Fix it by hand and run the installer again. Nothing was changed in that folder.'
-    hikari_present       = 'hikari is installed in {0}: this folder is left alone. To use suji there, run the hikari installer with -Interface suji.'
+    hikari_present       = '{0} has hikari: nothing is changed there. hikari installs suji itself: use the hikari installer with -Interface suji.'
     install_ok           = 'suji {0} installed in {1}.'
     uninstall_ok         = 'suji removed from {0}.'
     target_failed        = '{0}: {1}'
@@ -271,7 +281,7 @@ $script:SujiStringsEs = @{
     kind_folder          = 'carpeta de configuraci\u00f3n'
     tag_installed        = '[suji {0} instalado]'
     tag_manual           = '[hay ficheros de suji, sin registro del instalador]'
-    tag_hikari           = '[hikari instalado: usa el instalador de hikari]'
+    tag_hikari           = '[hikari: usa su instalador]'
     tag_readonly         = '[sin permiso de escritura]'
     tag_new              = '[se crear\u00e1]'
     opt_other            = 'O) Otra carpeta'
@@ -306,7 +316,7 @@ $script:SujiStringsEs = @{
     thumbfast_uptodate   = 'thumbfast ya est\u00e1 instalado y sin cambios: no se vuelve a copiar.'
     mpvpath_set          = 'thumbfast.conf: mpv_path={0}'
     malformed_block      = '{0} tiene un bloque de suji incompleto o repetido (falta una marca de inicio o de fin, o est\u00e1 dos veces). Arr\u00e9glalo a mano y vuelve a ejecutar el instalador. No se ha cambiado nada en esa carpeta.'
-    hikari_present       = 'hikari est\u00e1 instalado en {0}: esa carpeta no se toca. Para usar suji ah\u00ed, ejecuta el instalador de hikari con -Interface suji.'
+    hikari_present       = '{0} tiene hikari: no se cambia nada ah\u00ed. hikari ya instala suji: usa el instalador de hikari con -Interface suji.'
     install_ok           = 'suji {0} instalado en {1}.'
     uninstall_ok         = 'suji quitado de {0}.'
     target_failed        = '{0}: {1}'
@@ -709,11 +719,13 @@ function Resolve-SujiShim {
     return $Exe
 }
 
-# hikari in the folder, as its own installer recognises it: its record, or its
-# scripts (hikari-*.lua).
+# hikari (or sosc, its name before v0.3.0) in the folder, as the hikari
+# installer itself recognises it: its record, or its scripts (hikari-*.lua).
 function Test-SujiHikariPresent {
     param([string]$ConfigDir)
-    if (Test-Path -LiteralPath (Join-SujiPath $ConfigDir 'hikari-installed.txt') -PathType Leaf) { return $true }
+    foreach ($name in @('hikari-installed.txt', 'sosc-installed.txt')) {
+        if ($null -ne (Get-Item -LiteralPath (Join-SujiPath $ConfigDir $name) -Force -ErrorAction SilentlyContinue)) { return $true }
+    }
     $scripts = Join-SujiPath $ConfigDir 'scripts'
     return ((Test-Path -LiteralPath $scripts -PathType Container) -and
         @(Get-ChildItem -LiteralPath $scripts -Filter 'hikari-*.lua' -File -Force).Count -gt 0)
@@ -1074,12 +1086,14 @@ function Update-SujiThumbfastConf {
     param([string]$ConfigDir, [string]$MpvPath)
     $opts = Join-SujiPath $ConfigDir 'script-opts'
     $path = Join-SujiPath $opts 'thumbfast.conf'
+    # The lines added for mpv_path: a blank line, why, and the line itself.
+    $added = { param([string]$Eol) $Eol + $script:MpvPathComment + $Eol + 'mpv_path=' + $MpvPath + $Eol }
     $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
     if ($null -eq $item) {
         New-SujiDirectory $opts
-        $lines = @($script:ThumbfastConfLines)
-        if ($MpvPath) { $lines += 'mpv_path=' + $MpvPath }
-        Write-SujiText -Path $path -Text ([string]::Join("`r`n", $lines) + "`r`n")
+        $text = [string]::Join("`r`n", $script:ThumbfastConfLines) + "`r`n"
+        if ($MpvPath) { $text += & $added "`r`n" }
+        Write-SujiText -Path $path -Text $text
     }
     else {
         if (-not $MpvPath -or $item.PSIsContainer -or (Test-SujiLink $item)) { return }
@@ -1088,7 +1102,7 @@ function Update-SujiThumbfastConf {
         $eol = Get-SujiEol $file.Text
         $text = $file.Text
         if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $text += $eol }
-        Write-SujiText -Path $path -Text ($text + 'mpv_path=' + $MpvPath + $eol) -Encoding $file.Encoding -Bom $file.Bom
+        Write-SujiText -Path $path -Text ($text + (& $added $eol)) -Encoding $file.Encoding -Bom $file.Bom
     }
     if ($MpvPath) { Write-SujiInfo (T 'mpvpath_set' @($MpvPath)) }
 }
@@ -1414,7 +1428,7 @@ function Find-SujiConflicts {
         else { foreach ($pattern in $script:ConflictPatterns) { if ($item.Name -like $pattern) { $hit = $true; break } } }
         if (-not $hit) { continue }
         $found.Add('scripts/' + $item.Name)
-        $names.Add(($item.Name -replace '\.lua$', '' -replace '_shared$', ''))
+        $names.Add(($item.Name -replace '\.lua$', ''))
     }
     foreach ($n in @($names | Select-Object -Unique)) {
         if (Test-Path -LiteralPath (Join-SujiPath $ConfigDir @('script-opts', ($n + '.conf'))) -PathType Leaf) { $found.Add('script-opts/' + $n + '.conf') }
@@ -1423,7 +1437,6 @@ function Find-SujiConflicts {
     if ($names.Count -gt 0 -and (Test-Path -LiteralPath $fonts -PathType Container)) {
         foreach ($item in @(Get-ChildItem -LiteralPath $fonts -File -Force)) {
             $owned = $false
-            if ($names -contains 'uosc' -and $script:UoscFonts -contains $item.Name) { $owned = $true }
             foreach ($pattern in $script:ConflictFontPatterns) {
                 if ($item.Name -like $pattern -and @($names | Where-Object { $_ -like $pattern }).Count -gt 0) { $owned = $true }
             }
@@ -1434,12 +1447,12 @@ function Find-SujiConflicts {
 }
 
 # Moves an item of the folder (relative path) into the folder of set-aside
-# things, keeping its sub-folder (scripts/, script-opts/, fonts/). Returns
-# "aside|original" (relative).
+# things: from scripts/ straight in, from script-opts/ and fonts/ into that
+# sub-folder. Returns "aside|original" (relative).
 function Move-SujiAside {
     param([string]$ConfigDir, [string]$Rel, [string]$Stamp)
     $path = Join-SujiRel $ConfigDir $Rel
-    $dest = Join-SujiRel $ConfigDir ($script:AsideDir + '/' + $Rel)
+    $dest = Join-SujiRel $ConfigDir ($script:AsideDir + '/' + ($Rel -replace '^scripts/', ''))
     if (Test-Path -LiteralPath $dest) {
         $name = Split-Path -Path $dest -Leaf
         $ext = [System.IO.Path]::GetExtension($name)
@@ -1481,13 +1494,16 @@ function Restore-SujiAside {
     }
 }
 
-# Removes the folder when it is a real folder with no files left in it.
+# Removes the folder when it is a real folder with no files left in it
+# (-Strict: with nothing at all in it).
 function Remove-SujiEmptyDir {
-    param([string]$ConfigDir, [string]$Rel)
+    param([string]$ConfigDir, [string]$Rel, [switch]$Strict)
     $dir = Join-SujiRel $ConfigDir $Rel
     $item = Get-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
-    if ($null -ne $item -and $item.PSIsContainer -and -not (Test-SujiLink $item) -and
-        @(Get-ChildItem -LiteralPath $dir -Recurse -Force | Where-Object { -not $_.PSIsContainer }).Count -eq 0) {
+    if ($null -eq $item -or -not $item.PSIsContainer -or (Test-SujiLink $item)) { return }
+    if ($Strict) { $left = @(Get-ChildItem -LiteralPath $dir -Force) }
+    else { $left = @(Get-ChildItem -LiteralPath $dir -Recurse -Force | Where-Object { -not $_.PSIsContainer }) }
+    if ($left.Count -eq 0) {
         Remove-SujiItem -Path $dir -Root $ConfigDir
     }
 }
@@ -1515,11 +1531,19 @@ function Install-SujiTarget {
     if (Test-SujiHikariPresent $config) { throw (T 'hikari_present' @($config)) }
     Assert-SujiMpvConf $config
 
-    $backup = ''
+    # Interfaces that clash with suji: asked first, so the backup has them.
+    $moving = @()
     $conflicts = @()
+    if (Test-Path -LiteralPath $config -PathType Container) { $conflicts = @(Find-SujiConflicts $config) }
+    if ($conflicts.Count -gt 0) {
+        Write-SujiWarn (T 'conflicts_found')
+        foreach ($c in $conflicts) { Write-SujiWarn ('  - ' + $c) }
+        if (Confirm-Suji -Question (T 'conflicts_confirm' @($script:AsideDir)) -Default $true) { $moving = $conflicts }
+        else { Write-SujiWarn (T 'conflicts_kept') }
+    }
+    $backup = ''
     if (Test-Path -LiteralPath $config -PathType Container) {
-        $conflicts = @(Find-SujiConflicts $config)
-        $backup = New-SujiBackupStep -ConfigDir $config -Stamp $Stamp -Extra $conflicts
+        $backup = New-SujiBackupStep -ConfigDir $config -Stamp $Stamp -Extra $moving
     }
     else { New-SujiDirectory $config }
 
@@ -1538,7 +1562,6 @@ function Install-SujiTarget {
         $values['suji_version'] = $Source.Version
         $values['installed_at'] = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')
         $values['player'] = $Candidate.Kind
-        $values['player_exe'] = $Candidate.Exe
         $values['thumbfast_preexisting'] = ConvertTo-SujiYesNo (& $prev 'thumbfast_preexisting' (Test-Path -LiteralPath $thumb -PathType Leaf))
         $values['thumbfast_conf_preexisting'] = ConvertTo-SujiYesNo (& $prev 'thumbfast_conf_preexisting' `
             (Test-Path -LiteralPath (Join-SujiPath $config @('script-opts', 'thumbfast.conf')) -PathType Leaf))
@@ -1547,28 +1570,36 @@ function Install-SujiTarget {
         $aside = New-Object System.Collections.Generic.List[string]
         if ($null -ne $old) { foreach ($a in $old.Aside) { $aside.Add($a) } }
 
-        # Interfaces that clash with suji: set aside, never deleted. The record
-        # is written right after, so a failure later never leaves them unrecorded.
-        if ($conflicts.Count -gt 0) {
-            Write-SujiWarn (T 'conflicts_found')
-            foreach ($c in $conflicts) { Write-SujiWarn ('  - ' + $c) }
-            if (Confirm-Suji -Question (T 'conflicts_confirm' @($script:AsideDir)) -Default $true) {
-                foreach ($c in $conflicts) { $aside.Add((Move-SujiAside -ConfigDir $config -Rel $c -Stamp $Stamp)) }
-                Write-SujiRecord -ConfigDir $config -Values $values -Aside $aside.ToArray()
-            }
-            else { Write-SujiWarn (T 'conflicts_kept') }
+        # Set aside, never deleted, and recorded as soon as each one moves, so a
+        # failure later never leaves one unrecorded.
+        Write-SujiRecord -ConfigDir $config -Values $values -Aside $aside.ToArray()
+        foreach ($c in $moving) {
+            $aside.Add((Move-SujiAside -ConfigDir $config -Rel $c -Stamp $Stamp))
+            Write-SujiRecord -ConfigDir $config -Values $values -Aside $aside.ToArray()
         }
 
+        # thumbfast: not copied again when it is exactly as pinned.
         New-SujiDirectory $scripts
-        $dest = Join-SujiPath $scripts 'suji'
-        Remove-SujiItem -Path $dest -Root $config
-        Copy-SujiTree -From $Source.SujiDir -To $dest
-
         if (Test-SujiThumbfastUpToDate $config) { Write-SujiInfo (T 'thumbfast_uptodate') }
         else {
             if (-not $ThumbfastFile) { throw (T 'source_missing' @($script:ThumbfastUrl)) }
             Remove-SujiItem -Path $thumb -Root $config
             Copy-Item -LiteralPath $ThumbfastFile -Destination $thumb -Force
+        }
+
+        # suji: copied next to the old one first, so a failed copy leaves the
+        # old one in place.
+        $dest = Join-SujiPath $scripts 'suji'
+        $tmp = Join-SujiPath $scripts ('.suji-new-' + [guid]::NewGuid().ToString('N'))
+        try {
+            Copy-SujiTree -From $Source.SujiDir -To $tmp
+            Remove-SujiItem -Path $dest -Root $config
+            Move-Item -LiteralPath $tmp -Destination $dest
+        }
+        catch {
+            $failure = $_
+            try { Remove-SujiItem -Path $tmp -Root $config } catch { }
+            throw $failure
         }
 
         # mpv.net (and AnimeJaNai) do not always tell thumbfast where they are.
@@ -1623,8 +1654,11 @@ function Uninstall-SujiTarget {
         }
 
         Remove-SujiItem -Path (Join-SujiPath $config $script:RecordName) -Root $config
-        # Folders left without files (suji may have created them) go too.
-        foreach ($dir in @($script:AsideDir, 'scripts', 'script-opts', 'fonts')) { Remove-SujiEmptyDir -ConfigDir $config -Rel $dir }
+        # Folders left empty go too: the set-aside one when no file is left in
+        # it, scripts and script-opts when suji may have created them.
+        Remove-SujiEmptyDir -ConfigDir $config -Rel $script:AsideDir
+        Remove-SujiEmptyDir -ConfigDir $config -Rel 'script-opts' -Strict
+        Remove-SujiEmptyDir -ConfigDir $config -Rel 'scripts' -Strict
     }
     catch { throw (Get-SujiRestoreMessage -Message $_.Exception.Message -Backup $backup) }
     Write-SujiOk (T 'uninstall_ok' @($config))
@@ -1755,11 +1789,17 @@ function Select-SujiTargets {
         }
     }
 
-    # Folders that must never be used, and folders that do not look like mpv's.
+    # Folders that must never be used, folders with hikari, and folders that do
+    # not look like mpv's.
     $safe = New-Object System.Collections.Generic.List[object]
     foreach ($c in $chosen) {
         if (Test-SujiForbiddenTarget -Env $Env -Path $c.ConfigDir) {
             Write-SujiError (T 'target_root' @($c.ConfigDir))
+            $refused = $true
+            continue
+        }
+        if (Test-SujiHikariPresent $c.ConfigDir) {
+            Write-SujiWarn (T 'hikari_present' @($c.ConfigDir))
             $refused = $true
             continue
         }

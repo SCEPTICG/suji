@@ -411,7 +411,7 @@ Test-Case 'thumbfast.conf: new for AnimeJaNai, with mpv_path to its mpvnet.exe' 
     $cfg = P @($d, 'mpv-AnimeJaNai', 'portable_config')
     Install-Test $cfg -Kind 'AnimeJaNai' -Exe $exe
     $conf = Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))
-    Assert-True ($conf.Contains("`r`nmpv_path=" + $exe + "`r`n")) ('mpv_path; got ' + $conf)
+    Assert-True ($conf.EndsWith("max_width=200`r`n`r`n" + $script:MpvPathComment + "`r`nmpv_path=" + $exe + "`r`n")) ('mpv_path; got ' + $conf)
     Assert-True ($conf.Contains("network=yes`r`n")) 'settings too'
     Install-Test $cfg -Kind 'AnimeJaNai' -Exe $exe -Stamp '20260101-000001'
     Assert-Equal (Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))) $conf 'unchanged on update'
@@ -424,7 +424,7 @@ Test-Case 'thumbfast.conf: an existing one only gets mpv_path, and only when it 
     $cfg = P @($d, 'cfg1')
     Set-TestFile (P @($cfg, 'script-opts', 'thumbfast.conf')) "network=no`nmax_height=300"
     Install-Test $cfg -Kind 'mpv.net' -Exe $exe
-    Assert-Equal (Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))) ("network=no`nmax_height=300`nmpv_path=" + $exe + "`n") 'added, LF kept'
+    Assert-Equal (Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))) ("network=no`nmax_height=300`n`n" + $script:MpvPathComment + "`nmpv_path=" + $exe + "`n") 'added, LF kept'
     $cfg2 = P @($d, 'cfg2')
     Set-TestFile (P @($cfg2, 'script-opts', 'thumbfast.conf')) "mpv_path=C:\other\mpv.exe`r`n"
     Install-Test $cfg2 -Kind 'mpv.net' -Exe $exe
@@ -514,15 +514,21 @@ Test-Case 'conflicting interfaces are set aside, recorded, and come back on unin
     Set-TestFile (P @($cfg, 'scripts', 'mine.lua')) '-- mine'
     $before = Get-TreeState $cfg
     Install-Test $cfg
-    foreach ($rel in @('scripts/osc.lua', 'scripts/modernz.lua', 'script-opts/modernz.conf', 'fonts/modernz-icons.ttf', 'scripts/uosc', 'script-opts/uosc.conf', 'fonts/uosc_icons.otf')) {
+    $moved = [ordered]@{
+        'scripts/osc.lua' = 'osc.lua'; 'scripts/modernz.lua' = 'modernz.lua'; 'script-opts/modernz.conf' = 'script-opts/modernz.conf'
+        'fonts/modernz-icons.ttf' = 'fonts/modernz-icons.ttf'; 'scripts/uosc' = 'uosc'; 'script-opts/uosc.conf' = 'script-opts/uosc.conf'
+    }
+    foreach ($rel in $moved.Keys) {
         Assert-True (-not (Test-Exists (Join-SujiRel $cfg $rel))) ($rel + ' moved')
-        Assert-True (Test-Exists (Join-SujiRel $cfg ('suji-apartados/' + $rel))) ($rel + ' set aside')
+        Assert-True (Test-Exists (Join-SujiRel $cfg ('scripts-apartados-suji/' + $moved[$rel]))) ($rel + ' set aside')
     }
     Assert-True (Test-Exists (P @($cfg, 'scripts', 'mine.lua'))) 'other scripts stay'
     Assert-True (Test-Exists (P @($cfg, 'fonts', 'other.ttf'))) 'other fonts stay'
+    Assert-True (Test-Exists (P @($cfg, 'fonts', 'uosc_icons.otf'))) 'uosc fonts stay, as in the hikari installer'
     $rec = Read-SujiRecord $cfg
-    Assert-Equal @($rec.Aside).Count 7 'recorded'
-    Assert-True (@($rec.Aside) -contains 'suji-apartados/scripts/uosc|scripts/uosc') 'uosc entry'
+    Assert-Equal @($rec.Aside).Count 6 'recorded'
+    Assert-True (@($rec.Aside) -contains 'scripts-apartados-suji/uosc|scripts/uosc') 'uosc entry'
+    Assert-True (@($rec.Aside) -contains 'scripts-apartados-suji/script-opts/uosc.conf|script-opts/uosc.conf') 'uosc.conf entry'
     Uninstall-Test $cfg
     Assert-Equal (Get-TreeState $cfg) $before 'all back, nothing else left'
 }
@@ -542,7 +548,7 @@ Test-Case 'conflicts kept when the user says no; a second install keeps the firs
     Install-Test $cfg -Stamp '20260101-000002'
     $aside = @((Read-SujiRecord $cfg).Aside)
     Assert-Equal $aside.Count 2 'both recorded'
-    Assert-Equal $aside[1] 'suji-apartados/scripts/osc-20260101-000002.lua|scripts/osc.lua' 'renamed, not overwritten'
+    Assert-Equal $aside[1] 'scripts-apartados-suji/osc-20260101-000002.lua|scripts/osc.lua' 'renamed, not overwritten'
 }
 
 Test-Case 'a tampered record cannot move things outside the folder' {
@@ -552,7 +558,7 @@ Test-Case 'a tampered record cannot move things outside the folder' {
     Set-TestFile (P @($d, 'victim.txt')) 'victim'
     $rec = P @($cfg, 'suji-installed.txt')
     $text = Get-TestText $rec
-    $text += "disabled=../victim.txt|scripts/x.lua`r`ndisabled=suji-apartados/a|../../x`r`ndisabled=suji-apartados/a|mpv.conf`r`n"
+    $text += "disabled=../victim.txt|scripts/x.lua`r`ndisabled=scripts-apartados-suji/a|../../x`r`ndisabled=scripts-apartados-suji/a|mpv.conf`r`n"
     Set-TestFile $rec $text
     Assert-Equal @((Read-SujiRecord $cfg -NoWarn).Aside).Count 0 'all three refused'
     Uninstall-Test $cfg
@@ -564,21 +570,25 @@ Test-Case 'a tampered record cannot move things outside the folder' {
 # ---------------------------------------------------------------------------
 
 Test-Case 'a folder with hikari is not touched, on install or uninstall' {
-    foreach ($sign in @('record', 'scripts')) {
+    foreach ($sign in @('record', 'sosc', 'scripts')) {
         $d = New-TestDir ('hikari-' + $sign)
         $cfg = P @($d, 'mpv')
         if ($sign -eq 'record') { Set-TestFile (P @($cfg, 'hikari-installed.txt')) "hikari_version=1.0.0`n" }
+        elseif ($sign -eq 'sosc') { Set-TestFile (P @($cfg, 'sosc-installed.txt')) "sosc_version=0.3.0`n" }
         else { Set-TestFile (P @($cfg, 'scripts', 'hikari-palettes.lua')) '-- hikari' }
         Set-TestFile (P @($cfg, 'scripts', 'osc.lua')) '-- an osc'
         Set-TestFile (P @($cfg, 'scripts', 'suji', 'main.lua')) '-- suji installed by hikari'
         $before = Get-TreeState $cfg
-        Assert-Throws { Install-Test $cfg } -Like '*hikari is installed in*-Interface suji*' -What ('install ' + $sign)
-        Assert-Throws { Uninstall-Test $cfg } -Like '*hikari is installed in*' -What ('uninstall ' + $sign)
+        Assert-Throws { Install-Test $cfg } -Like '*has hikari: nothing is changed there*-Interface suji*' -What ('install ' + $sign)
+        Assert-Throws { Uninstall-Test $cfg } -Like '*has hikari*' -What ('uninstall ' + $sign)
+        foreach ($action in @('install', 'uninstall')) {
+            Assert-Equal (Invoke-SujiMain -Action $action -Target @($cfg) -Yes $true -Environment (New-FakeEnv $d)) 2 ('-Yes ' + $action + ' ' + $sign)
+        }
         Assert-Equal (Get-TreeState $cfg) $before ('untouched ' + $sign)
         Assert-Equal @(Get-ChildItem -LiteralPath $d).Count 1 ('no backup ' + $sign)
         $c = New-SujiCandidate -Env (New-FakeEnv $d) -Kind 'folder' -Exe '' -ConfigDir $cfg -Portable $false
         Assert-True $c.Hikari ('tagged ' + $sign)
-        Assert-True ((Get-SujiCandidateTags $c).Contains('use the hikari installer')) 'tag text'
+        Assert-True ((Get-SujiCandidateTags $c).Contains('[hikari: use its installer]')) 'tag text'
     }
 }
 
@@ -692,10 +702,18 @@ Test-Case 'main: exit codes for wrong usage and for a failed folder' {
     $saved = $script:SujiScriptRoot
     try {
         $script:SujiScriptRoot = P @($RepoRoot, 'install')
-        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @($hk) -Yes $true -Environment $fake) 1 'hikari folder: failed'
+        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @($hk) -Yes $true -Environment $fake) 2 'hikari folder: refused'
         $one = P @($d, 'one')
-        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @(($one + ';' + $hk)) -Yes $true -Environment $fake) 1 'one of two failed'
+        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @(($one + ';' + $hk)) -Yes $true -Environment $fake) 2 'with -Yes, one refused: nothing done'
+        Assert-True (-not (Test-Exists $one)) 'the other one not installed either'
+        # Interactive: the hikari folder is left out, the other one installed.
+        $script:NonInteractive = $false
+        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @(($one + ';' + $hk)) -Yes $false -Environment $fake) 0 'interactive'
         Assert-True (Test-Exists (P @($one, 'scripts', 'suji', 'main.lua'))) 'the other one installed'
+        # A folder that fails: exit code 1.
+        $bad = P @($d, 'bad')
+        Set-TestFile (P @($bad, 'mpv.conf')) "# >>> suji (managed block, do not edit) >>>`n"
+        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @(($one + ';' + $bad)) -Yes $true -Environment $fake) 1 'one of two failed'
     }
     finally { $script:SujiScriptRoot = $saved }
     $script:NonInteractive = $false
@@ -844,7 +862,7 @@ Test-Case 'release through iex and through [scriptblock]::Create: install, updat
     Assert-Equal ([string]::Join(' ', @($run.Report.Downloads))) ($TestReleaseUrl + ' ' + $script:ThumbfastUrl) 'downloads'
     Assert-True ($run.Text.Contains('Done: 1 of 1 folders. Restart the player to see the changes.')) ('last line; output: ' + $run.Text)
     Assert-Equal (Get-TestText (P @($cfg, 'scripts', 'suji', 'main.lua'))) (Get-TestText (P @($Source.SujiDir, 'main.lua'))) 'installed'
-    Assert-True (Test-Exists (P @($cfg, 'suji-apartados', 'scripts', 'osc.lua'))) 'osc set aside'
+    Assert-True (Test-Exists (P @($cfg, 'scripts-apartados-suji', 'osc.lua'))) 'osc set aside'
     Assert-Equal (Read-SujiRecord $cfg).Values['suji_version'] '9.9.9' 'record'
     Assert-Equal @(Get-ChildItem -LiteralPath $tmp -Force).Count 0 'temp folder removed'
 
