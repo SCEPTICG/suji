@@ -613,6 +613,20 @@ check 'the Flatpak app folder linked elsewhere: the planted file untouched' same
 check 'the Flatpak app folder linked elsewhere: nothing installed' test ! -e "$disk/io.mpv.Mpv/config/mpv/scripts"
 run "$h" --yes --action install --target "$disk/io.mpv.Mpv/config/mpv"
 check 'the Flatpak app folder linked elsewhere, --target to the real folder: refused' test "$rc" = 2 -a ! -e "$disk/io.mpv.Mpv/config/mpv/scripts"
+# An app folder that cannot be read is no link: it does not get in the way.
+h=$(newhome app-unreadable)
+mkdir -p "$h/.var/app/org.other.App"
+chmod 000 "$h/.var/app/org.other.App"
+run "$h" --yes --action install
+chmod 755 "$h/.var/app/org.other.App"
+check 'an unreadable app folder that is no link: mpv installed all the same' test "$rc" = 0 -a -f "$h/.config/mpv/scripts/suji/main.lua"
+# A link there that cannot be followed: every folder refused, naming it.
+h=$(newhome app-dangling)
+mkdir -p "$h/.var/app"
+ln -s "$tmp/no-such-disk/app" "$h/.var/app/org.other.App"
+run "$h" --yes --action install
+check 'a link in ~/.var/app that cannot be followed: refused' test "$rc" = 2 -a ! -e "$h/.config/mpv/scripts"
+check 'a link in ~/.var/app that cannot be followed: named' has "$out" "because $h/.var/app/org.other.App is a link that cannot be followed"
 h=$(newhome var-link2)
 disk="$tmp/disk-var2"
 mkdir -p "$disk/.var/app/io.mpv.Mpv/config/mpv"

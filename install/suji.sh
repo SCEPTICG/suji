@@ -132,6 +132,7 @@ suji_text_en() {
         tag_installed) s='[suji %s installed]' ;;
         tag_hikari) s='[hikari: use its installer]' ;;
         tag_sandbox) s='[not supported: install suji by hand]' ;;
+        link_unknown) s='%s: refused, because %s is a link that cannot be followed (it may lead into a Flatpak or Snap folder). Nothing was changed there.' ;;
         path_unknown) s='%s: could not tell where that folder really leads (its links cannot be followed), so it is refused. Nothing was changed there.' ;;
         link_refused) s='%s is a link that leads into a Flatpak or Snap folder, or where it leads cannot be told: nothing was changed in that folder.' ;;
         sandbox_here) s='%s: mpv from Flatpak or Snap is not supported by the installer: install suji by hand (https://github.com/SCEPTICG/suji#by-hand). Nothing was changed there.' ;;
@@ -216,6 +217,7 @@ suji_text_es() {
         tag_installed) s='[suji %s instalado]' ;;
         tag_hikari) s='[hikari: usa su instalador]' ;;
         tag_sandbox) s='[no compatible: instala suji a mano]' ;;
+        link_unknown) s='%s: se rechaza, porque %s es un enlace que no se puede seguir (podría llevar a una carpeta de Flatpak o Snap). No se ha cambiado nada ahí.' ;;
         path_unknown) s='%s: no se ha podido saber adónde lleva de verdad esa carpeta (no se pueden seguir sus enlaces), así que se rechaza. No se ha cambiado nada ahí.' ;;
         link_refused) s='%s es un enlace que lleva a una carpeta de Flatpak o Snap, o no se puede saber adónde lleva: no se ha cambiado nada en esa carpeta.' ;;
         sandbox_here) s='%s: el instalador no es compatible con mpv de Flatpak o Snap: instala suji a mano (https://github.com/SCEPTICG/suji#by-hand). No se ha cambiado nada ahí.' ;;
@@ -529,28 +531,15 @@ physical_path() {
 # would lead the installer out of the sandbox. When where it leads cannot be
 # told, it counts as one too (SANDBOX_WHY=unknown): such a path is refused.
 sandboxed() {
-    local home phome p pp pre pres
+    local p pp pre
     SANDBOX_WHY=unknown
-    home=$(abs_path "$HOME") || return 0
-    phome=$(physical_path "$home") || return 0
+    SANDBOX_NAME=$1
+    if [ -n "$SANDBOX_BAD" ]; then SANDBOX_NAME=$SANDBOX_BAD; return 0; fi
     p=$(abs_path "$1") || return 0
     pp=$(physical_path "$p") || return 0
-    # The sandbox folders as written and with their own links resolved (~/.var
-    # may be a link to another disk).
-    pres=("$home/.var/app" "$home/snap" "$phome/.var/app" "$phome/snap")
-    pre=$(physical_path "$home/.var/app") || return 0
-    pres[${#pres[@]}]=$pre
-    pre=$(physical_path "$home/snap") || return 0
-    pres[${#pres[@]}]=$pre
-    # Each app's folder too, which may itself be a link to another disk.
-    for pre in "$home"/.var/app/* "$home"/snap/*; do
-        [ -e "$pre" ] || [ -L "$pre" ] || continue
-        pre=$(physical_path "$pre") || return 0
-        pres[${#pres[@]}]=$pre
-    done
     SANDBOX_WHY=sandbox
     for p in "$p" "$pp"; do
-        for pre in "${pres[@]}"; do
+        for pre in ${SANDBOX_PRES[@]+"${SANDBOX_PRES[@]}"}; do
             case $p in "$pre"/?*) return 0 ;; esac
         done
     done
@@ -558,10 +547,36 @@ sandboxed() {
     return 1
 }
 
-# Why folder $1 is refused, after sandboxed said so: Flatpak or Snap, or a
-# path that cannot be followed.
+# The folders sandboxed() compares with, worked out once (main): ~/.var/app
+# and ~/snap as written, under the physical home folder and with their own
+# links resolved (~/.var may be a link to another disk), and each app folder
+# in them that is a link. A plain folder in them is covered already. When
+# one of those cannot be resolved, SANDBOX_BAD names it and every folder is
+# refused (it might lead anywhere).
+sandbox_prefixes() {
+    local home phome e pre
+    SANDBOX_PRES=()
+    SANDBOX_BAD=''
+    home=$(abs_path "$HOME") || { SANDBOX_BAD=$HOME; return 0; }
+    phome=$(physical_path "$home") || { SANDBOX_BAD=$home; return 0; }
+    SANDBOX_PRES=("$home/.var/app" "$home/snap" "$phome/.var/app" "$phome/snap")
+    for e in "$home/.var/app" "$home/snap" "$home"/.var/app/* "$home"/snap/*; do
+        case $e in
+            "$home/.var/app" | "$home/snap") ;;
+            *) [ -L "$e" ] || continue
+               # A link that leads to no folder cannot be told apart.
+               [ -d "$e" ] || { SANDBOX_BAD=$e; return 0; } ;;
+        esac
+        if pre=$(physical_path "$e"); then SANDBOX_PRES[${#SANDBOX_PRES[@]}]=$pre; else SANDBOX_BAD=$e; return 0; fi
+    done
+}
+
+# Why folder $1 is refused, after sandboxed said so: Flatpak or Snap, a path
+# that cannot be followed, or a link in ~/.var/app or ~/snap that cannot.
 refusal_text() {
-    if [ "$SANDBOX_WHY" = unknown ]; then T path_unknown "$(clean_text "$1")"; else T sandbox_here "$(clean_text "$1")"; fi
+    if [ "$SANDBOX_WHY" != unknown ]; then T sandbox_here "$(clean_text "$1")"
+    elif [ "$SANDBOX_NAME" != "$1" ]; then T link_unknown "$(clean_text "$1")" "$(clean_text "$SANDBOX_NAME")"
+    else T path_unknown "$(clean_text "$1")"; fi
 }
 
 # Fails, with SUJI_ERR set, when a file the installer writes through (or a
@@ -1610,6 +1625,9 @@ main() {
     SCRIPT_FILE=${BASH_SOURCE[0]:-}
     SUJI_ERR=''
     SANDBOX_WHY=''
+    SANDBOX_NAME=''
+    SANDBOX_PRES=()
+    SANDBOX_BAD=''
     TEMP_DIR=''
     REFUSED=0
     USAGE_ERROR=0
@@ -1627,6 +1645,7 @@ main() {
     OS=$(suji_uname)
     case $OS in Darwin | Linux) ;; *) error "$(T unsupported_os "$(clean_text "$OS")")"; return 2 ;; esac
     if [ "$(suji_euid)" = 0 ]; then error "$(T root_refused)"; return 2; fi
+    sandbox_prefixes
     action=$OPT_ACTION
 
     io_setup
