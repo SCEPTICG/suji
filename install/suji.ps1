@@ -43,7 +43,8 @@
 
 .PARAMETER SujiYes
     Use it as -Yes (alias). Do not ask: take the default answer to every
-    question. Needs -Action, and -Target when more than one folder is found.
+    question. Needs -Action, and -Target when more than one folder that can be
+    chosen is found (folders with hikari do not count).
 
 .PARAMETER SujiNoMenu
     Use it as -NoMenu (alias). Ask with numbers and typed answers instead of
@@ -2407,7 +2408,9 @@ function Select-SujiTargets {
             if ($list.Count -eq 1) { $chosen.Add($list[0]) }
             elseif ($list.Count -eq 0) {
                 foreach ($h in $hikari) { Write-SujiWarn (T 'hikari_present' @($h.ConfigDir)) }
-                if ($Mode -eq 'uninstall') { Write-SujiError (T 'nothing_to_uninstall') } else { Write-SujiError (T 'none_found') }
+                if ($Mode -eq 'uninstall') { Write-SujiError (T 'nothing_to_uninstall') }
+                elseif ($hikari.Count -gt 0) { Write-SujiError (T 'usage_none') }
+                else { Write-SujiError (T 'none_found') }
                 return [pscustomobject]@{ Ok = $false; Targets = @() }
             }
             else {

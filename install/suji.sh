@@ -18,7 +18,9 @@
 #     --action install|uninstall   skip the first menu
 #     --target <folder>            mpv config folder to work on (repeat it for several)
 #     --yes                        no questions: take the default answer to everything
-#                                  (needs --action)
+#                                  (needs --action, and --target when more than one
+#                                  folder can be chosen; those with hikari, Flatpak
+#                                  or Snap do not count)
 #     --no-menu                    ask with numbers and typed answers, not keyboard menus
 #     --help
 #

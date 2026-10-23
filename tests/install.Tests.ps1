@@ -1323,7 +1323,15 @@ Test-Case 'main: with -Yes a folder with hikari is left out of the choice' {
         Assert-True (Test-Exists (P @($mpv, 'scripts', 'suji', 'main.lua'))) 'in mpv'
         Assert-True (-not (Test-Exists (P @($net, 'scripts')))) 'the hikari folder untouched'
         Remove-Item -LiteralPath $mpv -Recurse -Force
+        # What is said, caught here (functions are found through the caller's scope).
+        $said = New-Object System.Collections.Generic.List[string]
+        function Write-SujiError { param([string]$Message) $said.Add($Message) }
+        function Write-SujiWarn { param([string]$Message) $said.Add($Message) }
         Assert-Equal (Invoke-SujiMain -Action 'install' -Target @() -Yes $true -Environment $fake) 2 'only the hikari folder: nothing to do'
+        $text = [string]::Join("`n", $said)
+        Assert-True ($text.Contains((T 'hikari_present' @($net)))) ('the hikari warning; said: ' + $text)
+        Assert-True ($text.Contains((T 'usage_none'))) ('nothing to work on; said: ' + $text)
+        Assert-True (-not $text.Contains((T 'none_found'))) ('not "no mpv player was found"; said: ' + $text)
         Assert-True (-not (Test-Exists (P @($net, 'scripts')))) 'still untouched'
     }
     finally { $script:SujiScriptRoot = $saved }
