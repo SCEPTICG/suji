@@ -110,6 +110,18 @@ function New-TestDir {
     return $d
 }
 
+# Runs Body with TMPDIR, TEMP and TMP set to Dir (left alone when Dir is
+# empty) and gives back its output. What the installer makes in the
+# temporary folder then lands in Dir, which is the test's own: the
+# system's is shared with any other run of these tests.
+function Invoke-WithTempDir {
+    param([string]$Dir, [scriptblock]$Body)
+    $saved = @($env:TMPDIR, $env:TEMP, $env:TMP)
+    if ($Dir) { $env:TMPDIR = $Dir; $env:TEMP = $Dir; $env:TMP = $Dir }
+    try { & $Body }
+    finally { $env:TMPDIR = $saved[0]; $env:TEMP = $saved[1]; $env:TMP = $saved[2] }
+}
+
 function Set-TestFile {
     param([string]$Path, [string]$Content = 'x')
     $dir = Split-Path -Path $Path -Parent
@@ -848,10 +860,6 @@ function Reset-TestRelease {
     $script:ThumbfastSha256 = Get-SujiFileSha256 $FakeThumb
 }
 
-function Get-TempLeftovers {
-    return @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Force -Filter 'suji-install-*')
-}
-
 Test-Case 'main: a release installs from its checked zip into an AnimeJaNai portable_config' {
     $d = New-TestDir 'main-release'
     try {
@@ -862,14 +870,15 @@ Test-Case 'main: a release installs from its checked zip into an AnimeJaNai port
         $cfg = P @($fake.LocalAppData, 'Programs', 'mpv-AnimeJaNai', 'portable_config')
         Set-TestFile (P @($cfg, 'mpv.conf')) "volume=50`n"
         $script:DownloadLog.Clear()
-        $tempBefore = @(Get-TempLeftovers).Count
-        $code = Invoke-SujiMain -Action 'install' -Target @() -Yes $true -Environment $fake
+        $tmp = New-TestDir 'main-release-tmp'
+        Assert-Equal (Invoke-WithTempDir $tmp { [System.IO.Path]::GetTempPath().TrimEnd('/', '\') }) $tmp 'own temp folder'
+        $code = Invoke-WithTempDir $tmp { Invoke-SujiMain -Action 'install' -Target @() -Yes $true -Environment $fake }
         Assert-Equal $code 0 'exit code'
         Assert-Equal ([string]::Join(' ', $script:DownloadLog)) ($TestReleaseUrl + ' ' + $script:ThumbfastUrl) 'downloads'
         Assert-Equal (Get-TestText (P @($cfg, 'scripts', 'suji', 'main.lua'))) (Get-TestText (P @($Source.SujiDir, 'main.lua'))) 'from the zip'
         Assert-True ((Get-TestText (P @($cfg, 'script-opts', 'thumbfast.conf'))).Contains('mpv_path=' + $exe)) 'mpv_path'
         Assert-Equal (Read-SujiRecord $cfg).Values['player'] 'AnimeJaNai' 'player'
-        Assert-Equal @(Get-TempLeftovers).Count $tempBefore 'temp removed'
+        Assert-Equal @(Get-ChildItem -LiteralPath $tmp -Force).Count 0 'temp removed'
         # Again: thumbfast is up to date, only the zip is downloaded.
         $script:DownloadLog.Clear()
         Assert-Equal (Invoke-SujiMain -Action 'install' -Target @() -Yes $true -Environment $fake) 0 'update'
@@ -888,16 +897,16 @@ Test-Case 'main: a zip or thumbfast with the wrong hash installs nothing, anywhe
         Set-TestFile (P @($cfg, 'mpv.conf')) "volume=50`n"
         Set-TestFile (P @($cfg, 'scripts', 'osc.lua')) '-- an osc'
         $before = Get-TreeState $d
-        $tempBefore = @(Get-TempLeftovers).Count
+        $tmp = New-TestDir 'main-badhash-tmp'
         Use-TestRelease (New-TestDir 'main-badhash-zip') -Sha256 ('b' * 64)
-        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @($cfg) -Yes $true -Environment $fake) 1 'bad zip'
+        Assert-Equal (Invoke-WithTempDir $tmp { Invoke-SujiMain -Action 'install' -Target @($cfg) -Yes $true -Environment $fake }) 1 'bad zip'
         Assert-Equal (Get-TreeState $d) $before 'nothing changed, no backup'
         Reset-TestRelease
         Use-TestRelease (New-TestDir 'main-badhash-zip2')
         $script:ThumbfastSha256 = 'c' * 64
-        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @($cfg) -Yes $true -Environment $fake) 1 'bad thumbfast'
+        Assert-Equal (Invoke-WithTempDir $tmp { Invoke-SujiMain -Action 'install' -Target @($cfg) -Yes $true -Environment $fake }) 1 'bad thumbfast'
         Assert-Equal (Get-TreeState $d) $before 'nothing changed either'
-        Assert-Equal @(Get-TempLeftovers).Count $tempBefore 'temp removed'
+        Assert-Equal @(Get-ChildItem -LiteralPath $tmp -Force).Count 0 'temp removed'
     }
     finally { Reset-TestRelease }
 }
@@ -1556,13 +1565,10 @@ function Invoke-IexHarness {
     if ($YesValue) { $cmd += ' -YesValue ' + $YesValue }
     if ($StrictLatest) { $cmd += ' -StrictLatest' }
     $ErrorActionPreference = 'Continue'
-    $saved = @($env:TMPDIR, $env:TEMP, $env:TMP)
-    if ($TempDir) { $env:TMPDIR = $TempDir; $env:TEMP = $TempDir; $env:TMP = $TempDir }
-    try {
+    $out = @(Invoke-WithTempDir $TempDir {
         $stdinLines = @($Stdin) + @('')
-        $out = @($stdinLines | & $script:Pwsh -NoProfile -Command $cmd 2>&1 | ForEach-Object { [string]$_ })
-    }
-    finally { $env:TMPDIR = $saved[0]; $env:TEMP = $saved[1]; $env:TMP = $saved[2] }
+        $stdinLines | & $script:Pwsh -NoProfile -Command $cmd 2>&1 | ForEach-Object { [string]$_ }
+    })
     $r = $null
     if (Test-Path -LiteralPath $report) { $r = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json }
     return [pscustomobject]@{ Report = $r; Text = [string]::Join("`n", $out) }
