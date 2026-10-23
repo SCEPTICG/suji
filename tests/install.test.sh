@@ -717,7 +717,7 @@ check 'hikari (record only): refused' test "$rc" = 2 -a ! -e "$cfg/scripts/suji"
 # In a menu, the folder is listed with a tag and refused when chosen.
 answers '1\n1\n'
 run "$h"
-check 'hikari, menu: tagged' has "$out" '[hikari: use its installer]'
+check 'hikari, menu: listed apart, without a number' has "$out" ' -) mpv  [hikari: use its installer]'
 check 'hikari, menu: refused, exit 0' test "$rc" = 0 -a ! -e "$cfg/scripts/suji"
 no_answers
 
@@ -798,6 +798,165 @@ SUJI_TEST_NOLANG=1 LANG=en_US.UTF-8 run "$h" --help
 check 'LANG=en_US: English' has "$out" 'Usage: suji.sh'
 SUJI_TEST_NOLANG=1 LANG=en_US.UTF-8 SUJI_TEST_OS=Darwin SUJI_TEST_APPLE_LANGS='(\n    "es-ES",\n    "en-US"\n)' run "$h" --help
 check 'macOS set to Spanish: Spanish' has "$out" 'Uso: suji.sh'
+
+# --- a real terminal: keyboard menus, and keys typed too early --------------------------
+
+# pty_run <home> <keys...>: runs the release copy on a pseudo-terminal (100x40),
+# sending each key once a menu is open and drawn; killed after 20 s of silence
+# at the end (exit 124). Options for the installer in PTY_OPTS. Output in $out,
+# exit code in $rc. A key is only sent once a menu is open: the installer has
+# hidden the cursor (menu_enter) and not shown it again, and has drawn
+# something since then. With --no-menu a key is sent once the question is on
+# the screen (the output ends in ": " or "] "): what is typed before it is
+# thrown away, as in a menu. PTY_EARLY: keys typed at once, before
+# anything is asked. PTY_PIPE=1: the script comes through a pipe, a second
+# late, as with curl | bash, and the questions are read from the terminal.
+cat >"$tmp/pty.py" <<'PY'
+import os, pty, sys, time, select, signal, fcntl, termios, struct
+under, copy = sys.argv[1], sys.argv[2]
+opts = os.environ.get('PTY_OPTS', '').split()
+keys = [k.encode().decode('unicode_escape').encode('latin-1') for k in sys.argv[3:]]
+early = os.environ.get('PTY_EARLY', '').encode().decode('unicode_escape').encode('latin-1')
+if os.environ.get('PTY_PIPE'):
+    argv = [under, '-c', '(sleep 1; cat "$1") | "$0" -s -- "${@:2}"', under, copy] + opts
+else:
+    argv = [under, copy] + opts
+env = dict(os.environ)
+env.pop('SUJI_TEST_TTY', None)
+pid, fd = pty.fork()
+if pid == 0:
+    os.execve(argv[0], argv, env)
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 100, 0, 0))
+if early:
+    os.write(fd, early)
+out = b''
+def drain(t):
+    global out
+    end = time.time() + t
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            try:
+                data = os.read(fd, 65536)
+            except OSError:
+                return False
+            if not data:
+                return False
+            out += data
+    return True
+menus = '--no-menu' not in opts
+def menu_ready():
+    hide = out.rfind(b'\x1b[?25l')
+    return hide >= 0 and out.rfind(b'\x1b[?25h') < hide and len(out) > hide + 6
+def prompt_ready():
+    return out.endswith(b': ') or out.endswith(b'] ')
+def wait_menu(limit):
+    ready = menu_ready if menus else prompt_ready
+    end = time.time() + limit
+    while time.time() < end:
+        if ready():
+            return drain(0.2)
+        if not drain(0.05):
+            return False
+    return True
+alive = drain(1.5)
+for k in keys:
+    if alive:
+        alive = wait_menu(30)
+    if not alive:
+        break
+    os.write(fd, k)
+    alive = drain(0.8)
+end = time.time() + 20
+while alive and time.time() < end:
+    alive = drain(0.2)
+code = None
+for _ in range(50):
+    p, status = os.waitpid(pid, os.WNOHANG)
+    if p:
+        code = os.waitstatus_to_exitcode(status)
+        break
+    time.sleep(0.1)
+if code is None:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    code = 124
+sys.stdout.write(out.decode('utf-8', 'replace'))
+sys.exit(code)
+PY
+pty_run() {
+    local home=$1
+    shift
+    : >"$fake/downloads.log"
+    (
+        export HOME="$home" SUJI_LANG=en TMPDIR="$tmp/tmpdir" FAKE="$fake" SUJI_TEST_OVERRIDES="$tmp/overrides.sh" TERM=xterm
+        unset MPV_HOME XDG_CONFIG_HOME LC_ALL LC_MESSAGES SUJI_TEST_TTY
+        python3 -I "$tmp/pty.py" "$under" "$rel" "$@"
+    ) >"$out" 2>&1
+    rc=$?
+    grep -E 'unbound variable|command not found|syntax error|bad (array )?subscript|integer expression expected|too many arguments' "$out" >>"$tmp/shell-errors.log"
+}
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "install: terminal tests skipped (no python3)"
+else
+    h=$(newhome menu)
+    cfg="$h/.config/mpv"
+    # Main menu: Enter (install); folders: Enter (the highlighted one).
+    pty_run "$h" '\r' '\r'
+    check 'menus: install through the keyboard menus' test "$rc" = 0 -a -f "$cfg/scripts/suji/main.lua"
+    check 'menus: the help lines shown' has "$out" '↑/↓ to move · Enter to choose · Esc to exit'
+    check 'menus: the folder menu ticks' has "$out" '↑/↓ to move · Space to tick or untick · Esc to exit'
+    check 'menus: the choice shown on a line' has "$out" "› mpv (/"
+    check 'menus: the terminal is put back (cursor shown again)' has "$out" $'\033[?25h'
+    # Down, Enter (uninstall); Space ticks the folder, Enter; Esc answers No (keep thumbfast).
+    pty_run "$h" '\x1b[B' '\r' ' ' '\r' '\x1b'
+    check 'menus: uninstall with the arrows and Space' test "$rc" = 0 -a ! -e "$cfg/scripts/suji"
+    check 'menus: Esc answers No (thumbfast kept)' test -f "$cfg/scripts/thumbfast.lua"
+    check 'menus: the yes/no help shown' has "$out" '←/→ to change · Enter to confirm · Y/N · Esc = No'
+    # y answers Yes.
+    pty_run "$h" '\r' '\r'
+    pty_run "$h" '2' '\r' 'y'
+    check 'menus: digit hotkey 2 = uninstall, y = Yes (thumbfast removed)' test "$rc" = 0 -a ! -e "$cfg/scripts/thumbfast.lua"
+    pty_run "$h" '\x1b'
+    check 'menus: Esc at the first menu leaves' test "$rc" = 0 -a -n "$(grep -F Cancelled "$out")"
+    pty_run "$h" '\x03'
+    check 'menus: Ctrl+C in a menu acts as Esc' test "$rc" = 0 -a -n "$(grep -F Cancelled "$out")"
+    pty_run "$h" '0'
+    check 'menus: digit hotkey 0 = exit' test "$rc" = 0 -a -n "$(grep -F Cancelled "$out")"
+
+    # Folders that cannot be chosen: shown greyed out, the cursor skips them.
+    h=$(newhome menu-blocked)
+    cfg="$h/.config/mpv"
+    mkdir -p "$cfg/scripts" "$h/.var/app/io.mpv.Mpv/config/mpv"
+    printf '%s\n' '-- hikari' >"$cfg/scripts/hikari-palettes.lua"
+    # The cursor starts on "Other folder" (both folders skipped); up wraps to Exit.
+    SUJI_TEST_FLATPAK=1 pty_run "$h" '\r' '\x1b[A' '\r'
+    check 'menus: the hikari folder listed with its tag' has "$out" 'mpv  [hikari: use its installer]'
+    check 'menus: the Flatpak folder listed with its tag' has "$out" 'mpv (Flatpak)  [not supported: install suji by hand]'
+    check 'menus: neither can be reached (up from Other folder is Exit)' test "$rc" = 0 -a -n "$(grep -F Cancelled "$out")" -a ! -e "$cfg/scripts/suji"
+    check 'menus: they are drawn grey' has "$out" $'\033[90m      mpv  [hikari: use its installer]'
+
+    # --no-menu on a terminal: numbers and typed answers; hikari listed apart.
+    PTY_OPTS='--no-menu' pty_run "$h" '1\r' '1\r' '0\r'
+    check 'no menu: numbers on a terminal' has "$out" 'Choose an option: '
+    check 'no menu: hikari listed apart, without a number' has "$out" ' -) mpv  [hikari: use its installer]'
+    check 'no menu: its old number is no choice' test "$rc" = 0 -a -n "$(grep -F 'Invalid option.' "$out")" -a ! -e "$cfg/scripts/suji"
+
+    # A Return typed while the script still arrives (curl | bash) never
+    # answers the first question, with or without menus.
+    h=$(newhome early)
+    PTY_PIPE=1 PTY_EARLY='\r' PTY_OPTS='--no-menu' pty_run "$h" '0\r'
+    check 'curl | bash, Return typed early, no menu: not taken as an answer' \
+        test "$rc" = 0 -a -z "$(grep -F 'Invalid option.' "$out")" -a -n "$(grep -F Cancelled "$out")"
+    PTY_PIPE=1 PTY_EARLY='\r' pty_run "$h" '\x1b'
+    check 'curl | bash, Return typed early, menu: not taken as an answer' \
+        test "$rc" = 0 -a -n "$(grep -F Cancelled "$out")" -a ! -e "$h/.config/mpv/scripts"
+    # A terminal that sends CR LF: the line feed left over answers nothing.
+    PTY_PIPE=1 PTY_OPTS='--no-menu' pty_run "$h" '1\r\n' '0\r\n'
+    check 'curl | bash, CR LF from the terminal: the next question waits' \
+        test "$rc" = 0 -a -z "$(grep -F 'Invalid option.' "$out")" -a ! -e "$h/.config/mpv/scripts"
+fi
 
 check 'no shell errors in any run' test ! -s "$tmp/shell-errors.log"
 [ ! -s "$tmp/shell-errors.log" ] || sed 's/^/     | /' "$tmp/shell-errors.log"

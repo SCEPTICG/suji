@@ -19,11 +19,14 @@
 #     --target <folder>            mpv config folder to work on (repeat it for several)
 #     --yes                        no questions: take the default answer to everything
 #                                  (needs --action)
+#     --no-menu                    ask with numbers and typed answers, not keyboard menus
 #     --help
 #
-# Questions are read from the terminal (/dev/tty), also when this file comes
-# through a pipe as above. With no terminal at all it runs as with --yes: the
-# default (safe) answer to every question; --action is then needed.
+# On a terminal the questions are keyboard menus (arrows, Space, Enter, Esc),
+# as in the hikari installer. Questions are read from the terminal (/dev/tty),
+# also when this file comes through a pipe as above; what was typed before a
+# question is asked never answers it. With no terminal at all it runs as with
+# --yes: the default (safe) answer to every question; --action is then needed.
 #
 # A folder with hikari in it is never touched: hikari installs suji itself.
 #
@@ -61,6 +64,8 @@ suji_defaults() {
     BLOCK_BEGIN='# >>> suji (managed block, do not edit) >>>'
     BLOCK_END='# <<< suji (managed block, do not edit) <<<'
     MPV_CONF_LINES=('osc=no')
+    GLYPH_POINTER='›'
+    GLYPH_ELLIPSIS='…'
     # The line above the mpv_path the installer adds to thumbfast.conf: how
     # uninstall finds it again (the same as install/suji.ps1).
     MPV_PATH_MARK='# Added by the suji installer: mpv started from another app may not find mpv in its PATH.'
@@ -140,6 +145,14 @@ suji_text_en() {
         tag_new) s='[will be created]' ;;
         opt_other) s='O) Other folder' ;;
         opt_quit) s='0) Exit' ;;
+        menu_help) s='↑/↓ to move · Enter to choose · Esc to exit' ;;
+        multi_help) s='↑/↓ to move · Space to tick or untick · Esc to exit' ;;
+        multi_help2) s='Enter to confirm (with nothing ticked, the highlighted one is chosen)' ;;
+        yesno_help) s='←/→ to change · Enter to confirm · Y/N · Esc = No' ;;
+        menu_help_short) s='↑/↓ · Enter · Esc' ;;
+        multi_help_short) s='↑/↓ · Space · Enter · Esc' ;;
+        answer_yes) s='Yes' ;;
+        answer_no) s='No' ;;
         select_prompt) s='Choose one or more, separated by commas (e.g. 1,3)' ;;
         ask_folder) s='Full path of the mpv config folder (where mpv.conf is or should go)' ;;
         folder_missing) s='The folder %s does not exist and neither does its parent.' ;;
@@ -195,7 +208,7 @@ suji_text_en() {
         missing_tool) s='%s is needed and was not found.' ;;
         bad_option) s='Unknown option: %s (see --help).' ;;
         no_input) s='No terminal to ask on: every question takes its default answer.' ;;
-        usage) s='Usage: suji.sh [--action install|uninstall] [--target <folder>]... [--yes]' ;;
+        usage) s='Usage: suji.sh [--action install|uninstall] [--target <folder>]... [--yes] [--no-menu]' ;;
     esac
     printf '%s' "$s"
 }
@@ -225,6 +238,14 @@ suji_text_es() {
         tag_new) s='[se creará]' ;;
         opt_other) s='O) Otra carpeta' ;;
         opt_quit) s='0) Salir' ;;
+        menu_help) s='↑/↓ para moverte · Intro para elegir · Esc para salir' ;;
+        multi_help) s='↑/↓ para moverte · Espacio para marcar o desmarcar · Esc para salir' ;;
+        multi_help2) s='Intro para confirmar (si no marcas ninguna, se elige la resaltada)' ;;
+        yesno_help) s='←/→ para cambiar · Intro para confirmar · S/N · Esc = No' ;;
+        menu_help_short) s='↑/↓ · Intro · Esc' ;;
+        multi_help_short) s='↑/↓ · Espacio · Intro · Esc' ;;
+        answer_yes) s='Sí' ;;
+        answer_no) s='No' ;;
         select_prompt) s='Elige uno o varios separados por comas (p. ej. 1,3)' ;;
         ask_folder) s='Ruta completa de la carpeta de configuración de mpv (donde está o irá mpv.conf)' ;;
         folder_missing) s='No existe la carpeta %s ni la que la contiene.' ;;
@@ -280,7 +301,7 @@ suji_text_es() {
         missing_tool) s='Hace falta %s y no se encuentra.' ;;
         bad_option) s='Opción desconocida: %s (mira --help).' ;;
         no_input) s='No hay terminal en el que preguntar: cada pregunta toma su respuesta por defecto.' ;;
-        usage) s='Uso: suji.sh [--action install|uninstall] [--target <carpeta>]... [--yes]' ;;
+        usage) s='Uso: suji.sh [--action install|uninstall] [--target <carpeta>]... [--yes] [--no-menu]' ;;
     esac
     printf '%s' "$s"
 }
@@ -351,11 +372,17 @@ io_setup() {
             if { exec 3<"$tty"; } 2>/dev/null; then HAVE_INPUT=1; fi
         fi
     fi
+    MENU=0
+    if [ "$HAVE_INPUT" = 1 ] && [ -t 3 ] && [ -t 1 ] && [ "$OPT_NO_MENU" != 1 ] && [ "$OPT_YES" != 1 ] &&
+        [ "${TERM:-dumb}" != dumb ] && [ "$(term_cols)" -ge 20 ]; then
+        MENU=1
+    fi
 }
 
 # Reads a line into REPLY_LINE (fails at the end of the input).
 read_line() {
     REPLY_LINE=''
+    flush_input
     printf '%s: ' "$1"
     if [ "$HAVE_INPUT" != 1 ]; then printf '\n'; return 1; fi
     if IFS= read -r REPLY_LINE <&3; then
@@ -383,6 +410,12 @@ trim() {
 confirm() {
     local question=$1 default=$2 answer suffix
     if [ "$NONINTERACTIVE" = 1 ]; then [ "$default" = yes ]; return; fi
+    if [ "$MENU" = 1 ]; then
+        yesno_menu "$question" "$default"
+        case $? in 0) return 0 ;; 1) return 1 ;; esac
+        MENU=0
+    fi
+    flush_input
     if [ "$default" = yes ]; then suffix=$(T yes_no_default_yes); else suffix=$(T yes_no_default_no); fi
     while :; do
         printf '%s' "$question$suffix"
@@ -402,6 +435,340 @@ confirm() {
         esac
         warn "$(T invalid)"
     done
+}
+
+# ---------------------------------------------------------------------------
+# Keyboard menus (arrows, Space, Enter, Esc), drawn with ANSI codes, as the
+# hikari installer's. Used only on a real terminal (MENU=1); otherwise, with
+# --no-menu or when a menu does not fit, questions are asked with numbers and
+# typed answers.
+# ---------------------------------------------------------------------------
+
+term_size() {
+    local size=''
+    if [ "$HAVE_INPUT" = 1 ]; then size=$(stty size <&3 2>/dev/null); fi
+    case $size in *[0-9]' '[0-9]*) printf '%s' "$size" ;; *) printf '24 80' ;; esac
+}
+term_cols() { local s; s=$(term_size); printf '%s' "${s#* }"; }
+term_rows() { local s; s=$(term_size); printf '%s' "${s%% *}"; }
+
+# Throws away what was typed on the terminal before a question was asked (the
+# Return that started curl | bash while the script was still arriving, the
+# line feed of a terminal that sends CR LF): only keys pressed after it
+# answer it. Nothing to do when the answers come from a file.
+flush_input() {
+    [ -t 3 ] || return 0
+    local saved
+    saved=$(stty -g <&3 2>/dev/null) || return 0
+    stty -icanon min 0 time 0 <&3 2>/dev/null
+    dd bs=256 count=8 <&3 >/dev/null 2>&1
+    stty "$saved" <&3 2>/dev/null
+}
+
+menu_enter() {
+    STTY_SAVED=$(stty -g <&3 2>/dev/null)
+    stty -icanon -echo -isig min 1 time 0 <&3 2>/dev/null
+    printf '\033[?25l'
+    # Keys pressed before the menu opened never answer it.
+    stty min 0 time 0 <&3 2>/dev/null
+    dd bs=256 count=8 <&3 >/dev/null 2>&1
+    stty min 1 time 0 <&3 2>/dev/null
+}
+menu_exit() {
+    if [ -n "$STTY_SAVED" ]; then stty "$STTY_SAVED" <&3 2>/dev/null; fi
+    STTY_SAVED=''
+    printf '\033[?25h'
+}
+
+# One key into KEY: up, down, left, right, home, end, enter, space, tab, esc,
+# cancel (Ctrl+C) or the character itself. dd, not read: bash's read -n would
+# change the terminal settings the Esc timeout relies on.
+read_key() {
+    local c rest
+    c=$(dd bs=1 count=1 <&3 2>/dev/null; printf x)
+    c=${c%x}
+    case $c in
+        $'\033')
+            stty min 0 time 1 <&3 2>/dev/null
+            rest=$(dd bs=1 count=4 <&3 2>/dev/null)
+            stty min 1 time 0 <&3 2>/dev/null
+            case $rest in
+                '[A' | 'OA') KEY=up ;;
+                '[B' | 'OB') KEY=down ;;
+                '[C' | 'OC') KEY=right ;;
+                '[D' | 'OD') KEY=left ;;
+                '[H' | 'OH' | '[1~' | '[7~') KEY=home ;;
+                '[F' | 'OF' | '[4~' | '[8~') KEY=end ;;
+                '') KEY=esc ;;
+                *) KEY=other ;;
+            esac
+            ;;
+        $'\n' | $'\r') KEY=enter ;;
+        ' ') KEY=space ;;
+        $'\t') KEY=tab ;;
+        $'\003' | '') KEY=cancel ;;
+        *) KEY=$c ;;
+    esac
+}
+
+# Text cut to $2 characters with an ellipsis.
+fit() {
+    local text=$1 max=$2
+    if [ "${#text}" -le "$max" ]; then printf '%s' "$text"; return; fi
+    if [ "$max" -le 1 ]; then printf '%s' "$GLYPH_ELLIPSIS"; return; fi
+    printf '%s%s' "${text:0:$((max - 1))}" "$GLYPH_ELLIPSIS"
+}
+
+# Path cut in the middle (the last folders matter most).
+fit_middle() {
+    local text=$1 max=$2 head tail
+    if [ "${#text}" -le "$max" ]; then printf '%s' "$text"; return; fi
+    if [ "$max" -le 1 ]; then printf '%s' "$GLYPH_ELLIPSIS"; return; fi
+    head=$(((max - 1) / 3))
+    tail=$((max - 1 - head))
+    printf '%s%s%s' "${text:0:$head}" "$GLYPH_ELLIPSIS" "${text:$((${#text} - tail))}"
+}
+
+# Frame lines: FRAME_TEXT (plain text, already cut to the width) and FRAME_COLOR.
+frame_add() {
+    FRAME_TEXT[${#FRAME_TEXT[@]}]=$1
+    FRAME_COLOR[${#FRAME_COLOR[@]}]=${2:-}
+}
+
+# Help lines, split between their " · " parts to fit the width.
+frame_help() {
+    local text=$1 max=$2 line='' part rest
+    rest=$text
+    while [ -n "$rest" ]; do
+        case $rest in
+            *' · '*) part=${rest%%' · '*}; rest=${rest#*' · '} ;;
+            *) part=$rest; rest='' ;;
+        esac
+        if [ -z "$line" ]; then
+            line=$part
+        elif [ $((${#line} + 3 + ${#part})) -le "$max" ]; then
+            line="$line · $part"
+        else
+            frame_add "  $(fit "$line" "$max")" 90
+            line=$part
+        fi
+    done
+    [ -z "$line" ] || frame_add "  $(fit "$line" "$max")" 90
+}
+
+# Draws FRAME_* over the previous frame, which took DRAWN lines.
+frame_draw() {
+    local i=0 n=${#FRAME_TEXT[@]}
+    if [ "$DRAWN" -gt 0 ]; then printf '\033[%sA' "$DRAWN"; fi
+    printf '\r\033[J'
+    while [ "$i" -lt "$n" ]; do
+        if [ -n "${FRAME_COLOR[i]}" ]; then
+            printf '\033[%sm%s\033[0m\n' "${FRAME_COLOR[i]}" "${FRAME_TEXT[i]}"
+        else
+            printf '%s\n' "${FRAME_TEXT[i]}"
+        fi
+        i=$((i + 1))
+    done
+    DRAWN=$n
+}
+
+# Builds the list menu frame (full, or compact when $1 = 1).
+list_frame() {
+    local compact=$1 cols i n=${#M_LABEL[@]} pointer box head color dcolor room
+    cols=$(term_cols)
+    FRAME_TEXT=()
+    FRAME_COLOR=()
+    i=0
+    while [ "$i" -lt "$n" ]; do
+        pointer='  '
+        color=''
+        dcolor=90
+        if [ "$i" = "$M_CUR" ]; then pointer="$GLYPH_POINTER "; color=36; dcolor=36
+        elif [ "${M_DISABLED[i]}" = 1 ]; then color=90; fi
+        box=''
+        if [ "$M_MULTI" = 1 ] && [ "${M_ACTION[i]}" != 1 ] && [ "${M_DISABLED[i]}" != 1 ]; then
+            if [ "${M_CHECKED[i]}" = 1 ]; then box='[x] '; else box='[ ] '; fi
+        elif [ "$M_MULTI" = 1 ] && [ "${M_DISABLED[i]}" = 1 ]; then
+            box='    '
+        fi
+        head="$pointer$box${M_LABEL[i]}"
+        if [ "$compact" = 1 ]; then
+            room=$((cols - 1 - ${#head} - 2))
+            if [ -n "${M_DETAIL[i]}" ] && [ "$room" -ge 12 ]; then
+                head="$head  $(fit_middle "${M_DETAIL[i]}" "$room")"
+            fi
+            frame_add "$(fit "$head" $((cols - 1)))" "$color"
+        else
+            frame_add "$(fit "$head" $((cols - 1)))" "$color"
+            if [ -n "${M_DETAIL[i]}" ]; then
+                frame_add "    $(fit_middle "${M_DETAIL[i]}" $((cols - 5)))" "$dcolor"
+            fi
+        fi
+        i=$((i + 1))
+    done
+    if [ "$compact" = 1 ]; then
+        if [ "$M_MULTI" = 1 ]; then frame_help "$(T multi_help_short)" $((cols - 3)); else frame_help "$(T menu_help_short)" $((cols - 3)); fi
+    else
+        frame_add ''
+        if [ "$M_MULTI" = 1 ]; then
+            frame_help "$(T multi_help)" $((cols - 3))
+            frame_help "$(T multi_help2)" $((cols - 3))
+        else
+            frame_help "$(T menu_help)" $((cols - 3))
+        fi
+    fi
+}
+
+# Picks the frame that fits (one line free below it); fails when none does.
+list_frame_fit() {
+    local rows
+    rows=$(term_rows)
+    list_frame 0
+    [ "${#FRAME_TEXT[@]}" -lt $((rows - 1)) ] && return 0
+    list_frame 1
+    [ "${#FRAME_TEXT[@]}" -lt $((rows - 1)) ]
+}
+
+menu_next() { # menu_next <from> <step>: next entry that is not disabled, wrapping around
+    local n=${#M_LABEL[@]} i=$1 k=0
+    while [ "$k" -lt "$n" ]; do
+        i=$(((i + $2 + n) % n))
+        if [ "${M_DISABLED[i]}" != 1 ]; then printf '%s' "$i"; return; fi
+        k=$((k + 1))
+    done
+    printf '%s' "$1"
+}
+
+# menu_reset: empties the entry list. menu_item <label> [detail] [action]
+# [disabled] [summary] [quit] [hotkey] adds one.
+menu_reset() {
+    M_LABEL=(); M_DETAIL=(); M_ACTION=(); M_DISABLED=(); M_SUMMARY=(); M_QUIT=(); M_HOTKEY=(); M_CHECKED=()
+}
+menu_item() {
+    local i=${#M_LABEL[@]}
+    M_LABEL[i]=$1
+    M_DETAIL[i]=${2:-}
+    M_ACTION[i]=${3:-0}
+    M_DISABLED[i]=${4:-0}
+    M_SUMMARY[i]=${5:-$1}
+    M_QUIT[i]=${6:-0}
+    M_HOTKEY[i]=${7:-}
+    M_CHECKED[i]=0
+}
+
+# list_menu <multi 0|1> [header lines...]: runs the menu built with menu_item.
+# Sets M_CANCELLED (1/0), M_INDEX (entry Enter was pressed on, -1 for ticked
+# ones) and M_PICKED (indexes of the chosen entries that are not actions).
+# Returns 3, with nothing written, when the menu does not fit. The header
+# stays above it and the menu is replaced by a line with the choice.
+list_menu() {
+    M_MULTI=$1
+    shift
+    local n=${#M_LABEL[@]} i done=0 summary=''
+    M_CUR=$(menu_next -1 1)
+    M_CANCELLED=0
+    M_INDEX=-1
+    M_PICKED=()
+    list_frame_fit || return 3
+    for i in ${1+"$@"}; do info "$i"; done
+    DRAWN=0
+    menu_enter
+    while [ "$done" = 0 ]; do
+        list_frame_fit
+        frame_draw
+        read_key
+        case $KEY in
+            esc | cancel) M_CANCELLED=1; done=1 ;;
+            up) M_CUR=$(menu_next "$M_CUR" -1) ;;
+            down | tab) M_CUR=$(menu_next "$M_CUR" 1) ;;
+            home) M_CUR=$(menu_next -1 1) ;;
+            end) M_CUR=$(menu_next "$n" -1) ;;
+            space)
+                if [ "$M_MULTI" = 1 ] && [ "${M_ACTION[M_CUR]}" != 1 ]; then
+                    if [ "${M_CHECKED[M_CUR]}" = 1 ]; then M_CHECKED[M_CUR]=0; else M_CHECKED[M_CUR]=1; fi
+                fi
+                ;;
+            enter)
+                i=0
+                while [ "$i" -lt "$n" ]; do
+                    [ "${M_CHECKED[i]}" = 1 ] && M_PICKED[${#M_PICKED[@]}]=$i
+                    i=$((i + 1))
+                done
+                if [ "$M_MULTI" = 1 ] && [ "${M_ACTION[M_CUR]}" != 1 ]; then
+                    [ "${#M_PICKED[@]}" -gt 0 ] || M_PICKED=("$M_CUR")
+                else
+                    M_INDEX=$M_CUR
+                fi
+                done=1
+                ;;
+            [0-9])
+                if [ "$M_MULTI" != 1 ]; then
+                    i=0
+                    while [ "$i" -lt "$n" ]; do
+                        if [ "${M_HOTKEY[i]}" = "$KEY" ] && [ "${M_DISABLED[i]}" != 1 ]; then
+                            M_CUR=$i; M_INDEX=$i; done=1; break
+                        fi
+                        i=$((i + 1))
+                    done
+                fi
+                ;;
+        esac
+    done
+    # The menu is replaced by one line with the choice (nothing when cancelled).
+    FRAME_TEXT=()
+    FRAME_COLOR=()
+    if [ "$M_CANCELLED" = 0 ]; then
+        for i in ${M_PICKED[@]+"${M_PICKED[@]}"}; do summary="$summary${summary:+, }${M_SUMMARY[i]}"; done
+        if [ "$M_INDEX" -ge 0 ]; then
+            [ "${M_QUIT[M_INDEX]}" = 1 ] && summary=''
+            summary="$summary${summary:+, }${M_SUMMARY[M_INDEX]}"
+        fi
+        frame_add "$(fit "$GLYPH_POINTER $summary" $(($(term_cols) - 1)))" 36
+    fi
+    frame_draw
+    menu_exit
+    return 0
+}
+
+# Yes/No on one line. Returns 0 (yes), 1 (no) or 3 when it does not fit.
+# Esc and Ctrl+C always answer No: every question is asked so that No is safe.
+yesno_menu() {
+    local question=$1 yes=0 result='' cols rows
+    [ "$2" = yes ] && yes=1
+    rows=$(term_rows)
+    cols=$(term_cols)
+    [ "$rows" -ge 3 ] || return 3
+    info "$question"
+    DRAWN=0
+    menu_enter
+    while [ -z "$result" ]; do
+        FRAME_TEXT=()
+        FRAME_COLOR=()
+        # Only the highlighted answer in colour (the codes go in the text).
+        if [ "$yes" = 1 ]; then
+            frame_add "  "$'\033[36m'"$GLYPH_POINTER $(T answer_yes)"$'\033[0m'"      $(T answer_no)"
+        else
+            frame_add "    $(T answer_yes)    "$'\033[36m'"$GLYPH_POINTER $(T answer_no)"$'\033[0m'
+        fi
+        [ "$rows" -lt 4 ] || frame_help "$(T yesno_help)" $((cols - 3))
+        frame_draw
+        read_key
+        case $KEY in
+            esc | cancel) result=no ;;
+            left) yes=1 ;;
+            right) yes=0 ;;
+            up | down | tab) yes=$((1 - yes)) ;;
+            enter) if [ "$yes" = 1 ]; then result=yes; else result=no; fi ;;
+            s | S | y | Y) result=yes ;;
+            n | N) result=no ;;
+        esac
+    done
+    FRAME_TEXT=()
+    FRAME_COLOR=()
+    if [ "$result" = yes ]; then frame_add "  $GLYPH_POINTER $(T answer_yes)" 36; else frame_add "  $GLYPH_POINTER $(T answer_no)" 36; fi
+    frame_draw
+    menu_exit
+    [ "$result" = yes ]
 }
 
 # ---------------------------------------------------------------------------
@@ -1447,6 +1814,40 @@ uninstall_steps() {
 # Interactive flow
 # ---------------------------------------------------------------------------
 
+menu_count() { printf '%s' "${#M_LABEL[@]}"; }
+
+# The warning for a candidate that cannot be chosen: Flatpak or Snap, or hikari.
+blocked_note() {
+    if sandboxed "${C_DIR[$1]}"; then warn "$(refusal_text "${C_DIR[$1]}")"
+    else warn "$(T hikari_here "$(clean_text "${C_DIR[$1]}")")"; fi
+}
+
+# Main menu: SEL = 1 install, 2 uninstall, 0 exit; fails at the end of the input.
+main_choice() {
+    if [ "$MENU" = 1 ]; then
+        local labels l
+        labels=()
+        # "1) Install or update" -> "Install or update".
+        while IFS= read -r l; do labels[${#labels[@]}]=${l:3}; done <<EOF
+$(T menu)
+EOF
+        menu_reset
+        menu_item "${labels[0]}" '' 0 0 '' 0 1
+        menu_item "${labels[1]}" '' 0 0 '' 0 2
+        menu_item "${labels[2]}" '' 0 0 '' 1 0
+        if list_menu 0; then
+            if [ "$M_CANCELLED" = 1 ]; then SEL=0; return 0; fi
+            case $M_INDEX in 0) SEL=1 ;; 1) SEL=2 ;; *) SEL=0 ;; esac
+            return 0
+        fi
+        MENU=0
+    fi
+    printf '%b\n' "$(T menu)"
+    read_line "$(T menu_prompt)" || return 1
+    trim "$REPLY_LINE"
+    SEL=$TRIMMED
+}
+
 show_candidates() { # numbered list of the candidates in LIST
     local i=0 idx
     while [ "$i" -lt "${#LIST[@]}" ]; do
@@ -1495,19 +1896,22 @@ choose_targets() {
         done
         return 0
     fi
-    # Flatpak and Snap folders are listed apart, without a number.
+    # Flatpak and Snap folders, and those with hikari, are listed apart: they
+    # cannot be chosen.
     LIST=()
-    UNSUPPORTED=()
+    BLOCKED=()
     i=0
     while [ "$i" -lt "${#C_DIR[@]}" ]; do
-        if sandboxed "${C_DIR[i]}"; then UNSUPPORTED[${#UNSUPPORTED[@]}]=$i
-        elif [ "$mode" = install ] || suji_present "${C_DIR[i]}"; then LIST[${#LIST[@]}]=$i; fi
+        if sandboxed "${C_DIR[i]}"; then BLOCKED[${#BLOCKED[@]}]=$i
+        elif [ "$mode" = install ] || suji_present "${C_DIR[i]}"; then
+            if hikari_present "${C_DIR[i]}"; then BLOCKED[${#BLOCKED[@]}]=$i; else LIST[${#LIST[@]}]=$i; fi
+        fi
         i=$((i + 1))
     done
     if [ "$NONINTERACTIVE" = 1 ]; then
         if [ "${#LIST[@]}" -eq 1 ]; then CHOSEN=("${LIST[0]}"); return 0; fi
         if [ "${#LIST[@]}" -eq 0 ]; then
-            for i in ${UNSUPPORTED[@]+"${UNSUPPORTED[@]}"}; do sandboxed "${C_DIR[i]}"; warn "$(refusal_text "${C_DIR[i]}")"; done
+            for i in ${BLOCKED[@]+"${BLOCKED[@]}"}; do blocked_note "$i"; done
             if [ "$mode" = uninstall ]; then error "$(T nothing_to_uninstall)"; else error "$(T usage_none)"; fi
         else
             error "$(T usage_many)"
@@ -1517,13 +1921,46 @@ choose_targets() {
         return 1
     fi
     [ "${#LIST[@]}" -gt 0 ] || [ "$mode" != uninstall ] || warn "$(T nothing_to_uninstall)"
-    while :; do
-        if [ "${#LIST[@]}" -gt 0 ]; then
-            if [ "$mode" = uninstall ]; then info "$(T found_header_uninst)"; else info "$(T found_header)"; fi
-            show_candidates
+    local header=''
+    if [ "${#LIST[@]}" -gt 0 ] || [ "${#BLOCKED[@]}" -gt 0 ]; then
+        if [ "$mode" = uninstall ]; then header=$(T found_header_uninst); else header=$(T found_header); fi
+    fi
+    if [ "$MENU" = 1 ]; then
+        local idx label tags dir ol ql other
+        menu_reset
+        # The ones that can be chosen, then the others, greyed out and skipped.
+        for idx in ${LIST[@]+"${LIST[@]}"} ${BLOCKED[@]+"${BLOCKED[@]}"}; do
+            label=$(kind_label "${C_KIND[idx]}")
+            tags=$(candidate_tags "$idx")
+            # Only shown: without control characters (see clean_text).
+            dir=$(clean_text "${C_DIR[idx]}")
+            if [ "$(menu_count)" -lt "${#LIST[@]}" ]; then
+                menu_item "$label${tags:+  $tags}" "$dir" 0 0 "$label ($(fit_middle "$dir" 40))"
+            else
+                menu_item "$label${tags:+  $tags}" "$dir" 0 1
+            fi
+        done
+        other=${#M_LABEL[@]}
+        ol=$(T opt_other)
+        ql=$(T opt_quit)
+        menu_item "${ol:3}$GLYPH_ELLIPSIS" '' 1
+        menu_item "${ql:3}" '' 1 0 '' 1
+        if list_menu 1 ${header:+"$header"}; then
+            [ "$M_CANCELLED" = 0 ] || return 1
+            if [ "$M_INDEX" -ge 0 ] && [ "${M_QUIT[M_INDEX]}" = 1 ]; then return 1; fi
+            for i in ${M_PICKED[@]+"${M_PICKED[@]}"}; do
+                [ "$i" -lt "${#LIST[@]}" ] && CHOSEN[${#CHOSEN[@]}]=${LIST[i]}
+            done
+            if [ "$M_INDEX" = "$other" ] && read_folder; then add_folder_candidate "$PICKED_DIR"; fi
+            return 0
         fi
-        for i in ${UNSUPPORTED[@]+"${UNSUPPORTED[@]}"}; do
-            info " -) $(kind_label "${C_KIND[i]}")  $(T tag_sandbox)"
+        MENU=0
+    fi
+    while :; do
+        [ -z "$header" ] || info "$header"
+        show_candidates
+        for i in ${BLOCKED[@]+"${BLOCKED[@]}"}; do
+            info " -) $(kind_label "${C_KIND[i]}")  $(candidate_tags "$i")"
             info "$(T cand_config "$(clean_text "${C_DIR[i]}")")"
         done
         info " $(T opt_other)"
@@ -1583,6 +2020,7 @@ check_targets() {
 }
 
 suji_cleanup() {
+    [ -z "${STTY_SAVED:-}" ] || menu_exit
     if [ -n "${TEMP_DIR:-}" ] && [ -d "$TEMP_DIR" ]; then rm -rf "$TEMP_DIR"; fi
     TEMP_DIR=''
 }
@@ -1590,6 +2028,7 @@ suji_cleanup() {
 parse_args() {
     OPT_ACTION=''
     OPT_YES=0
+    OPT_NO_MENU=0
     OPT_TARGETS=()
     while [ $# -gt 0 ]; do
         case $1 in
@@ -1608,6 +2047,7 @@ parse_args() {
                 ;;
             --target=*) OPT_TARGETS[${#OPT_TARGETS[@]}]=${1#*=} ;;
             --yes | -y) OPT_YES=1 ;;
+            --no-menu) OPT_NO_MENU=1 ;;
             -h | --help) T usage; printf '\n'; return 1 ;;
             *) error "$(T bad_option "$(clean_text "$1")")"; return 2 ;;
         esac
@@ -1632,6 +2072,8 @@ main() {
     REFUSED=0
     USAGE_ERROR=0
     MPV_EXE=''
+    STTY_SAVED=''
+    MENU=0
     local rc action t done_count=0
     parse_args "$@"
     rc=$?
@@ -1660,10 +2102,8 @@ main() {
             return 2
         else
             while [ -z "$action" ]; do
-                printf '%b\n' "$(T menu)"
-                read_line "$(T menu_prompt)" || return 0
-                trim "$REPLY_LINE"
-                case $TRIMMED in
+                main_choice || return 0
+                case $SEL in
                     1) action=install ;;
                     2) action=uninstall ;;
                     0) info "$(T cancelled)"; return 0 ;;
