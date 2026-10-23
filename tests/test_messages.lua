@@ -75,7 +75,7 @@ local function row_y(k, n) return 646 - n * 30 + (k - 0.5) * 30 end
 start()
 local announced = false
 for _, c in ipairs(mp.commands) do
-    if cmd(c) == "script-message suji-version 0.5.0" then announced = true end
+    if cmd(c) == "script-message suji-version 0.6.0" then announced = true end
 end
 T.check(announced, "suji-version sent to every script at start")
 T.eq(warnings(), 0, "a start with button:mine and no such button yet: no warning")
@@ -473,10 +473,10 @@ start()
 local ENABLED = "user-data/suji/enabled"
 local VERSION = "user-data/suji/version"
 T.eq(mp.props[ENABLED], true, "true from the start")
-T.eq(mp.props[VERSION], "0.5.0", "the version from the start")
+T.eq(mp.props[VERSION], "0.6.0", "the version from the start")
 mp.set_opts({ enabled = false })
 T.eq(mp.props[ENABLED], false, "enabled=no: false")
-T.eq(mp.props[VERSION], "0.5.0", "enabled=no: the version stays")
+T.eq(mp.props[VERSION], "0.6.0", "enabled=no: the version stays")
 mp.set_opts({ enabled = true })
 T.eq(mp.props[ENABLED], true, "on again: true")
 mp.writes = {}
@@ -493,7 +493,7 @@ mp = T.fake_mp({ ["mpv-version"] = "mpv v0.40.0" })
 mp.script_opts = { enabled = false }
 dofile("suji/main.lua")
 T.eq(mp.props[ENABLED], false, "started with enabled=no: false")
-T.eq(mp.props[VERSION], "0.5.0", "started with enabled=no: the version is there")
+T.eq(mp.props[VERSION], "0.6.0", "started with enabled=no: the version is there")
 
 -- user-data/suji/menu/type goes with every way a menu closes --------------------
 start()
