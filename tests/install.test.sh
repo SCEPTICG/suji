@@ -848,8 +848,10 @@ menus = '--no-menu' not in opts
 def menu_ready():
     hide = out.rfind(b'\x1b[?25l')
     return hide >= 0 and out.rfind(b'\x1b[?25h') < hide and len(out) > hide + 6
+# A question asked after the last key was sent (mark), not the one it answered.
+mark = 0
 def prompt_ready():
-    return out.endswith(b': ') or out.endswith(b'] ')
+    return len(out) > mark and (out.endswith(b': ') or out.endswith(b'] '))
 def wait_menu(limit):
     ready = menu_ready if menus else prompt_ready
     end = time.time() + limit
@@ -865,8 +867,9 @@ for k in keys:
         alive = wait_menu(30)
     if not alive:
         break
+    mark = len(out)
     os.write(fd, k)
-    alive = drain(0.8)
+    alive = drain(0.8 if menus else 0.1)
 end = time.time() + 20
 while alive and time.time() < end:
     alive = drain(0.2)

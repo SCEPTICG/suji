@@ -453,12 +453,18 @@ function Read-SujiLine {
 function Confirm-Suji {
     param([string]$Question, [bool]$Default)
     if ($script:NonInteractive) { return $Default }
+    $script:SujiAsked = $null
     $r = Invoke-SujiMenuOrNumbers { Read-SujiYesNoMenu -Question $Question -Default $Default }
     if (-not (Test-SujiUseNumbers $r)) { return [bool]$r }
     $suffix = T 'yes_no_default_no'
     if ($Default) { $suffix = T 'yes_no_default_yes' }
+    # The menu wrote the question already: only the answers go after it.
+    $prompt = $Question + $suffix
+    if ($script:SujiAsked -eq $Question) { $prompt = $suffix.Trim() }
+    $script:SujiAsked = $null
     while ($true) {
-        $answer = Read-SujiLine ($Question + $suffix)
+        $answer = Read-SujiLine $prompt
+        $prompt = $Question + $suffix
         if ($null -eq $answer) { return $Default }
         $answer = $answer.Trim().ToLowerInvariant()
         if ($answer -eq '') { return $Default }
@@ -946,6 +952,8 @@ function Read-SujiYesNoMenu {
     # Checked before the question is written (see Invoke-SujiListMenu).
     [void](Get-SujiYesNoFrame $yes)
     Write-SujiInfo $Question
+    # If drawing fails now, Confirm-Suji asks with numbers without writing it again.
+    $script:SujiAsked = $Question
     $console = & $script:SujiConsoleEnter
     try {
         & $script:SujiKeyFlush
@@ -2392,8 +2400,13 @@ function Select-SujiTargets {
         $list = $all
         if ($Mode -eq 'uninstall') { $list = @($all | Where-Object { $_.Installed }) }
         if ($script:NonInteractive) {
+            # Folders with hikari cannot be chosen: without questions they are
+            # left out, as suji.sh does, and only named when nothing else is left.
+            $hikari = @($list | Where-Object { $_.Hikari })
+            $list = @($list | Where-Object { -not $_.Hikari })
             if ($list.Count -eq 1) { $chosen.Add($list[0]) }
             elseif ($list.Count -eq 0) {
+                foreach ($h in $hikari) { Write-SujiWarn (T 'hikari_present' @($h.ConfigDir)) }
                 if ($Mode -eq 'uninstall') { Write-SujiError (T 'nothing_to_uninstall') } else { Write-SujiError (T 'none_found') }
                 return [pscustomobject]@{ Ok = $false; Targets = @() }
             }

@@ -1288,6 +1288,47 @@ Test-Case 'menus fall back to numbers: a console that cannot read keys or draw' 
     finally { Reset-FakeConsole }
 }
 
+Test-Case 'yes/no: when the menu cannot be drawn, the question is not asked twice' {
+    try {
+        # Drawing fails once the question is written: only the answers are typed after it.
+        Use-FakeConsole @()
+        $script:SujiMenuRenderer = { param([object[]]$Lines, [int]$Previous) throw 'cannot move the cursor' }
+        $script:Prompts.Clear()
+        $script:Answers.Enqueue('x')
+        $script:Answers.Enqueue('y')
+        Assert-True (Confirm-Suji -Question 'Q?' -Default $false) 'answered with a typed y'
+        Assert-Equal ([string]::Join('|', $script:Prompts)) '[y/N]|Q? [y/N] ' 'the answers only, then the whole question again after a wrong answer'
+        # Too low a window: nothing is written before the numbers, so the whole question goes.
+        Use-FakeConsole @()
+        $script:SujiMenuHeight = 1
+        $script:Prompts.Clear()
+        $script:Answers.Enqueue('n')
+        Assert-True (-not (Confirm-Suji -Question 'Q?' -Default $true)) 'answered with a typed n'
+        Assert-Equal ([string]::Join('|', $script:Prompts)) 'Q? [Y/n] ' 'the whole question'
+    }
+    finally { Reset-FakeConsole }
+}
+
+Test-Case 'main: with -Yes a folder with hikari is left out of the choice' {
+    $d = New-TestDir 'main-yes-hikari'
+    $fake = New-FakeEnv $d
+    $saved = $script:SujiScriptRoot
+    try {
+        $script:SujiScriptRoot = P @($RepoRoot, 'install')
+        $mpv = P @($fake.AppData, 'mpv')
+        $net = P @($fake.AppData, 'mpv.net')
+        New-Item -ItemType Directory -Path $mpv -Force | Out-Null
+        Set-TestFile (P @($net, 'hikari-installed.txt')) "hikari_version=1.0.0`n"
+        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @() -Yes $true -Environment $fake) 0 'mpv and a folder with hikari: installed'
+        Assert-True (Test-Exists (P @($mpv, 'scripts', 'suji', 'main.lua'))) 'in mpv'
+        Assert-True (-not (Test-Exists (P @($net, 'scripts')))) 'the hikari folder untouched'
+        Remove-Item -LiteralPath $mpv -Recurse -Force
+        Assert-Equal (Invoke-SujiMain -Action 'install' -Target @() -Yes $true -Environment $fake) 2 'only the hikari folder: nothing to do'
+        Assert-True (-not (Test-Exists (P @($net, 'scripts')))) 'still untouched'
+    }
+    finally { $script:SujiScriptRoot = $saved }
+}
+
 Test-Case 'menus: the console decides; -NoMenu and -Yes never open a menu' {
     $d = New-TestDir 'menu-detect'
     $fake = New-FakeEnv $d

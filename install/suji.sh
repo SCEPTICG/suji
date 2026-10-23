@@ -458,11 +458,15 @@ term_rows() { local s; s=$(term_size); printf '%s' "${s%% *}"; }
 # answer it. Nothing to do when the answers come from a file.
 flush_input() {
     [ -t 3 ] || return 0
-    local saved
+    local saved own=0
     saved=$(stty -g <&3 2>/dev/null) || return 0
+    # Also in STTY_SAVED while the terminal is changed, so suji_cleanup puts it
+    # back if a signal comes now (unless a menu has it already).
+    if [ -z "${STTY_SAVED:-}" ]; then STTY_SAVED=$saved; own=1; fi
     stty -icanon min 0 time 0 <&3 2>/dev/null
     dd bs=256 count=8 <&3 >/dev/null 2>&1
     stty "$saved" <&3 2>/dev/null
+    [ "$own" = 0 ] || STTY_SAVED=''
 }
 
 menu_enter() {
