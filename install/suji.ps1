@@ -46,8 +46,10 @@
     question. Needs -Action, and -Target when more than one folder is found.
 
 .PARAMETER SujiNoMenu
-    Use it as -NoMenu (alias). Accepted for the same options as the hikari
-    installer: this installer always asks with numbers and typed answers.
+    Use it as -NoMenu (alias). Ask with numbers and typed answers instead of
+    the keyboard menus (arrows, Space, Enter, Esc). Numbers are also used on
+    their own when there is no interactive console (input or output
+    redirected, -NonInteractive, ISE...), and with -Yes nothing is asked.
 
 .NOTES
     Exit codes: 0 done (or cancelled by the user), 1 at least one folder failed,
@@ -80,7 +82,8 @@ try {
 param(
     [string]$Action = '',
     [string[]]$Target = @(),
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$NoMenu
 )
 
 # All three are local to this script block: the caller's session keeps its own.
@@ -202,6 +205,14 @@ $script:SujiStringsEn = @{
     opt_other            = 'O) Other folder'
     opt_quit             = '0) Exit'
     select_prompt        = 'Choose one or more, separated by commas (e.g. 1,3)'
+    menu_help            = '\u2191/\u2193 to move \u00b7 Enter to choose \u00b7 Esc to exit'
+    multi_help           = '\u2191/\u2193 to move \u00b7 Space to tick or untick \u00b7 Esc to exit'
+    multi_help2          = 'Enter to confirm (with nothing ticked, the highlighted one is chosen)'
+    yesno_help           = '\u2190/\u2192 to change \u00b7 Enter to confirm \u00b7 Y/N \u00b7 Esc = No'
+    menu_help_short      = '\u2191/\u2193 \u00b7 Enter \u00b7 Esc'
+    multi_help_short     = '\u2191/\u2193 \u00b7 Space \u00b7 Enter \u00b7 Esc'
+    answer_yes           = 'Yes'
+    answer_no            = 'No'
     ask_folder           = 'Full path of the mpv config folder (where mpv.conf is or should go)'
     folder_missing       = 'The folder {0} does not exist and neither does its parent.'
     readonly_warn        = 'Cannot write to {0}.'
@@ -283,6 +294,14 @@ $script:SujiStringsEs = @{
     opt_other            = 'O) Otra carpeta'
     opt_quit             = '0) Salir'
     select_prompt        = 'Elige uno o varios separados por comas (p. ej. 1,3)'
+    menu_help            = '\u2191/\u2193 para moverte \u00b7 Intro para elegir \u00b7 Esc para salir'
+    multi_help           = '\u2191/\u2193 para moverte \u00b7 Espacio para marcar o desmarcar \u00b7 Esc para salir'
+    multi_help2          = 'Intro para confirmar (si no marcas ninguna, se elige la resaltada)'
+    yesno_help           = '\u2190/\u2192 para cambiar \u00b7 Intro para confirmar \u00b7 S/N \u00b7 Esc = No'
+    menu_help_short      = '\u2191/\u2193 \u00b7 Intro \u00b7 Esc'
+    multi_help_short     = '\u2191/\u2193 \u00b7 Espacio \u00b7 Intro \u00b7 Esc'
+    answer_yes           = 'S\u00ed'
+    answer_no            = 'No'
     ask_folder           = 'Ruta completa de la carpeta de configuraci\u00f3n de mpv (donde est\u00e1 o ir\u00e1 mpv.conf)'
     folder_missing       = 'No existe la carpeta {0} ni la que la contiene.'
     readonly_warn        = 'No se puede escribir en {0}.'
@@ -366,9 +385,12 @@ function Set-SujiLanguage {
         }
     }
     else {
-        # English strings hold real backslashes (install\suji.ps1) that
-        # [regex]::Unescape would reject, and no \uXXXX.
-        foreach ($key in $script:SujiStringsEn.Keys) { $script:SujiStrings[$key] = $script:SujiStringsEn[$key] }
+        # Only \uXXXX is decoded here: English strings hold real backslashes
+        # (install\suji.ps1) that [regex]::Unescape would reject.
+        $evaluator = [System.Text.RegularExpressions.MatchEvaluator] { param($m) [string][char][Convert]::ToInt32($m.Groups[1].Value, 16) }
+        foreach ($key in $script:SujiStringsEn.Keys) {
+            $script:SujiStrings[$key] = [regex]::Replace($script:SujiStringsEn[$key], '\\u([0-9A-Fa-f]{4})', $evaluator)
+        }
     }
 }
 
@@ -418,15 +440,21 @@ function Write-SujiError {
 # Replaceable in tests. $null when the input has ended.
 $script:SujiReadLine = { param([string]$Prompt) Read-Host -Prompt $Prompt }
 
+# Keys pressed before the question (the Enter that started irm | iex while the
+# script was still arriving, say) are thrown away first: they must not answer it.
 function Read-SujiLine {
     param([string]$Prompt)
+    & $script:SujiKeyFlush
     return (& $script:SujiReadLine $Prompt)
 }
 
-# A yes/no question; with -Yes (or no more input) the default answer.
+# A yes/no question; with -Yes the default answer. A keyboard menu when there
+# is one, else typed (no more input: the default).
 function Confirm-Suji {
     param([string]$Question, [bool]$Default)
     if ($script:NonInteractive) { return $Default }
+    $r = Invoke-SujiMenuOrNumbers { Read-SujiYesNoMenu -Question $Question -Default $Default }
+    if (-not (Test-SujiUseNumbers $r)) { return [bool]$r }
     $suffix = T 'yes_no_default_no'
     if ($Default) { $suffix = T 'yes_no_default_yes' }
     while ($true) {
@@ -438,6 +466,518 @@ function Confirm-Suji {
         if (@('n', 'no') -contains $answer) { return $false }
         Write-SujiWarn (T 'invalid')
     }
+}
+
+# ---------------------------------------------------------------------------
+# Keyboard menus: arrows, Space, Enter and Esc, as in the hikari installer.
+# When the console cannot do them (input or output redirected, ISE, ReadKey
+# failing) or with -NoMenu or -Yes, the questions are asked with numbers and
+# typed answers instead.
+# ---------------------------------------------------------------------------
+
+# Set by Invoke-SujiMain: $true while keyboard menus can be used.
+$script:SujiMenu = $false
+# Error message meaning "no keys can be read here": the caller switches to numbers.
+$script:SujiNoConsole = 'SUJI_NO_INTERACTIVE_CONSOLE'
+# Returned by Invoke-SujiMenuOrNumbers when the question has to be asked with numbers.
+$script:SujiUseNumbers = New-Object psobject
+# Menu width in columns and window height in lines; 0 means the console's own
+# (replaceable in tests).
+$script:SujiMenuWidth = 0
+$script:SujiMenuHeight = 0
+# Built from their code points: this file stays ASCII.
+$script:GlyphPointer = [string][char]0x203A
+$script:GlyphEllipsis = [string][char]0x2026
+
+# Replaceable in tests: can this console do keyboard menus?
+$script:SujiConsoleProbe = { Test-SujiInteractiveConsole }
+# Replaceable in tests: reads one key, without echo. Returns a ConsoleKeyInfo or,
+# in tests, a key name: 'UpArrow', 'Spacebar', 'Enter', 'Escape', 'S', 'Ctrl+C'...
+$script:SujiKeyReader = { [Console]::ReadKey($true) }
+# Replaceable in tests: draws a frame (a list of lines, each a list of
+# @{Text; Color} pieces) over the previous one, which took $Previous lines.
+# Returns how many lines the new frame takes.
+$script:SujiMenuRenderer = { param([object[]]$Lines, [int]$Previous) Write-SujiMenuFrame -Lines $Lines -Previous $Previous }
+# Replaceable in tests: hide the cursor and take Ctrl+C as a key, and undo it.
+$script:SujiConsoleEnter = { Enter-SujiMenuConsole }
+$script:SujiConsoleExit = { param($State) Exit-SujiMenuConsole -State $State }
+# Replaceable in tests: throws away keys pressed before a menu opened (during a
+# download, say), so they never answer its question.
+$script:SujiKeyFlush = { Clear-SujiPendingKeys }
+
+function Test-SujiInteractiveConsole {
+    try {
+        if ($Host.Name -ne 'ConsoleHost') { return $false }
+        if (-not [Environment]::UserInteractive) { return $false }
+        if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { return $false }
+        # powershell -NonInteractive (or -noni): only the arguments before the script's own.
+        foreach ($a in @([Environment]::GetCommandLineArgs() | Select-Object -Skip 1)) {
+            if ($a -match '^[-/](f|file|c|command|ec|encodedcommand)$') { break }
+            if ($a -match '^[-/]noni') { return $false }
+        }
+        [void][Console]::KeyAvailable
+        if ([Console]::WindowWidth -lt 20) { return $false }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-SujiUseNumbers {
+    param($Value)
+    return [object]::ReferenceEquals($Value, $script:SujiUseNumbers)
+}
+
+# Runs a keyboard menu and returns its answer, or $script:SujiUseNumbers when
+# menus are off or the console turns out not to be able to read keys (then they
+# stay off for the rest of the run).
+function Invoke-SujiMenuOrNumbers {
+    param([scriptblock]$Body)
+    if (-not $script:SujiMenu -or $script:NonInteractive) { return $script:SujiUseNumbers }
+    try {
+        return (& $Body)
+    }
+    catch {
+        if ($_.Exception.Message -ne $script:SujiNoConsole) { throw }
+        $script:SujiMenu = $false
+        return $script:SujiUseNumbers
+    }
+}
+
+function Get-SujiMenuWidth {
+    if ($script:SujiMenuWidth -gt 0) { return $script:SujiMenuWidth }
+    $w = 80
+    try { $w = [Console]::WindowWidth } catch { }
+    if ($w -lt 20) { $w = 80 }
+    return $w
+}
+
+# Window height in lines, or 0 when it cannot be known (then it is not checked).
+function Get-SujiMenuHeight {
+    if ($script:SujiMenuHeight -gt 0) { return $script:SujiMenuHeight }
+    try { $h = [Console]::WindowHeight } catch { $h = 0 }
+    if ($null -eq $h) { $h = 0 }
+    return [int]$h
+}
+
+# A frame of $Count lines fits when it leaves one line free below it: redrawing
+# goes back up exactly that many lines, which only works while the whole frame
+# is inside the window. Taller, every key would leave a copy of the menu above.
+function Test-SujiFrameFits {
+    param([int]$Count)
+    if ($Count -le 0) { return $true }
+    $h = Get-SujiMenuHeight
+    return ($h -le 0 -or $Count -lt $h - 1)
+}
+
+# Splits a help text into lines of at most $Max characters instead of cutting
+# it: first between its ' . ' separated parts, then between words.
+function Split-SujiHelp {
+    param([string]$Text, [int]$Max)
+    $out = New-Object System.Collections.Generic.List[string]
+    if ([string]::IsNullOrEmpty($Text) -or $Max -lt 1) { return , $out.ToArray() }
+    $sep = ' ' + [string][char]0x00B7 + ' '
+    $tokens = New-Object System.Collections.Generic.List[object]
+    $first = $true
+    foreach ($part in ($Text -split [regex]::Escape($sep))) {
+        $join = $sep
+        if ($first) { $join = '' }
+        $first = $false
+        if ($part.Length -le $Max) { $tokens.Add(@($join, $part)); continue }
+        foreach ($word in @($part -split ' ' | Where-Object { $_ -ne '' })) {
+            $tokens.Add(@($join, $word))
+            $join = ' '
+        }
+    }
+    $line = ''
+    foreach ($t in $tokens) {
+        $text = Format-SujiFit -Text $t[1] -Max $Max
+        if ($line -eq '') { $line = $text }
+        elseif ($line.Length + $t[0].Length + $text.Length -le $Max) { $line += $t[0] + $text }
+        else { $out.Add($line); $line = $text }
+    }
+    if ($line -ne '') { $out.Add($line) }
+    return , $out.ToArray()
+}
+
+# Help lines for a frame, indented by two spaces and wrapped to the width.
+function Add-SujiHelpLines {
+    param($Lines, [string[]]$Texts)
+    $max = (Get-SujiMenuWidth) - 3
+    foreach ($h in $Texts) {
+        foreach ($part in (Split-SujiHelp -Text $h -Max $max)) { $Lines.Add([object[]]@(New-SujiSeg ('  ' + $part) 'DarkGray')) }
+    }
+}
+
+# Shortens a text to $Max characters with an ellipsis, at the end or (paths,
+# where the last folders matter most) in the middle.
+function Format-SujiFit {
+    param([string]$Text, [int]$Max, [switch]$Middle)
+    if ($null -eq $Text -or $Max -lt 1) { return '' }
+    if ($Text.Length -le $Max) { return $Text }
+    if ($Max -eq 1) { return $script:GlyphEllipsis }
+    if ($Middle) {
+        $head = [int][Math]::Floor(($Max - 1) / 3)
+        $tail = $Max - 1 - $head
+        return $Text.Substring(0, $head) + $script:GlyphEllipsis + $Text.Substring($Text.Length - $tail)
+    }
+    return $Text.Substring(0, $Max - 1) + $script:GlyphEllipsis
+}
+
+# "1) Install or update" -> "Install or update".
+function Get-SujiPlainLabel {
+    param([string]$Text)
+    return ($Text.Trim() -replace '^[0-9A-Za-z]\)\s*', '')
+}
+
+function New-SujiSeg {
+    param([string]$Text, [string]$Color = '')
+    return @{ Text = $Text; Color = $Color }
+}
+
+# Draws the frame over the previous one: back up $Previous lines, write every
+# line padded to the width (so nothing of the old frame is left) and clear the
+# old lines that are no longer needed. Lines never reach the last column, so
+# the console never wraps them and going back up stays exact. A frame taller
+# than the window is refused before anything is written (Invoke-SujiRender then
+# switches to numbers): redrawing it would leave copies of it on screen.
+function Write-SujiMenuFrame {
+    param([object[]]$Lines, [int]$Previous)
+    if (-not (Test-SujiFrameFits @($Lines).Count)) { throw 'The menu does not fit in the window.' }
+    $max = (Get-SujiMenuWidth) - 1
+    if ($Previous -gt 0) {
+        $top = [Console]::CursorTop - $Previous
+        if ($top -lt 0) { $top = 0 }
+        [Console]::SetCursorPosition(0, $top)
+    }
+    $count = @($Lines).Count
+    $total = [Math]::Max($count, $Previous)
+    for ($i = 0; $i -lt $total; $i++) {
+        $used = 0
+        if ($i -lt $count) {
+            foreach ($seg in @($Lines[$i])) {
+                $room = $max - $used
+                if ($room -le 0) { break }
+                $text = Format-SujiFit -Text ([string]$seg.Text) -Max $room
+                if ($text.Length -eq 0) { continue }
+                if ($seg.Color) { Write-Host $text -NoNewline -ForegroundColor $seg.Color }
+                else { Write-Host $text -NoNewline }
+                $used += $text.Length
+            }
+        }
+        Write-Host (' ' * [Math]::Max(0, $max - $used))
+    }
+    if ($total -gt $count) {
+        $top = [Console]::CursorTop - ($total - $count)
+        if ($top -lt 0) { $top = 0 }
+        [Console]::SetCursorPosition(0, $top)
+    }
+    return $count
+}
+
+function Invoke-SujiRender {
+    param([object[]]$Lines, [int]$Previous)
+    try { return [int](& $script:SujiMenuRenderer $Lines $Previous) }
+    catch { throw $script:SujiNoConsole }
+}
+
+# Hides the cursor and takes Ctrl+C as a key while a menu is open (so it acts
+# as Esc and the console is always put back). Returns what has to be restored.
+function Enter-SujiMenuConsole {
+    $state = @{ Cursor = $true; CtrlC = $null }
+    try { $state.Cursor = [Console]::CursorVisible } catch { }
+    try { [Console]::CursorVisible = $false } catch { }
+    try {
+        $old = [Console]::TreatControlCAsInput
+        [Console]::TreatControlCAsInput = $true
+        $state.CtrlC = $old
+    }
+    catch { }
+    return $state
+}
+
+function Exit-SujiMenuConsole {
+    param($State)
+    if ($null -eq $State) { return }
+    if ($null -ne $State.CtrlC) { try { [Console]::TreatControlCAsInput = [bool]$State.CtrlC } catch { } }
+    try { [Console]::CursorVisible = [bool]$State.Cursor } catch { }
+}
+
+# Throws away the keys already waiting (a bounded number: a key held down keeps
+# them coming). Nothing to do when there is no console to ask.
+function Clear-SujiPendingKeys {
+    try {
+        for ($i = 0; $i -lt 256 -and [Console]::KeyAvailable; $i++) { [void][Console]::ReadKey($true) }
+    }
+    catch { }
+}
+
+# One key as Key (ConsoleKey name), Char, Ctrl and Alt. A reader that fails
+# means there is no console to read from.
+function Read-SujiKey {
+    try { $k = & $script:SujiKeyReader }
+    catch { throw $script:SujiNoConsole }
+    if ($null -eq $k) { throw $script:SujiNoConsole }
+    if ($k -is [string]) {
+        $name = $k
+        $ctrl = $false
+        $alt = $false
+        while ($true) {
+            if ($name -like 'Ctrl+?*') { $ctrl = $true; $name = $name.Substring(5); continue }
+            if ($name -like 'Alt+?*') { $alt = $true; $name = $name.Substring(4); continue }
+            break
+        }
+        $char = [char]0
+        if ($name.Length -eq 1) { $char = $name[0]; $name = $name.ToUpperInvariant() }
+        return [pscustomobject]@{ Key = $name; Char = $char; Ctrl = $ctrl; Alt = $alt }
+    }
+    return [pscustomobject]@{
+        Key  = [string]$k.Key
+        Char = $k.KeyChar
+        Ctrl = (($k.Modifiers -band [ConsoleModifiers]::Control) -ne 0)
+        Alt  = (($k.Modifiers -band [ConsoleModifiers]::Alt) -ne 0)
+    }
+}
+
+# Letter and number shortcuts only count when typed on their own: Ctrl+S or
+# Alt+Y must not answer Yes.
+function Test-SujiPlainKey {
+    param($Key)
+    return (-not $Key.Ctrl -and -not $Key.Alt)
+}
+
+# Esc, and Ctrl+C while a menu is open: always the safe way out.
+function Test-SujiCancelKey {
+    param($Key)
+    return ($Key.Key -eq 'Escape' -or ($Key.Ctrl -and $Key.Key -eq 'C') -or $Key.Char -eq [char]3)
+}
+
+# An entry of a list menu. Action: in a multiple choice menu, an entry that is
+# chosen with Enter instead of ticked ("Other folder...", "Exit"). Disabled:
+# shown, but the cursor skips it. Quit: the entry that leaves. Summary: what
+# the line left after choosing says. Hotkey: in a single choice menu, the digit
+# that chooses it at once (the number it has in the numbered questions).
+function New-SujiMenuItem {
+    param([string]$Label, [string[]]$Details = @(), [bool]$Action = $false, [bool]$Disabled = $false, [string]$Summary = '', [bool]$Quit = $false, [string]$Hotkey = '')
+    if (-not $Summary) { $Summary = $Label }
+    return [pscustomobject]@{ Label = $Label; Details = @($Details); Action = $Action; Disabled = $Disabled; Summary = $Summary; Quit = $Quit; Hotkey = $Hotkey }
+}
+
+# Next entry that is not disabled, wrapping around at both ends.
+function Get-SujiNextItem {
+    param([object[]]$Items, [int]$From, [int]$Step)
+    $n = @($Items).Count
+    $i = $From
+    for ($k = 0; $k -lt $n; $k++) {
+        $i = (($i + $Step) % $n + $n) % $n
+        if (-not $Items[$i].Disabled) { return $i }
+    }
+    return $From
+}
+
+# The list menu as it is drawn: the full version when it fits in the window,
+# otherwise a compact one (no folder lines, short help). When not even that
+# fits, the question is asked with numbers.
+function Get-SujiListFrame {
+    param([object[]]$Items, [int]$Current, [bool[]]$Checked, [bool]$Multi)
+    foreach ($compact in @($false, $true)) {
+        $frame = New-SujiListFrame -Items $Items -Current $Current -Checked $Checked -Multi $Multi -Compact $compact
+        if (Test-SujiFrameFits @($frame).Count) { return , $frame }
+    }
+    throw $script:SujiNoConsole
+}
+
+function New-SujiListFrame {
+    param([object[]]$Items, [int]$Current, [bool[]]$Checked, [bool]$Multi, [bool]$Compact)
+    $width = Get-SujiMenuWidth
+    $lines = New-Object System.Collections.Generic.List[object]
+    for ($i = 0; $i -lt $Items.Count; $i++) {
+        $it = $Items[$i]
+        $on = ($i -eq $Current)
+        $color = ''
+        $detailColor = 'DarkGray'
+        if ($on) { $color = 'Cyan'; $detailColor = 'Cyan' }
+        elseif ($it.Disabled) { $color = 'DarkGray' }
+        $pointer = '  '
+        if ($on) { $pointer = $script:GlyphPointer + ' ' }
+        $box = ''
+        if ($Multi -and -not $it.Action) {
+            if ($Checked[$i]) { $box = '[x] ' } else { $box = '[ ] ' }
+        }
+        $head = $pointer + $box + $it.Label
+        $segs = @(New-SujiSeg $head $color)
+        if ($Compact) {
+            # No folder line, but entries that look alike must still be told
+            # apart: the folder goes, shortened, on the same line when it fits.
+            $room = $width - 1 - $head.Length - 2
+            if (@($it.Details).Count -gt 0 -and $room -ge 12) {
+                $segs += New-SujiSeg ('  ' + (Format-SujiFit -Text $it.Details[0] -Max $room -Middle)) $detailColor
+            }
+            $lines.Add([object[]]$segs)
+            continue
+        }
+        $lines.Add([object[]]$segs)
+        $indent = ' ' * (2 + $box.Length)
+        foreach ($d in $it.Details) {
+            $lines.Add([object[]]@(New-SujiSeg ($indent + (Format-SujiFit -Text $d -Max ($width - 1 - $indent.Length) -Middle)) $detailColor))
+        }
+    }
+    if ($Compact) {
+        $help = @(T 'menu_help_short')
+        if ($Multi) { $help = @(T 'multi_help_short') }
+    }
+    else {
+        $lines.Add([object[]]@())
+        $help = @(T 'menu_help')
+        if ($Multi) { $help = @((T 'multi_help'), (T 'multi_help2')) }
+    }
+    Add-SujiHelpLines -Lines $lines -Texts $help
+    return , $lines.ToArray()
+}
+
+# List menu. Single choice: Up/Down (wrapping around), Home/End, Enter chooses,
+# Esc leaves, a digit chooses the entry with that Hotkey (not when disabled).
+# Multiple choice (-Multi): Space ticks or unticks, Enter confirms the ticked
+# entries or, with none ticked, the highlighted one; Enter on an action entry
+# chooses it (together with what is ticked). $Header: lines written above the
+# menu, only once it is sure the menu fits; they stay on the screen, and the
+# menu is replaced by a line with the choice. Returns Cancelled, Index (entry
+# Enter was pressed on; -1 for ticked ones) and Checked (indexes of the chosen
+# entries that are not actions).
+function Invoke-SujiListMenu {
+    param([object[]]$Items, [switch]$Multi, [int]$Start = 0, [string[]]$Header = @())
+    $n = $Items.Count
+    $checked = New-Object 'bool[]' $n
+    $cur = Get-SujiNextItem -Items $Items -From ($Start - 1) -Step 1
+    $result = $null
+    $drawn = 0
+    # Too tall even when compact: this throws before anything is written, so
+    # the numbered question that replaces it starts on a clean screen.
+    [void](Get-SujiListFrame -Items $Items -Current $cur -Checked $checked -Multi ([bool]$Multi))
+    foreach ($h in $Header) { Write-SujiInfo $h }
+    $console = & $script:SujiConsoleEnter
+    try {
+        & $script:SujiKeyFlush
+        while ($null -eq $result) {
+            $drawn = Invoke-SujiRender -Lines (Get-SujiListFrame -Items $Items -Current $cur -Checked $checked -Multi ([bool]$Multi)) -Previous $drawn
+            $key = Read-SujiKey
+            if (Test-SujiCancelKey $key) {
+                $result = [pscustomobject]@{ Cancelled = $true; Index = -1; Checked = @() }
+                continue
+            }
+            $digit = [string]$key.Char
+            if (-not $Multi -and $digit -match '^[0-9]$') {
+                if (Test-SujiPlainKey $key) {
+                    for ($i = 0; $i -lt $n; $i++) {
+                        if ($Items[$i].Hotkey -eq $digit -and -not $Items[$i].Disabled) {
+                            $cur = $i
+                            $result = [pscustomobject]@{ Cancelled = $false; Index = $i; Checked = @() }
+                            break
+                        }
+                    }
+                }
+                continue
+            }
+            switch ($key.Key) {
+                'UpArrow' { $cur = Get-SujiNextItem -Items $Items -From $cur -Step -1 }
+                'DownArrow' { $cur = Get-SujiNextItem -Items $Items -From $cur -Step 1 }
+                'Home' { $cur = Get-SujiNextItem -Items $Items -From -1 -Step 1 }
+                'End' { $cur = Get-SujiNextItem -Items $Items -From $n -Step -1 }
+                'Spacebar' {
+                    if ($Multi -and -not $Items[$cur].Action) { $checked[$cur] = -not $checked[$cur] }
+                }
+                'Enter' {
+                    $ticked = @(for ($i = 0; $i -lt $n; $i++) { if ($checked[$i]) { $i } })
+                    if ($Multi -and -not $Items[$cur].Action) {
+                        if ($ticked.Count -eq 0) { $ticked = @($cur) }
+                        $result = [pscustomobject]@{ Cancelled = $false; Index = -1; Checked = $ticked }
+                    }
+                    else {
+                        $result = [pscustomobject]@{ Cancelled = $false; Index = $cur; Checked = $ticked }
+                    }
+                }
+            }
+        }
+    }
+    finally {
+        # The menu is replaced by one line with the choice (nothing when cancelled).
+        $final = @()
+        if ($null -ne $result -and -not $result.Cancelled) {
+            $parts = @($result.Checked | ForEach-Object { $Items[$_].Summary })
+            if ($result.Index -ge 0) {
+                if ($Items[$result.Index].Quit) { $parts = @() }
+                $parts += $Items[$result.Index].Summary
+            }
+            $final = , ([object[]]@(New-SujiSeg ($script:GlyphPointer + ' ' + [string]::Join(', ', $parts)) 'Cyan'))
+        }
+        try { [void](& $script:SujiMenuRenderer $final $drawn) } catch { }
+        & $script:SujiConsoleExit $console
+    }
+    return $result
+}
+
+function Get-SujiYesNoFrame {
+    param([bool]$Yes)
+    $answers = @(@((T 'answer_yes'), $true), @((T 'answer_no'), $false))
+    $segs = @(New-SujiSeg '  ')
+    foreach ($a in $answers) {
+        if ($a[1] -eq $Yes) { $segs += New-SujiSeg ($script:GlyphPointer + ' ' + $a[0]) 'Cyan' }
+        else { $segs += New-SujiSeg ('  ' + $a[0]) }
+        $segs += New-SujiSeg '    '
+    }
+    # Full: answers and help. Compact (a very low window): only the answers.
+    $lines = New-Object System.Collections.Generic.List[object]
+    $lines.Add([object[]]$segs)
+    Add-SujiHelpLines -Lines $lines -Texts @(T 'yesno_help')
+    if (Test-SujiFrameFits $lines.Count) { return , $lines.ToArray() }
+    if (Test-SujiFrameFits 1) { return , @(, [object[]]$segs) }
+    throw $script:SujiNoConsole
+}
+
+# Yes/No on one line. Starts on $Default; Left/Right (and Up/Down, Tab) change
+# it, Enter confirms, S or Y answer yes and N no straight away. Esc (and Ctrl+C)
+# always answer No: every question is asked so that No is the safe answer.
+function Read-SujiYesNoMenu {
+    param([string]$Question, [bool]$Default)
+    $yes = $Default
+    $result = $null
+    $drawn = 0
+    # Checked before the question is written (see Invoke-SujiListMenu).
+    [void](Get-SujiYesNoFrame $yes)
+    Write-SujiInfo $Question
+    $console = & $script:SujiConsoleEnter
+    try {
+        & $script:SujiKeyFlush
+        while ($null -eq $result) {
+            $drawn = Invoke-SujiRender -Lines (Get-SujiYesNoFrame $yes) -Previous $drawn
+            $key = Read-SujiKey
+            if (Test-SujiCancelKey $key) { $result = $false; continue }
+            $plain = Test-SujiPlainKey $key
+            switch ($key.Key) {
+                'LeftArrow' { $yes = $true }
+                'RightArrow' { $yes = $false }
+                'UpArrow' { $yes = -not $yes }
+                'DownArrow' { $yes = -not $yes }
+                'Tab' { $yes = -not $yes }
+                'Enter' { $result = $yes }
+                'S' { if ($plain) { $result = $true } }
+                'Y' { if ($plain) { $result = $true } }
+                'N' { if ($plain) { $result = $false } }
+            }
+        }
+    }
+    finally {
+        $final = @()
+        if ($null -ne $result) {
+            $label = T 'answer_no'
+            if ($result) { $label = T 'answer_yes' }
+            $final = , ([object[]]@(New-SujiSeg ('  ' + $script:GlyphPointer + ' ' + $label) 'Cyan'))
+        }
+        try { [void](& $script:SujiMenuRenderer $final $drawn) } catch { }
+        & $script:SujiConsoleExit $console
+    }
+    return $result
 }
 
 # ---------------------------------------------------------------------------
@@ -1706,35 +2246,98 @@ function Get-SujiCandidateTags {
     return [string]::Join(' ', $tags)
 }
 
+# Numbered list of the candidates; a folder with hikari, which cannot be
+# chosen, gets '-' instead of a number (they come last, see Select-SujiTargets).
 function Show-SujiCandidates {
     param([object[]]$Candidates)
+    $n = 0
     for ($i = 0; $i -lt $Candidates.Count; $i++) {
         $c = $Candidates[$i]
-        $kind = $c.Kind
-        if ($kind -eq 'folder') { $kind = T 'kind_folder' }
-        Write-SujiInfo (' {0}) {1}  {2}' -f ($i + 1), $kind, (Get-SujiCandidateTags $c))
+        $number = '-'
+        if (-not $c.Hikari) { $n++; $number = [string]$n }
+        Write-SujiInfo (' {0}) {1}  {2}' -f $number, (Get-SujiKindLabel $c.Kind), (Get-SujiCandidateTags $c))
         if ($c.Exe) { Write-SujiInfo (T 'cand_exe' @($c.Exe)) }
         Write-SujiInfo (T 'cand_config' @($c.ConfigDir))
     }
 }
 
-# Which folders to work on, as ConvertFrom-SujiSelection returns them; $null
-# when the input ends.
+# The name of a candidate in lists and menus: its player, or "config folder".
+function Get-SujiKindLabel {
+    param([string]$Kind)
+    if ($Kind -eq 'folder') { return (T 'kind_folder') }
+    return $Kind
+}
+
+# Menu entry for a detected folder: player and tags, then its config folder. A
+# folder with hikari is shown but cannot be chosen.
+function New-SujiCandidateItem {
+    param($Candidate)
+    $kind = Get-SujiKindLabel $Candidate.Kind
+    $label = $kind
+    $tags = Get-SujiCandidateTags $Candidate
+    if ($tags) { $label += '  ' + $tags }
+    # Only shown: without control characters (see Get-SujiCleanText).
+    $dir = Get-SujiCleanText $Candidate.ConfigDir 0
+    $summary = $kind + ' (' + (Format-SujiFit -Text $dir -Max 40 -Middle) + ')'
+    return (New-SujiMenuItem -Label $label -Details @($dir) -Summary $summary -Disabled ([bool]$Candidate.Hikari))
+}
+
+# Which folders to work on: Indexes (into $List), Other (type a folder) and
+# Quit, as ConvertFrom-SujiSelection returns them. $null when the input ends.
+# A folder with hikari cannot be chosen: greyed out in the menu, without a
+# number in the numbered list.
 function Read-SujiTargetChoice {
     param([object[]]$List, [string]$Mode)
+    $header = @()
+    if (@($List).Count -gt 0) {
+        if ($Mode -eq 'uninstall') { $header = @(T 'found_header_uninst') } else { $header = @(T 'found_header') }
+    }
+    $r = Invoke-SujiMenuOrNumbers {
+        $items = New-Object System.Collections.Generic.List[object]
+        foreach ($c in $List) { $items.Add((New-SujiCandidateItem $c)) }
+        $otherIndex = $items.Count
+        $items.Add((New-SujiMenuItem -Label ((Get-SujiPlainLabel (T 'opt_other')) + $script:GlyphEllipsis) -Action $true))
+        $items.Add((New-SujiMenuItem -Label (Get-SujiPlainLabel (T 'opt_quit')) -Action $true -Quit $true))
+        $m = Invoke-SujiListMenu -Items $items.ToArray() -Multi -Header $header
+        $sel = [pscustomobject]@{ Indexes = @(); Other = $false; Quit = $false }
+        if ($m.Cancelled -or ($m.Index -ge 0 -and $items[$m.Index].Quit)) { $sel.Quit = $true; return $sel }
+        $sel.Indexes = @($m.Checked)
+        $sel.Other = ($m.Index -eq $otherIndex)
+        return $sel
+    }
+    if (-not (Test-SujiUseNumbers $r)) { return $r }
     while ($true) {
-        if (@($List).Count -gt 0) {
-            if ($Mode -eq 'uninstall') { Write-SujiInfo (T 'found_header_uninst') } else { Write-SujiInfo (T 'found_header') }
-            Show-SujiCandidates $List
-        }
+        foreach ($h in $header) { Write-SujiInfo $h }
+        if (@($List).Count -gt 0) { Show-SujiCandidates $List }
         Write-SujiInfo (' ' + (T 'opt_other'))
         Write-SujiInfo (' ' + (T 'opt_quit'))
         $text = Read-SujiLine (T 'select_prompt')
         if ($null -eq $text) { return $null }
-        $sel = ConvertFrom-SujiSelection -Text $text -Count @($List).Count
-        if ($null -ne $sel) { return $sel }
+        # The numbers count only the folders that can be chosen.
+        $eligible = @(for ($i = 0; $i -lt @($List).Count; $i++) { if (-not $List[$i].Hikari) { $i } })
+        $sel = ConvertFrom-SujiSelection -Text $text -Count $eligible.Count
+        if ($null -ne $sel) { $sel.Indexes = @($sel.Indexes | ForEach-Object { $eligible[$_] }); return $sel }
         Write-SujiWarn (T 'invalid')
     }
+}
+
+# Main menu: '1' install, '2' uninstall, '0' exit, $null when the input ends;
+# anything else typed in number mode is returned as it is (invalid).
+function Read-SujiMainChoice {
+    $r = Invoke-SujiMenuOrNumbers {
+        $labels = @((T 'menu') -split "`r?`n" | ForEach-Object { Get-SujiPlainLabel $_ })
+        $items = @(
+            (New-SujiMenuItem -Label $labels[0] -Hotkey '1'),
+            (New-SujiMenuItem -Label $labels[1] -Hotkey '2'),
+            (New-SujiMenuItem -Label $labels[2] -Quit $true -Hotkey '0')
+        )
+        $m = Invoke-SujiListMenu -Items $items
+        if ($m.Cancelled) { return '0' }
+        return @('1', '2', '0')[$m.Index]
+    }
+    if (-not (Test-SujiUseNumbers $r)) { return $r }
+    Write-SujiInfo (T 'menu')
+    return (Read-SujiLine (T 'menu_prompt'))
 }
 
 function Read-SujiFolder {
@@ -1804,6 +2407,8 @@ function Select-SujiTargets {
             if ($list.Count -eq 0) {
                 if ($Mode -eq 'uninstall') { Write-SujiWarn (T 'nothing_to_uninstall') } else { Write-SujiWarn (T 'none_found') }
             }
+            # Those that cannot be chosen go after the others.
+            $list = @(@($list | Where-Object { -not $_.Hikari }) + @($list | Where-Object { $_.Hikari }))
             $sel = Read-SujiTargetChoice -List $list -Mode $Mode
             # $null: no more input (stdin closed or redirected), same as choosing Exit.
             if ($null -ne $sel -and -not $sel.Quit) {
@@ -1872,8 +2477,11 @@ function Get-SujiStateDir {
 }
 
 function Invoke-SujiMain {
-    param([string]$Action, [string[]]$Target, [bool]$Yes, [hashtable]$Environment = $null)
+    param([string]$Action, [string[]]$Target, [bool]$Yes, [bool]$NoMenu = $false, [hashtable]$Environment = $null)
     $script:NonInteractive = $Yes
+    # Keyboard menus only on a real interactive console; numbers otherwise.
+    $script:SujiMenu = $false
+    if (-not $Yes -and -not $NoMenu) { $script:SujiMenu = [bool](& $script:SujiConsoleProbe) }
     if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
         Write-SujiError (T 'old_ps')
         return 2
@@ -1891,8 +2499,7 @@ function Invoke-SujiMain {
     if (-not $Action) {
         if ($Yes) { Write-SujiError (T 'usage_yes_action'); return 2 }
         while (-not $Action) {
-            Write-SujiInfo (T 'menu')
-            $answer = Read-SujiLine (T 'menu_prompt')
+            $answer = Read-SujiMainChoice
             if ($null -eq $answer) { return 0 }
             switch ($answer.Trim()) {
                 '1' { $Action = 'install' }
@@ -1959,7 +2566,7 @@ if ($env:SUJI_INSTALL_TEST) { return }
 # Invoke-SujiMain); that setting is process-wide, so it is put back afterwards.
 $savedTls = $null
 try { $savedTls = [System.Net.ServicePointManager]::SecurityProtocol } catch { }
-try { $code = Invoke-SujiMain -Action $Action -Target $Target -Yes ([bool]$Yes) }
+try { $code = Invoke-SujiMain -Action $Action -Target $Target -Yes ([bool]$Yes) -NoMenu ([bool]$NoMenu) }
 finally {
     if ($null -ne $savedTls) { try { [System.Net.ServicePointManager]::SecurityProtocol = $savedTls } catch { } }
 }
@@ -1968,7 +2575,7 @@ finally {
 # exit: through iex, exit would close the user's PowerShell window.
 if ({ }.File) { exit $code }
 $global:LASTEXITCODE = $code
-} -Action $SujiAction -Target $SujiTarget -Yes:$SujiYes
+} -Action $SujiAction -Target $SujiTarget -Yes:$SujiYes -NoMenu:$SujiNoMenu
 }
 catch {
     # An unexpected error that got this far. Same rule as above: exit only when

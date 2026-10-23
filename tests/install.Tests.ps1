@@ -36,6 +36,9 @@ function Get-InstallerBody {
 }
 . (Get-InstallerBody $InstallScript)
 $script:SujiQuiet = $true
+# The tests that drive the number questions run as if there were no
+# interactive console; the keyboard menu tests below switch it on themselves.
+$script:SujiConsoleProbe = { $false }
 $OriginalThumbSha = $script:ThumbfastSha256
 
 $script:Passed = 0
@@ -1004,6 +1007,464 @@ Test-Case 'detection: AnimeJaNai and its portable_config, mpv.net, MPV_HOME' {
 }
 
 # ---------------------------------------------------------------------------
+# Keyboard menus (as in the hikari installer): keys come from a queue, frames
+# are kept as text, the console is not touched.
+# ---------------------------------------------------------------------------
+
+$Ptr = [string][char]0x203A
+$script:Keys = New-Object System.Collections.Generic.Queue[string]
+$script:Frames = New-Object System.Collections.Generic.List[string]
+$script:ConsoleLog = New-Object System.Collections.Generic.List[string]
+# Keys pressed before a menu opened: read first, unless the menu throws them away.
+$script:Pending = New-Object System.Collections.Generic.Queue[string]
+$RealKeyFlush = $script:SujiKeyFlush
+$RealKeyReader = $script:SujiKeyReader
+$RealRenderer = $script:SujiMenuRenderer
+$RealConsoleEnter = $script:SujiConsoleEnter
+$RealConsoleExit = $script:SujiConsoleExit
+$RealReadLine = $script:SujiReadLine
+
+function ConvertTo-FrameText {
+    param([object[]]$Lines)
+    $out = @()
+    foreach ($line in $Lines) { $out += [string]::Join('', @(@($line) | ForEach-Object { $_.Text })) }
+    return [string]::Join("`n", $out)
+}
+
+function Use-FakeConsole {
+    param([string[]]$Keys = @())
+    $script:Keys.Clear()
+    foreach ($k in $Keys) { $script:Keys.Enqueue($k) }
+    $script:Frames.Clear()
+    $script:ConsoleLog.Clear()
+    $script:Pending.Clear()
+    $script:SujiKeyReader = {
+        if ($script:Pending.Count -gt 0) { return $script:Pending.Dequeue() }
+        if ($script:Keys.Count -eq 0) { throw 'no more keys' }
+        return $script:Keys.Dequeue()
+    }
+    $script:SujiKeyFlush = { $script:Pending.Clear() }
+    $script:SujiMenuRenderer = { param([object[]]$Lines, [int]$Previous) $script:Frames.Add((ConvertTo-FrameText $Lines)); return @($Lines).Count }
+    $script:SujiConsoleEnter = { $script:ConsoleLog.Add('enter'); return @{ Fake = $true } }
+    $script:SujiConsoleExit = { param($State) $script:ConsoleLog.Add('exit') }
+    $script:SujiMenu = $true
+    $script:SujiMenuWidth = 80
+    $script:SujiMenuHeight = 50
+    $script:NonInteractive = $false
+}
+
+function Reset-FakeConsole {
+    $script:SujiKeyReader = $RealKeyReader
+    $script:SujiKeyFlush = $RealKeyFlush
+    $script:SujiMenuRenderer = $RealRenderer
+    $script:SujiConsoleEnter = $RealConsoleEnter
+    $script:SujiConsoleExit = $RealConsoleExit
+    $script:SujiReadLine = $RealReadLine
+    $script:SujiConsoleProbe = { $false }
+    $script:SujiMenu = $false
+    $script:SujiMenuWidth = 0
+    $script:SujiMenuHeight = 0
+    $script:NonInteractive = $true
+}
+
+# A number question while a menu is expected is a failure.
+function Use-NoNumbers { $script:SujiReadLine = { param([string]$Prompt) throw ('a number question was asked: ' + $Prompt) } }
+
+function Get-LastFrame { return $script:Frames[$script:Frames.Count - 1] }
+
+function New-TestItems {
+    param([string[]]$Labels)
+    return @($Labels | ForEach-Object { New-SujiMenuItem -Label $_ })
+}
+
+Test-Case 'menu: single choice moves, wraps around at both ends and chooses with Enter' {
+    Use-FakeConsole @('DownArrow', 'DownArrow', 'DownArrow', 'UpArrow', 'Enter')
+    try {
+        $m = Invoke-SujiListMenu -Items (New-TestItems @('Alpha', 'Beta', 'Gamma'))
+        Assert-True (-not $m.Cancelled) 'not cancelled'
+        Assert-Equal $m.Index 2 'Down x3 wraps to Alpha, Up wraps to Gamma'
+        Assert-True ($script:Frames[0].StartsWith($Ptr + ' Alpha' + "`n" + '  Beta')) ('first frame: ' + $script:Frames[0])
+        Assert-True ($script:Frames[0].Contains('Enter to choose')) 'help line'
+        Assert-True ($script:Frames[3].Contains($Ptr + ' Alpha')) 'wrapped to the first entry'
+        Assert-Equal (Get-LastFrame) ($Ptr + ' Gamma') 'only the choice is left on screen'
+        Assert-Equal ([string]::Join(',', $script:ConsoleLog)) 'enter,exit' 'console set up and restored'
+        Assert-Equal $script:Keys.Count 0 'all keys used'
+    }
+    finally { Reset-FakeConsole }
+}
+
+Test-Case 'menu: disabled entries are skipped, Home/End, Esc and Ctrl+C cancel and clear the menu' {
+    $items = @((New-SujiMenuItem -Label 'Alpha' -Disabled $true), (New-SujiMenuItem -Label 'Beta'), (New-SujiMenuItem -Label 'Gamma' -Disabled $true), (New-SujiMenuItem -Label 'Delta'))
+    Use-FakeConsole @('DownArrow', 'Enter')
+    try {
+        Assert-Equal (Invoke-SujiListMenu -Items $items).Index 3 'starts on Beta, Gamma skipped'
+        Use-FakeConsole @('End', 'Home', 'UpArrow', 'Enter')
+        Assert-Equal (Invoke-SujiListMenu -Items $items).Index 3 'End, Home, Up wraps to Delta'
+        Use-FakeConsole @('DownArrow', 'Escape')
+        $m = Invoke-SujiListMenu -Items $items
+        Assert-True $m.Cancelled 'Esc cancels'
+        Assert-Equal (Get-LastFrame) '' 'nothing left on screen'
+        Assert-Equal ([string]::Join(',', $script:ConsoleLog)) 'enter,exit' 'console restored'
+        Use-FakeConsole @('Ctrl+C')
+        Assert-True (Invoke-SujiListMenu -Items $items).Cancelled 'Ctrl+C cancels like Esc'
+    }
+    finally { Reset-FakeConsole }
+}
+
+Test-Case 'menu: multiple choice ticks, unticks and confirms; actions are not ticked' {
+    $items = @((New-TestItems @('One', 'Two', 'Three')) + @((New-SujiMenuItem -Label 'Other' -Action $true), (New-SujiMenuItem -Label 'Exit' -Action $true -Quit $true)))
+    Use-FakeConsole @('Spacebar', 'DownArrow', 'Spacebar', 'DownArrow', 'Spacebar', 'Spacebar', 'Enter')
+    try {
+        $m = Invoke-SujiListMenu -Items $items -Multi
+        Assert-Equal ([string]::Join(',', $m.Checked)) '0,1' 'One and Two ticked, Three ticked and unticked'
+        Assert-Equal $m.Index (-1) 'Enter on a tickable entry'
+        Assert-True ($script:Frames[1].Contains('[x] One')) ('ticked box drawn: ' + $script:Frames[1])
+        Assert-True ($script:Frames[1].Contains('[ ] Two')) 'empty box drawn'
+        Assert-True ($script:Frames[1].Contains("`n  Other")) 'action drawn without a box'
+        Assert-True ($script:Frames[1].Contains('Space to tick')) 'help line'
+        Assert-Equal (Get-LastFrame) ($Ptr + ' One, Two') 'choice left on screen'
+        Use-FakeConsole @('DownArrow', 'Enter')
+        Assert-Equal ([string]::Join(',', (Invoke-SujiListMenu -Items $items -Multi).Checked)) '1' 'nothing ticked: the highlighted one'
+        Use-FakeConsole @('UpArrow', 'UpArrow', 'Spacebar', 'Enter')
+        $m = Invoke-SujiListMenu -Items $items -Multi
+        Assert-Equal $m.Index 3 'Enter on Other'
+        Assert-Equal @($m.Checked).Count 0 'Space on an action ticks nothing'
+        Use-FakeConsole @('Spacebar', 'DownArrow', 'DownArrow', 'DownArrow', 'Enter')
+        $m = Invoke-SujiListMenu -Items $items -Multi
+        Assert-Equal $m.Index 3 'Other'
+        Assert-Equal ([string]::Join(',', $m.Checked)) '0' 'with One'
+        Assert-Equal (Get-LastFrame) ($Ptr + ' One, Other') 'summary'
+        Use-FakeConsole @('Spacebar', 'UpArrow', 'Enter')
+        $m = Invoke-SujiListMenu -Items $items -Multi
+        Assert-True $items[$m.Index].Quit 'Exit chosen'
+        Assert-Equal (Get-LastFrame) ($Ptr + ' Exit') 'summary only says Exit'
+    }
+    finally { Reset-FakeConsole }
+}
+
+Test-Case 'menu: the folder list, with a folder with hikari shown but not choosable' {
+    $base = New-TestDir 'menu-targets'
+    $e = New-FakeEnv $base
+    $long = P @($base, ('very long folder name ' * 4).Trim(), 'mpv-AnimeJaNai', 'portable_config')
+    $hk = P @($base, 'Roaming', 'mpv.net')
+    Set-TestFile (P @($hk, 'hikari-installed.txt')) "hikari_version=1.0.0`n"
+    $list = @(
+        (New-SujiCandidate -Env $e -Kind 'AnimeJaNai' -Exe '' -ConfigDir $long -Portable $true),
+        (New-SujiCandidate -Env $e -Kind 'mpv.net' -Exe '' -ConfigDir $hk -Portable $false),
+        (New-SujiCandidate -Env $e -Kind 'mpv' -Exe '' -ConfigDir (P @($base, 'Roaming', 'mpv')) -Portable $false)
+    )
+    Use-NoNumbers
+    try {
+        # Down goes from AnimeJaNai straight to mpv: the hikari folder is skipped.
+        Use-FakeConsole @('Spacebar', 'DownArrow', 'Spacebar', 'Enter')
+        Use-NoNumbers
+        $sel = Read-SujiTargetChoice -List $list -Mode 'install'
+        Assert-Equal ([string]::Join(',', $sel.Indexes)) '0,2' 'both, hikari skipped'
+        Assert-True (-not $sel.Other -and -not $sel.Quit) 'nothing else'
+        $first = $script:Frames[0] -split "`n"
+        Assert-True ($first[0] -like ($Ptr + ' `[ `] AnimeJaNai*')) ('player line: ' + $first[0])
+        Assert-True ($first[1].Contains([char]0x2026)) ('long path shortened: ' + $first[1])
+        Assert-True ($first[1].EndsWith('portable_config')) 'the end of the path is kept'
+        Assert-True ($first[1].Length -le 79) ('fits the width: ' + $first[1].Length)
+        Assert-True ($first[2] -like '  `[ `] mpv.net  `[hikari: use its installer`]*') ('hikari entry: ' + $first[2])
+        Assert-True ($script:Frames[0].Contains('Other folder' + [char]0x2026)) 'Other folder entry'
+        Assert-Equal (Get-LastFrame) ($Ptr + ' AnimeJaNai (' + (Format-SujiFit -Text $long -Max 40 -Middle) + '), mpv (' + (Format-SujiFit -Text (P @($base, 'Roaming', 'mpv')) -Max 40 -Middle) + ')') 'choice left on screen'
+        Use-FakeConsole @('UpArrow', 'UpArrow', 'Enter')
+        Use-NoNumbers
+        $sel = Read-SujiTargetChoice -List $list -Mode 'install'
+        Assert-True $sel.Other 'Other folder'
+        Assert-Equal @($sel.Indexes).Count 0 'no folder ticked'
+        Use-FakeConsole @('Spacebar', 'Escape')
+        Use-NoNumbers
+        Assert-True (Read-SujiTargetChoice -List $list -Mode 'install').Quit 'Esc leaves'
+        Use-FakeConsole @('Enter')
+        Use-NoNumbers
+        Assert-True (Read-SujiTargetChoice -List @($list[1]) -Mode 'install').Other 'only hikari: the cursor starts on Other folder'
+        Use-FakeConsole @('Enter')
+        Use-NoNumbers
+        Assert-True (Read-SujiTargetChoice -List @() -Mode 'uninstall').Other 'empty list: Other folder first'
+    }
+    finally { Reset-FakeConsole }
+    # With numbers, the hikari folder is listed without a number: 3 is not valid,
+    # and 2 is the mpv folder.
+    $script:NonInteractive = $false
+    $script:SujiQuiet = $false
+    try {
+        foreach ($a in @('3', '1,2')) { $script:Answers.Enqueue($a) }
+        $shown = [string]::Join("`n", @(& { $script:Sel = Read-SujiTargetChoice -List $list -Mode 'install' } 6>&1 | ForEach-Object { [string]$_ }))
+    }
+    finally { $script:SujiQuiet = $true }
+    Assert-Equal ([string]::Join(',', $script:Sel.Indexes)) '0,2' 'asked again, numbers of the folders that can be chosen'
+    Assert-Equal $script:Answers.Count 0 'both answers used'
+    Assert-True ($shown.Contains(' 1) AnimeJaNai') -and $shown.Contains(' -) mpv.net  [hikari: use its installer]') -and $shown.Contains(' 2) mpv')) ('list: ' + $shown)
+}
+
+Test-Case 'yes/no: starts on the default, arrows change it, S/Y/N answer, Esc is always No' {
+    try {
+        $cases = @(
+            @(@('Enter'), $true, $true, 'Enter keeps the default (yes)'),
+            @(@('Enter'), $false, $false, 'Enter keeps the default (no)'),
+            @(@('LeftArrow', 'Enter'), $false, $true, 'Left is Yes'),
+            @(@('RightArrow', 'Enter'), $true, $false, 'Right is No'),
+            @(@('DownArrow', 'Enter'), $false, $true, 'Down toggles'),
+            @(@('UpArrow', 'UpArrow', 'Enter'), $true, $true, 'Up twice: back'),
+            @(@('S'), $false, $true, 'S answers yes at once'),
+            @(@('y'), $false, $true, 'Y answers yes at once'),
+            @(@('N'), $true, $false, 'N answers no at once'),
+            @(@('X', 'Enter'), $true, $true, 'other keys are ignored'),
+            @(@('Escape'), $true, $false, 'Esc is No even when the default is yes'),
+            @(@('LeftArrow', 'Escape'), $false, $false, 'Esc is No even when Yes is highlighted'),
+            @(@('Ctrl+C'), $true, $false, 'Ctrl+C is No'),
+            @(@('Ctrl+S', 'Alt+Y', 'Enter'), $false, $false, 'Ctrl and Alt letters do not answer')
+        )
+        foreach ($c in $cases) {
+            Use-FakeConsole $c[0]
+            Use-NoNumbers
+            Assert-Equal (Confirm-Suji -Question 'Q?' -Default $c[1]) $c[2] $c[3]
+            Assert-Equal $script:Keys.Count 0 ('keys used: ' + $c[3])
+            Assert-Equal ([string]::Join(',', $script:ConsoleLog)) 'enter,exit' ('console restored: ' + $c[3])
+        }
+        Use-FakeConsole @('RightArrow', 'Enter')
+        [void](Confirm-Suji -Question 'Q?' -Default $true)
+        Assert-True ($script:Frames[0].StartsWith('  ' + $Ptr + ' Yes      No')) ('first frame: ' + $script:Frames[0])
+        Assert-True ($script:Frames[1].StartsWith('    Yes    ' + $Ptr + ' No')) ('second frame: ' + $script:Frames[1])
+        Assert-True ($script:Frames[0].Contains('Esc = No')) 'help line'
+        Assert-Equal (Get-LastFrame) ('  ' + $Ptr + ' No') 'answer left on screen'
+        # With -Yes nothing is read, menus or not.
+        Use-FakeConsole @()
+        $script:NonInteractive = $true
+        Assert-True (Confirm-Suji -Question 'Q?' -Default $true) 'default with -Yes'
+        Assert-Equal $script:ConsoleLog.Count 0 'no menu with -Yes'
+    }
+    finally { Reset-FakeConsole }
+}
+
+Test-Case 'main menu: arrows, digits as in the numbered menu, Esc exits; Spanish labels and help' {
+    try {
+        Use-FakeConsole @('DownArrow', 'Enter')
+        Use-NoNumbers
+        Assert-Equal (Read-SujiMainChoice) '2' 'Down, Enter: uninstall'
+        Assert-True ($script:Frames[0].StartsWith($Ptr + ' Install or update' + "`n" + '  Uninstall' + "`n" + '  Exit')) ('labels without numbers: ' + $script:Frames[0])
+        Assert-Equal (Get-LastFrame) ($Ptr + ' Uninstall') 'choice left on screen'
+        Use-FakeConsole @('7', 'Ctrl+2', 'Alt+1', '1')
+        Assert-Equal (Read-SujiMainChoice) '1' 'unknown digit and Ctrl/Alt digits ignored'
+        Use-FakeConsole @('0')
+        Assert-Equal (Read-SujiMainChoice) '0' '0 exits'
+        Use-FakeConsole @('Escape')
+        Assert-Equal (Read-SujiMainChoice) '0' 'Esc exits'
+        Set-SujiLanguage 'es'
+        Use-FakeConsole @('S')
+        Assert-True (Confirm-Suji -Question 'P?' -Default $false) 'S = Si'
+        Assert-True ($script:Frames[0].Contains('S' + [char]0x00ED)) ('Si drawn: ' + $script:Frames[0])
+        Use-FakeConsole @('Escape')
+        [void](Read-SujiMainChoice)
+        Assert-True ($script:Frames[0].Contains('Instalar o actualizar')) 'label without its number'
+        Assert-True ($script:Frames[0].Contains([char]0x2191 + '/' + [char]0x2193 + ' para moverte')) 'arrows in the help'
+    }
+    finally { Set-SujiLanguage 'en'; Reset-FakeConsole }
+    Assert-True ((T 'menu_help').StartsWith([string][char]0x2191)) 'English help decodes \u too'
+}
+
+Test-Case 'menus fall back to numbers: a console that cannot read keys or draw' {
+    try {
+        Use-FakeConsole @()
+        $script:SujiKeyReader = { throw (New-Object System.InvalidOperationException 'Cannot read keys when either application does not have a console or when console input has been redirected.') }
+        $script:Answers.Enqueue('y')
+        Assert-True (Confirm-Suji -Question 'Q?' -Default $false) 'answered with a typed y'
+        Assert-True (-not $script:SujiMenu) 'menus off for the rest of the run'
+        Assert-Equal ([string]::Join(',', $script:ConsoleLog)) 'enter,exit' 'console restored'
+        Assert-Equal (Get-LastFrame) '' 'menu cleared'
+        $script:Answers.Enqueue('2')
+        Assert-Equal (Read-SujiMainChoice) '2' 'main menu with numbers'
+        Assert-Equal $script:ConsoleLog.Count 2 'no other menu tried'
+        # A renderer that fails mid-menu: same.
+        Use-FakeConsole @('DownArrow', 'Enter')
+        $script:SujiMenuRenderer = { param([object[]]$Lines, [int]$Previous) if ($script:Frames.Count -ge 1) { throw 'cannot move the cursor' } $script:Frames.Add('x'); return 1 }
+        $script:Answers.Enqueue('0')
+        Assert-Equal (Read-SujiMainChoice) '0' 'numbers after the renderer failed'
+        Assert-Equal ([string]::Join(',', $script:ConsoleLog)) 'enter,exit' 'console restored'
+        Assert-Equal $script:Answers.Count 0 'all typed answers used'
+    }
+    finally { Reset-FakeConsole }
+}
+
+Test-Case 'menus: the console decides; -NoMenu and -Yes never open a menu' {
+    $d = New-TestDir 'menu-detect'
+    $fake = New-FakeEnv $d
+    try {
+        # Not an interactive console: numbers, the keys are never read.
+        Use-FakeConsole @('Enter')
+        $script:SujiConsoleProbe = { $false }
+        $script:Answers.Enqueue('0')
+        Assert-Equal (Invoke-SujiMain -Action '' -Target @() -Yes $false -Environment $fake) 0 'exit by number'
+        Assert-Equal $script:Keys.Count 1 'no key read'
+        Assert-Equal $script:Answers.Count 0 'typed answer used'
+        # Interactive console: the menu.
+        Use-FakeConsole @('Escape')
+        $script:SujiConsoleProbe = { $true }
+        Use-NoNumbers
+        Assert-Equal (Invoke-SujiMain -Action '' -Target @() -Yes $false -Environment $fake) 0 'Esc in the main menu'
+        Assert-Equal $script:Keys.Count 0 'key read'
+        Assert-True ($script:Frames[0].Contains('Install or update')) 'main menu drawn'
+        # -NoMenu: numbers even on an interactive console.
+        Use-FakeConsole @('Enter')
+        $script:SujiConsoleProbe = { $true }
+        $script:SujiReadLine = $RealReadLine
+        $script:Answers.Enqueue('0')
+        Assert-Equal (Invoke-SujiMain -Action '' -Target @() -Yes $false -NoMenu $true -Environment $fake) 0 'exit by number'
+        Assert-Equal $script:Keys.Count 1 'no key read with -NoMenu'
+        # -Yes: the probe is not even asked.
+        Use-FakeConsole @()
+        $script:SujiConsoleProbe = { throw 'probe called' }
+        Assert-Equal (Invoke-SujiMain -Action '' -Target @() -Yes $true -Environment $fake) 2 '-Yes without -Action'
+        Assert-Equal $script:ConsoleLog.Count 0 'no menu with -Yes'
+    }
+    finally { Reset-FakeConsole }
+    # A real process with its output redirected is not an interactive console.
+    $exe = (Get-Process -Id $PID).Path
+    $cmd = 'function Get-InstallerBody {' + ${function:Get-InstallerBody}.ToString() + '}; $env:SUJI_INSTALL_TEST = ''1''; . (Get-InstallerBody ''' + $InstallScript.Replace("'", "''") + '''); Test-SujiInteractiveConsole'
+    $out = & $exe -NoProfile -NonInteractive -Command $cmd
+    Assert-Equal ([string]::Join('', @($out)).Trim()) 'False' 'redirected child process'
+}
+
+Test-Case 'menus end to end: install from the list, then uninstall answering with keys' {
+    $d = New-TestDir 'menu-e2e'
+    $fake = New-FakeEnv $d
+    $aj = P @($fake.LocalAppData, 'Programs', 'mpv-AnimeJaNai')
+    Set-TestFile (P @($aj, 'mpvnet.exe'))
+    $cfg = P @($aj, 'portable_config')
+    Set-TestFile (P @($cfg, 'scripts', 'modernz.lua')) '-- modernz'
+    # A second folder, with hikari: listed, never chosen.
+    Set-TestFile (P @($fake.AppData, 'mpv', 'hikari-installed.txt')) "hikari_version=1.0.0`n"
+    $saved = $script:SujiScriptRoot
+    try {
+        $script:SujiScriptRoot = P @($RepoRoot, 'install')
+        # Install (first entry), the AnimeJaNai folder (Enter with nothing
+        # ticked), then "move the clashing interface?" with its default (yes).
+        Use-FakeConsole @('Enter', 'Enter', 'Enter')
+        $script:SujiConsoleProbe = { $true }
+        Use-NoNumbers
+        Assert-Equal (Invoke-SujiMain -Action '' -Target @() -Yes $false -Environment $fake) 0 'install exit code'
+        Assert-Equal $script:Keys.Count 0 'all keys used'
+        Assert-True (@($script:Frames | Where-Object { $_.Contains('[hikari: use its installer]') }).Count -gt 0) 'hikari folder listed'
+        Assert-True (Test-Exists (P @($cfg, 'scripts', 'suji', 'main.lua'))) 'installed'
+        Assert-True (Test-Exists (P @($cfg, 'scripts-apartados-suji', 'modernz.lua'))) 'modernz set aside (default yes)'
+        Assert-True (-not (Test-Exists (P @($fake.AppData, 'mpv', 'scripts')))) 'the hikari folder untouched'
+        # Uninstall: the one folder with suji (Enter), keep thumbfast (Right =
+        # No), bring modernz back (S).
+        Use-FakeConsole @('DownArrow', 'Enter', 'Enter', 'RightArrow', 'Enter', 'S')
+        $script:SujiConsoleProbe = { $true }
+        Use-NoNumbers
+        Assert-Equal (Invoke-SujiMain -Action '' -Target @() -Yes $false -Environment $fake) 0 'uninstall exit code'
+        Assert-Equal $script:Keys.Count 0 'all keys used'
+        Assert-True (-not (Test-Exists (P @($cfg, 'scripts', 'suji')))) 'uninstalled'
+        Assert-True (Test-Exists (P @($cfg, 'scripts', 'thumbfast.lua'))) 'thumbfast kept (No)'
+        Assert-True (Test-Exists (P @($cfg, 'scripts', 'modernz.lua'))) 'modernz back (S)'
+    }
+    finally { $script:SujiScriptRoot = $saved; Reset-FakeConsole }
+}
+
+Test-Case 'low window: compact menu first, then numbers; never taller than the window' {
+    $base = New-TestDir 'menu-low'
+    $e = New-FakeEnv $base
+    $list = @(
+        (New-SujiCandidate -Env $e -Kind 'mpv' -Exe '' -ConfigDir (P @($base, 'one', 'mpv')) -Portable $false),
+        (New-SujiCandidate -Env $e -Kind 'mpv.net' -Exe '' -ConfigDir (P @($base, 'two', 'mpv.net')) -Portable $false)
+    )
+    try {
+        Use-FakeConsole @('Enter')
+        $script:SujiMenuWidth = 61
+        Use-NoNumbers
+        [void](Read-SujiTargetChoice -List $list -Mode 'install')
+        $full = @($script:Frames[0] -split "`n")
+        Assert-True ($script:Frames[0].Contains((P @('one', 'mpv')))) 'full frame shows the folders'
+        # Lower: the compact menu (entries and one short help line).
+        Use-FakeConsole @('DownArrow', 'Spacebar', 'Enter')
+        $script:SujiMenuWidth = 61
+        $script:SujiMenuHeight = $full.Count
+        Use-NoNumbers
+        $sel = Read-SujiTargetChoice -List $list -Mode 'install'
+        Assert-Equal ([string]::Join(',', $sel.Indexes)) '1' 'compact menu still works'
+        $rows = @($script:Frames[0] -split "`n")
+        Assert-Equal $rows.Count 5 ('compact frame: ' + $script:Frames[0])
+        Assert-True ($rows[0].EndsWith((P @('one', 'mpv'))) -and $rows[0].Length -le 60) ('folder on the entry line, shortened: ' + $rows[0])
+        Assert-True ($rows[4].Contains('Space') -and -not $rows[4].Contains('tick')) ('short help: ' + $rows[4])
+        # Not even compact fits: numbers, nothing drawn.
+        Use-FakeConsole @('Enter')
+        $script:SujiMenuWidth = 61
+        $script:SujiMenuHeight = 6
+        $script:SujiReadLine = $RealReadLine
+        $script:Answers.Enqueue('2')
+        $sel = Read-SujiTargetChoice -List $list -Mode 'install'
+        Assert-Equal ([string]::Join(',', $sel.Indexes)) '1' 'answered with a number'
+        Assert-Equal $script:Frames.Count 0 'no menu drawn'
+        Assert-Equal $script:ConsoleLog.Count 0 'console never switched to menu mode'
+        Assert-True (-not $script:SujiMenu) 'numbers from now on'
+        # Yes/No: two lines, one (no help) in a very low window, numbers below that.
+        Use-FakeConsole @('Enter')
+        $script:SujiMenuHeight = 3
+        Assert-True (Confirm-Suji -Question 'Q?' -Default $true) 'compact yes/no'
+        Assert-Equal $script:Frames[0] ('  ' + $Ptr + ' Yes      No    ') 'answers only'
+        Use-FakeConsole @('Enter')
+        $script:SujiMenuHeight = 2
+        $script:SujiReadLine = $RealReadLine
+        $script:Answers.Enqueue('n')
+        Assert-True (-not (Confirm-Suji -Question 'Q?' -Default $true)) 'typed answer'
+        Assert-Equal $script:Frames.Count 0 'no yes/no drawn'
+    }
+    finally { Reset-FakeConsole }
+    # The real renderer refuses a frame taller than the window before writing.
+    $script:SujiMenuHeight = 4
+    try {
+        $tall = @(1..3 | ForEach-Object { , [object[]]@(New-SujiSeg ('line ' + $_)) })
+        Assert-Throws { Write-SujiMenuFrame -Lines $tall -Previous 0 } '*does not fit*' 'renderer'
+        Assert-Throws { Invoke-SujiRender -Lines $tall -Previous 0 } $script:SujiNoConsole 'render'
+    }
+    finally { $script:SujiMenuHeight = 0 }
+}
+
+Test-Case 'narrow window: help texts are wrapped, not cut' {
+    Set-SujiLanguage 'es'
+    try {
+        Use-FakeConsole @('Enter')
+        $script:SujiMenuWidth = 61
+        Use-NoNumbers
+        [void](Read-SujiTargetChoice -List @() -Mode 'install')
+        $f = $script:Frames[0]
+        Assert-True (($f -replace "`n\s*", ' ').Contains('se elige la resaltada)')) ('multi_help2 complete: ' + $f)
+        foreach ($row in @($f -split "`n")) { Assert-True ($row.Length -le 60) ('fits in 61 columns: ' + $row) }
+        $dot = ' ' + [char]0x00B7 + ' '
+        Assert-Equal ([string]::Join('|', (Split-SujiHelp -Text ('one two' + $dot + 'three' + $dot + 'four') -Max 15))) ('one two' + $dot + 'three|four') 'breaks between parts'
+    }
+    finally { Set-SujiLanguage 'en'; Reset-FakeConsole }
+}
+
+Test-Case 'keys pressed before a menu opens are thrown away' {
+    try {
+        Use-FakeConsole @('Enter')
+        Use-NoNumbers
+        $script:Pending.Enqueue('S')
+        Assert-True (-not (Confirm-Suji -Question 'Q?' -Default $false)) 'an S typed during a download does not answer Yes'
+        Assert-Equal $script:Pending.Count 0 'flushed'
+        Use-FakeConsole @('Enter')
+        Use-NoNumbers
+        foreach ($k in @('DownArrow', 'Enter')) { $script:Pending.Enqueue($k) }
+        Assert-Equal (Read-SujiMainChoice) '1' 'list menu: earlier keys do not move or choose'
+        # Numbered questions throw them away too.
+        Use-FakeConsole @()
+        $script:SujiMenu = $false
+        $script:SujiReadLine = $RealReadLine
+        $script:Pending.Enqueue('Enter')
+        $script:Answers.Enqueue('y')
+        Assert-True (Confirm-Suji -Question 'Q?' -Default $false) 'typed answer'
+        Assert-Equal $script:Pending.Count 0 'flushed before the numbered question'
+        # The real flush never fails, with or without a console.
+        & $RealKeyFlush
+    }
+    finally { Reset-FakeConsole }
+}
+
+# ---------------------------------------------------------------------------
 # Run without a file: irm | iex, and [scriptblock]::Create for options. Each of
 # these starts a real pwsh and dot-sources tests/iex-harness.ps1 from -Command,
 # so the installer runs in the global scope of a fresh session, as at a prompt.
@@ -1068,6 +1529,7 @@ function Assert-SessionClean {
     Assert-Equal @($r.NewModules).Count 0 ('modules left: ' + [string]::Join(',', @($r.NewModules)))
     Assert-Equal @($r.Output).Count 0 ('pipeline output: ' + [string]::Join(',', @($r.Output)))
     Assert-True $r.TlsSame 'SecurityProtocol put back'
+    Assert-True $r.CtrlCSame 'TreatControlCAsInput untouched'
 }
 
 Test-Case 'iex at a prompt, no options: no exit, nothing left in the session' {

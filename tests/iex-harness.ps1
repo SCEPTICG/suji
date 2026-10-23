@@ -60,6 +60,8 @@ $__hCode = Get-Content -Raw -LiteralPath $Script
 $__hMarker = '$script:SujiDownloader = {'
 if (([regex]::Matches($__hCode, [regex]::Escape($__hMarker))).Count -ne 1) { throw 'iex-harness: the downloader line is not in the installer exactly once' }
 $__hCode = $__hCode.Replace($__hMarker, '$script:SujiDownloader = $global:__hDownloader; $script:SujiUnusedDownloader = {')
+$__hCtrlC = $null
+try { $__hCtrlC = [Console]::TreatControlCAsInput } catch { }
 
 if ($StrictLatest) {
     Set-StrictMode -Version Latest
@@ -94,6 +96,8 @@ try { $null = $__hNeverDefinedVariable; $__hStrict = 'off' } catch { }
 Set-StrictMode -Off
 $ErrorActionPreference = 'Continue'
 
+$__hCtrlCAfter = $null
+try { $__hCtrlCAfter = [Console]::TreatControlCAsInput } catch { }
 # Harness variables (__h*) and the automatic ones any command sets are not the
 # installer's doing.
 $__hNoise = @('_', 'PSItem', 'LASTEXITCODE', '?', '^', '$', 'Matches', 'input')
@@ -118,4 +122,5 @@ $__hNewMods = @(Get-Module | Where-Object {
     Downloads    = @($global:__hLog)
     TlsSame      = ([System.Net.ServicePointManager]::SecurityProtocol -eq $global:__hTls)
     TlsTouched   = [bool]$global:__hTlsTouched
+    CtrlCSame    = ($__hCtrlCAfter -eq $__hCtrlC)
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $Report -Encoding utf8
