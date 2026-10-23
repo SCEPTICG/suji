@@ -64,7 +64,10 @@ function M.width(ctx) return (ctx.BUTTON + (SLIDER_W + PAD) * M.unfolded()) * ct
 
 function M.render(ctx, box, v)
     -- Painted while it unfolds or folds; then the row is laid out once
-    -- more, so the zones under a still cursor follow.
+    -- more, so the zones under a still cursor follow. With the controls
+    -- hidden (v = 0) render is not called, so settled can stay false until
+    -- they come back: harmless, layout.current() reads the width of now
+    -- and that first paint lays out the row again.
     local now = mp.get_time()
     if animation.running(tween, now) then
         ctx.request()

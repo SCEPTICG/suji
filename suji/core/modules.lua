@@ -17,6 +17,9 @@
 --                           it (false)
 --   menu_closed(ctx)        the menu it opened closed (see core/menu.lua)
 --
+-- and one field: once = true makes a double click on it one press (the
+-- second click of it runs nothing, as on an action button; core/mouse.lua).
+--
 -- box: { x0, y0, x1, y1, cy } in window px, cy the centre of the row.
 -- The core only calls modules through M.call, which gives each module its
 -- own ctx: one that fails or returns nonsense is turned off (not drawn, no

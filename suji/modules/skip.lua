@@ -7,7 +7,7 @@ local M = {}
 
 -- dir: -1 for prev, 1 for next.
 function M.new(dir)
-    local b = {}
+    local b = { once = true } -- a double click skips one entry, not two
     local count, pos = 0, -1 -- playlist-count, playlist-pos
 
     -- Whether there is an entry that way.

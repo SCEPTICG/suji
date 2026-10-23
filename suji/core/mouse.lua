@@ -12,7 +12,8 @@
 -- a click on the menu is a choice and a click anywhere else only closes
 -- it, and the controls stay on screen.
 -- Action buttons (modules/actions.lua) bind MBTN_LEFT too, only while the
--- cursor is on one that is on screen: a click there runs its command.
+-- cursor is on one that is on screen: a click there runs its command. A
+-- double click on one, or on a module with once (prev, next), runs it once.
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -140,6 +141,12 @@ local function press(x, y)
         if held then return end
         hold(x, y)
         return actions.press(action)
+    end
+    -- The same for a module that a second press would harm (prev and next
+    -- would skip an entry, or hit what took their place).
+    if hit and hit.mod.once then
+        if held then return end
+        hold(x, y)
     end
     if hit and modules.call(hit.mod, "press", hit, x, y) == true then captured = hit.mod end
 end

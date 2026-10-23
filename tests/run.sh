@@ -5,8 +5,9 @@
 # one), a smoke test with a windowless mpv and, if xvfb-run is installed, a
 # real drag and click test, a test of the messages other scripts send, a menu
 # test (which also needs ffmpeg and mkvmerge), a test of the size the more
-# menu remembers, a thumbnail test with a fake thumbfast, a double click test
-# and an action button test (which also need xdotool) in a virtual display.
+# menu remembers, a thumbnail test with a fake thumbfast, a double click test,
+# a double click on prev and an action button test (which also need
+# xdotool) in a virtual display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -283,6 +284,34 @@ else
         status=1
     else
         echo "xvfb-dblclick: ok speed 2 at $sped, fullscreen only at $full"
+    fi
+fi
+
+# A double click on prev, with xdotool: one entry back, not two.
+if [ -z "$tmp" ] || [ ! -s "$tmp/t.mkv" ]; then
+    echo "xvfb-skip: skipped (no test video)"
+elif ! command -v xdotool >/dev/null 2>&1; then
+    echo "xvfb-skip: skipped (no xdotool)"
+else
+    timeout 60 xvfb-run -a -s "-screen 0 1280x1024x24" sh tests/xvfb_skip.sh "$tmp/t.mkv" "$tmp/skip.log"
+    rc=$?
+    # The positions after the second entry started (-1 comes first).
+    moves=$(sed -n 's/^\[xvfb_dblclick\] playlist-pos \([^ ]*\) at .*/\1/p' "$tmp/skip.log" |
+        awk 'seen { printf "%s ", $0 } $0 == "1" { seen = 1 }')
+    if grep '^\[suji\]' "$tmp/skip.log" | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-skip: FAIL\n%s\n' "$(cat "$tmp/skip.log")"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-skip: FAIL (exit code %s)\n%s\n' "$rc" "$(cat "$tmp/skip.log")"
+        status=1
+    elif [ "$moves" != "0 " ]; then
+        printf 'xvfb-skip: FAIL (playlist-pos after 1: %s)\n%s\n' "$moves" "$(cat "$tmp/skip.log")"
+        status=1
+    elif grep -q '^\[xvfb_dblclick\] fullscreen yes' "$tmp/skip.log"; then
+        printf 'xvfb-skip: FAIL (the double click toggled fullscreen)\n%s\n' "$(cat "$tmp/skip.log")"
+        status=1
+    else
+        echo "xvfb-skip: ok a double click on prev went back one entry, from 1 to 0"
     fi
 fi
 

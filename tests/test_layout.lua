@@ -99,16 +99,48 @@ T.eq(box("prev"), nil, "the first entry: no prev")
 T.eq(x0("next"), 72, "next where prev would be: no gap")
 T.eq(x0("volume"), 124, "and the volume after it")
 T.eq(click(94, 680), "playlist-next", "next runs playlist-next")
+mp.advance(1) -- past the double-click time
 mp.fire("playlist-pos", 1)
 T.eq(x0("prev"), 72, "in the middle: prev")
 T.eq(x0("next"), 124, "and next")
 T.eq(x0("volume"), 176, "the volume after them")
 T.eq(click(94, 680), "playlist-prev", "prev runs playlist-prev")
+mp.advance(1)
 T.eq(click(146, 680), "playlist-next", "next, next to it")
 mp.fire("playlist-pos", 2)
 T.eq(x0("prev"), 72, "the last entry: prev")
 T.eq(box("next"), nil, "no next")
 T.eq(x0("volume"), 124, "the volume closes the gap")
+-- A double click is one press: prev hides on the first entry and next
+-- takes its place under the cursor, but the second click runs nothing.
+mp.advance(1)
+local function cmds()
+    local t = {}
+    for i, c in ipairs(mp.commands) do t[i] = table.concat(c, " ") end
+    return table.concat(t, " | ")
+end
+mp.fire("playlist-pos", 1)
+mp.mouse(94, 680)
+mp.commands = {}
+mp.button("press")
+mp.fire("playlist-pos", 0) -- the playlist-prev landed
+T.eq(x0("next"), 72, "next now under the cursor")
+mp.advance(0.1)
+mp.button("press")
+T.eq(cmds(), "playlist-prev", "a double click on prev: one playlist-prev, nothing from next")
+T.check(mp.bindings["suji-bar"] ~= nil, "the second click is kept from mpv too")
+mp.advance(0.5)
+T.eq(click(94, 680), "playlist-next", "after the double-click time, a click counts again")
+mp.advance(1)
+mp.fire("playlist-pos", 1)
+mp.mouse(146, 680)
+mp.commands = {}
+mp.button("press")
+mp.advance(0.1)
+mp.button("press")
+T.eq(cmds(), "playlist-next", "a double click on next: one playlist-next")
+mp.advance(1)
+mp.fire("playlist-pos", 2)
 mp.fire("playlist-pos", -1)
 T.check(box("prev") == nil and box("next") == nil, "no entry playing: neither")
 mp.fire("playlist-pos", 1)

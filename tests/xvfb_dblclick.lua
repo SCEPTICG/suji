@@ -1,7 +1,8 @@
 -- Loaded next to suji by tests/xvfb_dblclick.sh, which clicks with real X
--- events (mpv's own keypress command never makes a double click). It logs
--- when the speed and fullscreen change, with the time, and quits after a
--- while; the shell script reads the log.
+-- events (mpv's own keypress command never makes a double click), and by
+-- tests/xvfb_skip.sh. It logs when the speed, fullscreen and the playlist
+-- position change, with the time, and quits after a while; the shell
+-- script reads the log.
 local msg = require "mp.msg"
 
 local function report(name)
@@ -11,5 +12,6 @@ local function report(name)
 end
 report("speed")
 report("fullscreen")
+report("playlist-pos")
 
 mp.add_timeout(20, function() mp.commandv("quit") end)
