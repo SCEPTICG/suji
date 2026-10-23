@@ -1185,12 +1185,18 @@ Test-Case 'menu: the folder list, with a folder with hikari shown but not choosa
         Assert-True (Read-SujiTargetChoice -List @() -Mode 'uninstall').Other 'empty list: Other folder first'
     }
     finally { Reset-FakeConsole }
-    # With numbers, the hikari folder is listed, and choosing it asks again.
+    # With numbers, the hikari folder is listed without a number: 3 is not valid,
+    # and 2 is the mpv folder.
     $script:NonInteractive = $false
-    foreach ($a in @('2', '1,3')) { $script:Answers.Enqueue($a) }
-    $sel = Read-SujiTargetChoice -List $list -Mode 'install'
-    Assert-Equal ([string]::Join(',', $sel.Indexes)) '0,2' 'asked again'
+    $script:SujiQuiet = $false
+    try {
+        foreach ($a in @('3', '1,2')) { $script:Answers.Enqueue($a) }
+        $shown = [string]::Join("`n", @(& { $script:Sel = Read-SujiTargetChoice -List $list -Mode 'install' } 6>&1 | ForEach-Object { [string]$_ }))
+    }
+    finally { $script:SujiQuiet = $true }
+    Assert-Equal ([string]::Join(',', $script:Sel.Indexes)) '0,2' 'asked again, numbers of the folders that can be chosen'
     Assert-Equal $script:Answers.Count 0 'both answers used'
+    Assert-True ($shown.Contains(' 1) AnimeJaNai') -and $shown.Contains(' -) mpv.net  [hikari: use its installer]') -and $shown.Contains(' 2) mpv')) ('list: ' + $shown)
 }
 
 Test-Case 'yes/no: starts on the default, arrows change it, S/Y/N answer, Esc is always No' {
@@ -1444,6 +1450,14 @@ Test-Case 'keys pressed before a menu opens are thrown away' {
         Use-NoNumbers
         foreach ($k in @('DownArrow', 'Enter')) { $script:Pending.Enqueue($k) }
         Assert-Equal (Read-SujiMainChoice) '1' 'list menu: earlier keys do not move or choose'
+        # Numbered questions throw them away too.
+        Use-FakeConsole @()
+        $script:SujiMenu = $false
+        $script:SujiReadLine = $RealReadLine
+        $script:Pending.Enqueue('Enter')
+        $script:Answers.Enqueue('y')
+        Assert-True (Confirm-Suji -Question 'Q?' -Default $false) 'typed answer'
+        Assert-Equal $script:Pending.Count 0 'flushed before the numbered question'
         # The real flush never fails, with or without a console.
         & $RealKeyFlush
     }

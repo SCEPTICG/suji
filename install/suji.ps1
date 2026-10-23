@@ -213,7 +213,6 @@ $script:SujiStringsEn = @{
     multi_help_short     = '\u2191/\u2193 \u00b7 Space \u00b7 Enter \u00b7 Esc'
     answer_yes           = 'Yes'
     answer_no            = 'No'
-    hikari_choice        = '{0} has hikari: use the hikari installer there (-Interface suji).'
     ask_folder           = 'Full path of the mpv config folder (where mpv.conf is or should go)'
     folder_missing       = 'The folder {0} does not exist and neither does its parent.'
     readonly_warn        = 'Cannot write to {0}.'
@@ -303,7 +302,6 @@ $script:SujiStringsEs = @{
     multi_help_short     = '\u2191/\u2193 \u00b7 Espacio \u00b7 Intro \u00b7 Esc'
     answer_yes           = 'S\u00ed'
     answer_no            = 'No'
-    hikari_choice        = '{0} tiene hikari: usa ah\u00ed el instalador de hikari (-Interface suji).'
     ask_folder           = 'Ruta completa de la carpeta de configuraci\u00f3n de mpv (donde est\u00e1 o ir\u00e1 mpv.conf)'
     folder_missing       = 'No existe la carpeta {0} ni la que la contiene.'
     readonly_warn        = 'No se puede escribir en {0}.'
@@ -442,8 +440,11 @@ function Write-SujiError {
 # Replaceable in tests. $null when the input has ended.
 $script:SujiReadLine = { param([string]$Prompt) Read-Host -Prompt $Prompt }
 
+# Keys pressed before the question (the Enter that started irm | iex while the
+# script was still arriving, say) are thrown away first: they must not answer it.
 function Read-SujiLine {
     param([string]$Prompt)
+    & $script:SujiKeyFlush
     return (& $script:SujiReadLine $Prompt)
 }
 
@@ -2245,11 +2246,16 @@ function Get-SujiCandidateTags {
     return [string]::Join(' ', $tags)
 }
 
+# Numbered list of the candidates; a folder with hikari, which cannot be
+# chosen, gets '-' instead of a number (they come last, see Select-SujiTargets).
 function Show-SujiCandidates {
     param([object[]]$Candidates)
+    $n = 0
     for ($i = 0; $i -lt $Candidates.Count; $i++) {
         $c = $Candidates[$i]
-        Write-SujiInfo (' {0}) {1}  {2}' -f ($i + 1), (Get-SujiKindLabel $c.Kind), (Get-SujiCandidateTags $c))
+        $number = '-'
+        if (-not $c.Hikari) { $n++; $number = [string]$n }
+        Write-SujiInfo (' {0}) {1}  {2}' -f $number, (Get-SujiKindLabel $c.Kind), (Get-SujiCandidateTags $c))
         if ($c.Exe) { Write-SujiInfo (T 'cand_exe' @($c.Exe)) }
         Write-SujiInfo (T 'cand_config' @($c.ConfigDir))
     }
@@ -2278,8 +2284,8 @@ function New-SujiCandidateItem {
 
 # Which folders to work on: Indexes (into $List), Other (type a folder) and
 # Quit, as ConvertFrom-SujiSelection returns them. $null when the input ends.
-# A folder with hikari cannot be chosen: greyed out in the menu, refused (and
-# asked again) when typed.
+# A folder with hikari cannot be chosen: greyed out in the menu, without a
+# number in the numbered list.
 function Read-SujiTargetChoice {
     param([object[]]$List, [string]$Mode)
     $header = @()
@@ -2307,11 +2313,11 @@ function Read-SujiTargetChoice {
         Write-SujiInfo (' ' + (T 'opt_quit'))
         $text = Read-SujiLine (T 'select_prompt')
         if ($null -eq $text) { return $null }
-        $sel = ConvertFrom-SujiSelection -Text $text -Count @($List).Count
-        if ($null -eq $sel) { Write-SujiWarn (T 'invalid'); continue }
-        $hikari = @($sel.Indexes | Where-Object { $List[$_].Hikari })
-        if ($hikari.Count -eq 0) { return $sel }
-        foreach ($i in $hikari) { Write-SujiWarn (T 'hikari_choice' @($List[$i].ConfigDir)) }
+        # The numbers count only the folders that can be chosen.
+        $eligible = @(for ($i = 0; $i -lt @($List).Count; $i++) { if (-not $List[$i].Hikari) { $i } })
+        $sel = ConvertFrom-SujiSelection -Text $text -Count $eligible.Count
+        if ($null -ne $sel) { $sel.Indexes = @($sel.Indexes | ForEach-Object { $eligible[$_] }); return $sel }
+        Write-SujiWarn (T 'invalid')
     }
 }
 
@@ -2401,6 +2407,8 @@ function Select-SujiTargets {
             if ($list.Count -eq 0) {
                 if ($Mode -eq 'uninstall') { Write-SujiWarn (T 'nothing_to_uninstall') } else { Write-SujiWarn (T 'none_found') }
             }
+            # Those that cannot be chosen go after the others.
+            $list = @(@($list | Where-Object { -not $_.Hikari }) + @($list | Where-Object { $_.Hikari }))
             $sel = Read-SujiTargetChoice -List $list -Mode $Mode
             # $null: no more input (stdin closed or redirected), same as choosing Exit.
             if ($null -ne $sel -and -not $sel.Quit) {
