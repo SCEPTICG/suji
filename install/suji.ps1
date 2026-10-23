@@ -1855,12 +1855,13 @@ function Select-SujiTargets {
 }
 
 # mpv's state folder when it is not the config folder: %LOCALAPPDATA%\mpv, for
-# mpv's own %APPDATA%\mpv (or MPV_HOME). '' for a portable_config, which is its
-# own state folder, and for mpv.net and AnimeJaNai, whose state is elsewhere.
+# mpv's own %APPDATA%\mpv. '' for a portable_config, which is its own state
+# folder, for mpv.net and AnimeJaNai, whose state is elsewhere, and with
+# MPV_HOME set, where the state folder may not be that one.
 function Get-SujiStateDir {
     param([hashtable]$Env, $Candidate)
     if ($Candidate.PSObject.Properties['Portable'] -and $Candidate.Portable) { return '' }
-    if (-not $Env.LocalAppData) { return '' }
+    if (-not $Env.LocalAppData -or $Env.MpvHome) { return '' }
     $mpv = $Candidate.Kind -eq 'mpv'
     if ($Candidate.Kind -eq 'folder') {
         $user = Get-SujiUserConfigDir -Env $Env -Kind 'mpv'
