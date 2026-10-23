@@ -906,6 +906,7 @@ else
     pty_run "$h" '\r' '\r'
     check 'menus: install through the keyboard menus' test "$rc" = 0 -a -f "$cfg/scripts/suji/main.lua"
     check 'menus: the help lines shown' has "$out" '↑/↓ to move · Enter to choose · Esc to exit'
+    check 'menus: the header of hikari' has "$out" 'Players and config folders found:'
     check 'menus: the folder menu ticks' has "$out" '↑/↓ to move · Space to tick or untick · Esc to exit'
     check 'menus: the choice shown on a line' has "$out" "› mpv (/"
     check 'menus: the terminal is put back (cursor shown again)' has "$out" $'\033[?25h'

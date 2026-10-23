@@ -127,7 +127,7 @@ suji_text_en() {
         menu) s='1) Install or update\n2) Uninstall\n0) Exit' ;;
         menu_prompt) s='Choose an option' ;;
         invalid) s='Invalid option.' ;;
-        found_header) s='Config folders found:' ;;
+        found_header) s='Players and config folders found:' ;;
         found_header_uninst) s='Folders with suji:' ;;
         cand_exe) s='     Player: %s' ;;
         cand_config) s='     Config: %s' ;;
@@ -220,7 +220,7 @@ suji_text_es() {
         menu) s='1) Instalar o actualizar\n2) Desinstalar\n0) Salir' ;;
         menu_prompt) s='Elige una opción' ;;
         invalid) s='Opción no válida.' ;;
-        found_header) s='Carpetas de configuración encontradas:' ;;
+        found_header) s='Reproductores y carpetas de configuración encontrados:' ;;
         found_header_uninst) s='Carpetas con suji:' ;;
         cand_exe) s='     Reproductor: %s' ;;
         cand_config) s='     Configuración: %s' ;;
