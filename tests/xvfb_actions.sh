@@ -2,8 +2,8 @@
 # An action button clicked with real X events, run inside xvfb-run by
 # tests/run.sh:
 #   tests/xvfb_actions.sh <file> <log> <controls>
-# 640x480 window: the row's top is at y 418 (margins.bottom 62), so the
-# button goes from y 370 to 406, its right edge at x 620. The cursor goes
+# 640x480 window: the timeline's zone starts at y 394 (margins.bottom 86),
+# so the button goes from y 346 to 382, its right edge at x 620. The cursor goes
 # straight to it and clicks: the command must arrive once, and the script
 # hides the button. A second click there, once mpv's double-click time is
 # over, must find nothing. Then the script shows a button it never hides,
@@ -28,7 +28,7 @@ if [ -z "$wid" ]; then
     exit 1
 fi
 sleep 0.5
-xdotool mousemove --window "$wid" 600 388
+xdotool mousemove --window "$wid" 600 364
 sleep 0.5
 xdotool click 1
 sleep 1

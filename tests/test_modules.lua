@@ -96,9 +96,12 @@ T.eq(#mp.updates, n + 1, "shown: a module watcher repaints")
 -- safe: a module that fails in render is turned off -----------------------
 start({ controls = "pause,time,space,volume,fullscreen" }) -- nothing slides into its place
 local volume = package.loaded["modules.volume"]
-mp.mouse(1176, 680)
+mp.mouse(1186, 680) -- on the speaker: the slider unfolds, the volume grows leftwards
+mp.advance(0.3)
+mp.mouse(1170, 680)
 mp.button("down")
 T.check(mouse().captured() == volume, "the slider holds the mouse")
+T.check(painted():find("m 4435 2709", 1, true) ~= nil, "the speaker is drawn")
 volume.render = function() error("broken \27[31m render") end
 mp.advance(1)
 T.eq(mouse().captured(), nil, "a failed module lets go of the mouse")
@@ -106,7 +109,7 @@ local errs = logs("error", "volume")
 T.eq(#errs, 1, "the failure is logged")
 T.check(errs[1] and not errs[1]:find("[%z\1-\31\127]"), "the log has no control characters")
 T.check(errs[1] and errs[1]:find("render", 1, true) ~= nil, "it says where it failed")
-T.check(painted():find("4576 2714", 1, true) == nil, "not drawn any more")
+T.check(painted():find("m 4435 2709", 1, true) == nil, "not drawn any more")
 T.check(painted():find("}00:50{", 1, true) ~= nil, "the rest is drawn")
 mp.button("up")
 mp.mouse(1180, 680)
@@ -128,7 +131,9 @@ T.eq(#logs("error", "pause"), 1, "logged")
 mp.button("up")
 mp.mouse(43, 680)
 local tb = package.loaded["core.layout"].find(package.loaded["core.layout"].current(), package.loaded["modules.time"])
-T.eq(tb.x0, 20, "turned off: no gap, the time takes its place")
+T.eq(package.loaded["core.layout"].find(package.loaded["core.layout"].current(), package.loaded["modules.volume"]).x0,
+    20, "turned off: no gap, the volume takes its place")
+T.eq(tb.x0, 72, "and the time follows")
 package.loaded["modules.fullscreen"].width = function() return 0 / 0 end
 mp.mouse(44, 680)
 mp.advance(1)
@@ -168,7 +173,7 @@ T.eq(click(1240, 680), "cycle pause", "and pause on the right")
 T.eq(click(100, 680), nil, "the time is gone")
 T.eq(click(1176, 680), nil, "and the volume")
 T.check(not painted():find("} / 01:40", 1, true), "not drawn")
-T.check(painted():find("\\pos(32.0,652.0)", 1, true) ~= nil, "the title is still there")
+T.check(painted():find("\\an7\\pos(32.0,24.0)", 1, true) ~= nil, "the title is still there")
 mp.set_opts({ controls = "pause,nope,command:x:set pause yes,space,volume,fullscreen" })
 mp.advance(1)
 T.eq(#logs("warn", "'nope'"), 1, "an unknown element is warned")
@@ -184,22 +189,25 @@ T.eq(click(80, 680), nil, "and shown once")
 mp.set_opts({ controls = "" })
 mp.advance(1)
 T.eq(click(42, 680), nil, "an empty row")
-T.check(painted():find("\\pos(32.0,652.0)", 1, true) ~= nil, "still the title and the timeline")
-T.check((click(42, 710) or ""):find("^seek") ~= nil, "the timeline is always there")
+T.check(painted():find("\\an7\\pos(32.0,24.0)", 1, true) ~= nil, "still the title and the timeline")
+T.check((click(42, 645) or ""):find("^seek") ~= nil, "the timeline is always there")
 mp.set_opts({ controls = "pause,time,space,volume,fullscreen" })
 
 -- A drag ends when its module leaves the row
 start()
-mp.mouse(1176, 680)
+mp.mouse(94, 680) -- on the speaker: the slider unfolds from 116 to 180
+mp.advance(0.3)
+mp.mouse(148, 680)
 mp.button("down")
+T.check(mouse().captured() == package.loaded["modules.volume"], "the slider holds the mouse")
 mp.set_opts({ controls = "pause,time" })
 T.eq(mouse().captured(), nil, "the module left the row: it lets go")
 mp.commands = {}
-mp.mouse(1100, 680)
+mp.mouse(50, 680)
 T.eq(#mp.commands, 0, "no volume change")
 mp.button("up")
 start()
-mp.mouse(640, 710)
+mp.mouse(640, 645)
 mp.button("down")
 mp.set_opts({ controls = "pause" })
 T.check(package.loaded["modules.timeline"].dragging(), "the timeline is not part of the row: it keeps its drag")
@@ -283,7 +291,7 @@ mp.fire("osd-dimensions", { w = 3840, h = 2160 })
 local five = {}
 for i = 1, 5000 do five[i] = { time = i * 100 / 5001 } end
 mp.fire("chapter-list", five)
-mp.mouse(1000, 2150)
+mp.mouse(1000, 2085)
 mp.advance(1)
 T.check(mods().alive(mods().timeline), "5000 chapters at 3840 px: the timeline is alive")
 T.eq(#logs("error"), 0, "no error")
@@ -322,7 +330,7 @@ T.check(painted():find("m 1020 ", 1, true) == nil, "and not the old one")
 -- A module that fails mid drag drops it: no pause or seek timer left
 start({ pause_on_drag = true })
 mp.fire("pause", false)
-mp.mouse(640, 710)
+mp.mouse(640, 645)
 mp.button("down")
 T.eq(mp.props.pause, true, "paused by the drag")
 tl = mods().timeline
@@ -380,7 +388,7 @@ T.eq(left, 0, "after 300 reloads no old command button is left in memory")
 
 -- ctx.relayout: a module whose width changed moves the zones at once
 start()
-mp.mouse(100, 680) -- on the time
+mp.mouse(130, 680) -- on the time
 local pause = package.loaded["modules.pause"]
 local width = pause.width
 pause.width = function() return 120 end
@@ -405,7 +413,8 @@ T.eq(input(42, 680).on_controls, true, "on a command button")
 T.eq(input(42, 680).on_bar, false, "not on the bar")
 T.eq(input(640, 680).on_controls, false, "in the empty middle")
 T.eq(input(1240, 680).on_controls, true, "on the fullscreen button on the right")
-T.eq(input(640, 710).on_bar, true, "on the bar")
-T.eq(input(640, 710).on_controls, false, "and not on the row")
+T.eq(input(640, 645).on_bar, true, "on the bar, above the row")
+T.eq(input(640, 645).on_controls, false, "and not on the row")
+T.eq(input(640, 710).on_bar, false, "under the row: not on the bar")
 
 T.done("test_modules")

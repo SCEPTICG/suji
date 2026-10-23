@@ -1,5 +1,5 @@
--- The menu service: one menu at a time, opened upwards from the button of
--- the module that asked for it, above the row and the title. Modules use it
+-- The menu service: one menu at a time, opened upwards above the timeline,
+-- in line with the button of the module that asked for it. Modules use it
 -- through their ctx:
 --
 --   ctx.open_menu(menu, box)  open menu from the button in box (the
@@ -20,7 +20,7 @@
 -- menus have no owner module. They come out of a button of the row and
 -- follow it, by its name in the controls option when the option changes
 -- (command: buttons are made again then); if it leaves the row, they move
--- to the middle, above it.
+-- to the middle.
 --
 -- A menu, with the names of the open-menu message (see docs/api.md):
 --   { type, title?, items, selected_index?, keep_open? }
@@ -66,7 +66,7 @@ local M = {}
 local ROW_H = 30     -- one item
 local TITLE_H = 26   -- the menu's title above the items
 local PAD = 14       -- text inside the menu's left and right edges
-local GAP = 12       -- between the menu and the row
+local GAP = 12       -- between the menu and the timeline's zone
 local TOP = 24       -- kept free at the top of the window
 local MIN_W, MAX_W = 180, 420
 local SIZE, HINT_SIZE, TITLE_SIZE = 15, 13, 13
@@ -186,7 +186,8 @@ end
 -- Where things go ------------------------------------------------------------
 
 -- The menu's place for its anchor (the button's box, or { center = true }:
--- the middle of the window, above the row) and the window now:
+-- the middle of the window) and the window now, its bottom above the
+-- timeline's zone, so it never covers the bar:
 -- { x0, x1, y0 (top, title included), list_top, y1 (bottom), rows, row_h }.
 local function place(m, anchor)
     local s = state.scale
@@ -194,8 +195,7 @@ local function place(m, anchor)
     local w = math.max(1, math.min(m.est * s, state.w - 2 * side))
     -- Aligned with the button; moved left when it would leave the window.
     local x0 = anchor.center and (state.w - w) / 2 or math.max(side, math.min(anchor.x0, state.w - side - w))
-    local top = anchor.center and state.h - (layout.ROW_LIFT + layout.HEIGHT / 2) * s or anchor.y0
-    local y1 = top - GAP * s
+    local y1 = layout.bar_zone().y0 - GAP * s
     local row_h, title_h = ROW_H * s, m.title and TITLE_H * s or 0
     local fit = math.max(1, math.floor((y1 - TOP * s - title_h) / row_h))
     local rows = math.min(#m.items, fit)
@@ -300,7 +300,7 @@ local function copy(box) return { x0 = box.x0, y0 = box.y0, x1 = box.x1, y1 = bo
 -- never per frame; nil: to work out at the next paint.
 local function cover()
     local g, pad = geometry(), BG_PAD * state.scale
-    local t = modules.title.zone(state, layout.current().right_x0)
+    local t = modules.title.zone(state)
     cur.title_measured = modules.title.measured
     cur.over_title = t.x1 > t.x0 and g.x0 < t.x1 and g.x1 > t.x0 and g.y0 - pad < t.y1 and g.y1 + pad > t.y0
 end
@@ -384,8 +384,8 @@ function M.message_open() return M.is_open() and not cur.owner end
 -- wrong with it.
 
 -- Open def from box, a box of the row (the menu follows its module), or
--- centred above the row when box is nil. A menu of the same type opened
--- by a message is replaced in place instead. True when it is on screen.
+-- centred when box is nil. A menu of the same type opened by a message is
+-- replaced in place instead. True when it is on screen.
 function M.open_message(def, box, warn)
     local m, why = M.clean(def, false, warn)
     if not m then
@@ -667,7 +667,7 @@ function M.render(now)
     if cur.scroll + g.rows < #items then out[#out + 1] = chevron(cx, g.y1 + 3 * s, 1, p, s) end
     local ass = table.concat(out, "\n")
     if p < 1 then
-        -- Unfolding upwards from the row: a clip that grows with p.
+        -- Unfolding upwards from the timeline: a clip that grows with p.
         local bottom = g.y1 + GAP * s
         local top = bottom - (bottom - g.y0 + 8 * s) * p
         local clip = ("{\\clip(%d,%d,%d,%d)}"):format(math.floor(g.x0 - 8 * s), math.floor(top),

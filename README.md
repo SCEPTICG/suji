@@ -96,20 +96,21 @@ To uninstall by hand, delete the `scripts/suji` folder (and `script-opts/suji.co
 
 ## Usage
 
-- **Timeline:** click to seek, or drag. While the cursor is on the timeline, the time in the row shows the time under the cursor, dimmed; with [thumbnails](#thumbnails), that time goes in the thumbnail's box instead.
+- **Timeline:** it rises from the bottom edge to just above the row as the controls come. Click to seek, or drag; the part already loaded is a lighter grey. While the cursor is on the timeline, the time in the row shows the time under the cursor, dimmed; with [thumbnails](#thumbnails), that time goes in the thumbnail's box instead.
 - **Play/pause:** the button on the left.
+- **Previous and next:** after it, the previous and the next entry of the playlist, files or streams. They are only there when the playlist has more than one entry; the previous one hides on the first entry and the next one on the last.
+- **Volume:** on the left, only the speaker at first. With the cursor on it, the slider unfolds and pushes the time to the right; it folds again a moment after the cursor leaves both. Click the speaker to mute, click or drag the slider to set the volume, and use the wheel over either to change it by 5.
 - **Time:** click it to switch between the duration and the remaining time.
-- **Volume:** click the speaker to mute, click or drag the slider to set the volume, and use the wheel over either to change it by 5.
 - **Fullscreen:** the button on the right.
-- **Menus:** the five buttons before the volume, described below.
+- **Menus:** the five buttons before fullscreen, described below.
 
 The controls appear as the mouse gets close to the bottom of the window and hide when it moves away or stays still for a moment. They stay up while paused, while the cursor is on them and while dragging. Double clicks on the controls do not toggle fullscreen; everywhere else, mpv's mouse bindings work as usual.
 
-Above the controls suji shows the title: mpv's `media-title`, or the file name without its extension when the file has no title. Another script can replace it, see below.
+At the top left suji shows the title, with the controls: mpv's `media-title`, or the file name without its extension when the file has no title. Another script can replace it, see below.
 
 ## Menus
 
-Each menu opens upwards from its button. A button with nothing to offer is hidden.
+Each menu opens upwards above the timeline, in line with its button. A button with nothing to offer is hidden.
 
 - **Subtitles:** Off, the subtitle tracks and *Load from clipboard* (a path or URL in the clipboard, mpv 0.40 or newer). Shown whenever a file is loaded.
 - **Audio:** the audio tracks. Shown when there is more than one.
@@ -137,7 +138,7 @@ A file that cannot be read or holds anything else gives 100%. If the file cannot
 
 With [thumbfast](https://github.com/po5/thumbfast) installed, suji shows thumbnails on the timeline. thumbfast is a separate script that makes them: put `thumbfast.lua` in the `scripts` folder, as its page explains. suji makes no thumbnails of its own.
 
-While the cursor is on the timeline, or dragging it, a box comes up just above the bar, centred on the cursor: the frame at that time and, under it, the time and the chapter of that moment if the file has chapters (cut if it does not fit). At both ends of the bar the box stays inside the window. It covers the row while it is there, and the row's time shows the position again. The box goes when the cursor leaves the timeline, when the controls hide, when the file changes, when a menu opens and when suji is turned off.
+While the cursor is on the timeline, or dragging it, a box comes up just above the bar, centred on the cursor: the frame at that time and, under it, the time and the chapter of that moment if the file has chapters (cut if it does not fit). At both ends of the bar the box stays inside the window. While it is there, the row's time shows the position again. The box goes when the cursor leaves the timeline, when the controls hide, when the file changes, when a menu opens and when suji is turned off.
 
 suji asks thumbfast for the frame and where to put it, and draws the box and the line under it; thumbfast draws the image. Everything else is up to thumbfast and its own options, in `script-opts/thumbfast.conf`: the size of the image (it already includes the system's HiDPI scale: suji's `scale` and *Size* grow the box around it, not the image), and whether it works on network files or audio files (both off by default). For mpv.net and other frontends, see thumbfast's page.
 
@@ -175,10 +176,12 @@ That works from the console, from a key in `input.conf` (`F9 change-list script-
 The `controls` option chooses which elements the row shows and in which order. The default is the row described above:
 
 ```
-controls=pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen
+controls=pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen
 ```
 
-- The elements are `pause`, `time`, `volume`, `fullscreen` and the menus `subtitles`, `audio`, `playlist`, `speed` and `more`.
+If you already have your own `controls=` in `suji.conf`, it stays as it is: only the default changed in 0.7.0.
+
+- The elements are `pause`, `prev`, `next`, `time`, `volume`, `fullscreen` and the menus `subtitles`, `audio`, `playlist`, `speed` and `more`.
 - `space` pushes what follows it to the right; `gap` leaves a small hole.
 - `command:icon:command` adds a button that runs an mpv command, for example `command:x:playlist-next`.
 - `button:name` places a button that another script defines (see [For script authors](#for-script-authors)).
@@ -195,14 +198,16 @@ On the command line, the same goes for `--script-opts-append=suji-controls=pause
 ## For other scripts: the title
 
 ```
-script-message-to suji set-title "<series>" "<episode>"
+script-message-to suji set-title "<series>" "<episode>" ["<name>"]
 ```
 
-- With both, suji shows a two-line title: the series in smaller capital letters above the episode.
+- With both, suji shows a two-line title: the series in small grey capital letters above the episode, larger and in bold.
+- The name of the episode is optional: it goes after the episode, on the same line, in grey ("Episode 2  The name"). It is only shown with an episode, and with two arguments everything is as before.
 - With only one of them (the other empty or missing), a one-line title.
 - With both empty, suji goes back to `media-title`.
 - The title is cleared when the file changes, so send it again for each file.
 - Each part is cut to 200 characters.
+- The title shows and hides with the controls: at rest, nothing is left at the top of the window.
 
 The name and arguments of this message are meant to stay as they are, so scripts can rely on them.
 

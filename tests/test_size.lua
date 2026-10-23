@@ -88,10 +88,12 @@ local function open_more()
     local b = assert(box_of("more"), "more is in the row")
     click((b.x0 + b.x1) / 2, b.cy)
 end
--- Centre of row k of n in the open more menu, at the scale of now.
+-- Centre of row k of n in the open more menu, at the scale of now: its
+-- bottom is 12 px above the timeline's zone.
 local function row(k, n)
     local s, b = scale(), box_of("more")
-    return b.x0 + 40 * s, b.y0 - 12 * s - n * 30 * s + (k - 0.5) * 30 * s
+    local y1 = package.loaded["core.layout"].bar_zone().y0 - 12 * s
+    return b.x0 + 40 * s, y1 - n * 30 * s + (k - 0.5) * 30 * s
 end
 -- y in px of the top of each active mark: the accent lines 2 px wide at
 -- scale 1.

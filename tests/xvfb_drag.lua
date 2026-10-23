@@ -7,13 +7,15 @@
 -- time. mpv's OSC is left on in the command line: suji has to
 -- turn it off, so it must be gone when the mouse moves.
 --
--- Window: 640x480, so suji's zone is y 456..479 and the row of controls is
--- centred on y 440. File: 60 s, paused.
+-- Window: 640x480, so the timeline's zone is y 394..417, just above the
+-- row of controls, centred on y 440. The volume is folded at x 524-568
+-- until the cursor is on its speaker; then it unfolds leftwards to 454,
+-- its slider from 498 to 562. File: 60 s, paused.
 
 local msg = require "mp.msg"
 
 local W, H = 640, 480
-local Y = 470                 -- inside the bar zone
+local Y = 406                 -- inside the bar zone
 local FROM, TO = 100, 480     -- drag from x=100 to x=480
 local started, done = false, false
 
@@ -78,7 +80,8 @@ after(0.4, function()
     mp.commandv("mouse", "100", "440") -- the time
 end)
 after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
-after(0.4, function() mp.commandv("mouse", "536", "440") end) -- middle of the volume slider
+after(0.4, function() mp.commandv("mouse", "546", "440") end) -- the speaker: the slider unfolds
+after(0.4, function() mp.commandv("mouse", "530", "440") end) -- middle of the volume slider
 after(0.4, function() mp.commandv("keypress", "MBTN_LEFT") end)
 after(0.4, function()
     local v = mp.get_property_number("volume", -1)

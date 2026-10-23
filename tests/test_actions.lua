@@ -4,8 +4,9 @@
 local T = require "lib"
 
 local W, H = 1280, 720
--- The row's top is at 658 (margins.bottom 62): buttons from 610 to 646.
-local CY, RIGHT = 628, 1260
+-- The top of the timeline's zone, above the row, is at 634 (margins.bottom
+-- 86): buttons from 586 to 622.
+local CY, RIGHT = 604, 1260
 
 local function start(controls)
     T.unload()
@@ -162,8 +163,8 @@ for i = 1, 5 do if has("Action " .. i .. "") then shown = shown + 1 end end
 T.eq(shown, 4, "at most 4 on screen")
 T.check(not has("Action 5"), "the fifth waits")
 -- Right to left: the first one is at the right edge.
-local x1 = painted():match("%\\pos%((%d+)[%.%d]*,628%.0%)[^\n]*}Action 1")
-local x2 = painted():match("%\\pos%((%d+)[%.%d]*,628%.0%)[^\n]*}Action 2")
+local x1 = painted():match("%\\pos%((%d+)[%.%d]*,604%.0%)[^\n]*}Action 1")
+local x2 = painted():match("%\\pos%((%d+)[%.%d]*,604%.0%)[^\n]*}Action 2")
 T.check(x1 and x2 and tonumber(x1) > tonumber(x2), "the first is right of the second")
 T.check(x1 and tonumber(x1) < RIGHT, "inside the right margin")
 -- A narrow window: those that would leave it on the left wait too.

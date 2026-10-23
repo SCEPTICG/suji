@@ -18,11 +18,14 @@ local DEFAULTS = {
                            -- (core/thumbnail.lua); no = never talk to it
     debug = false,         -- log sizes and scale to the mpv console
     -- The row everyone sees who installs suji and touches nothing: playback
-    -- on the left, under the title; what is changed while watching (the
-    -- menus, the volume, fullscreen) together on the right, where opening a
-    -- menu never covers the title. Keep docs/suji.conf in step.
+    -- and the volume on the left, the menus and fullscreen on the right.
+    -- Keep docs/suji.conf in step.
     -- Elements, left to right, separated by commas (see core/controls.lua):
-    --   pause, time, volume, fullscreen      the controls of v0.1.0
+    --   pause, time, volume, fullscreen      the controls of v0.1.0; the
+    --                volume's slider unfolds with the cursor on the speaker
+    --   prev, next   the previous and the next entry of the playlist;
+    --                shown with more than one, each one hides, leaving no
+    --                gap, at its end of the playlist
     --   subtitles, audio, playlist, speed, more   buttons with menus;
     --                each one hides, leaving no gap, when it has nothing
     --                to offer
@@ -35,7 +38,7 @@ local DEFAULTS = {
     -- has_chapter, has_playlist, idle, or any mpv property or user-data/...
     -- (true when it exists and is not false, no, 0 or empty). "," is OR,
     -- "+" is AND, "!" negates: <video,audio>, <has_playlist+!stream>.
-    controls = "pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen",
+    controls = "pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen",
 }
 
 -- Numbers are kept in these ranges; NaN falls back to the default.

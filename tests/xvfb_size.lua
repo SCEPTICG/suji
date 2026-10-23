@@ -7,10 +7,11 @@
 -- (~~home/, when there is no state folder).
 --
 -- Window: 640x480 and the row pause,time,space,more,volume,fullscreen:
--- more is at x 408-452, on the row centred on y 440. Its menu ends 12 px
--- above the row's zones (y 406): Size is its last row, centred on y 391,
--- and so is 150%, the last of the sizes. The row's top is 62 px from the
--- bottom edge at 100%, 93 px at 150%.
+-- more is at x 472-516 (the volume folded), on the row centred on y 440.
+-- Its menu ends 12 px above the timeline's zone (y 382): Size is its last
+-- row, centred on y 367, and so is 150%, the last of the sizes. The top of
+-- the timeline's zone is 86 px from the bottom edge at 100%, 129 px at
+-- 150%.
 --
 -- xvfb_size-shot=<file> saves a screenshot with the sizes open, at 150%.
 
@@ -62,14 +63,14 @@ end
 
 if PHASE == "1" then
     after(0.3, function()
-        if bottom ~= 62 then finish(false, "margins.bottom " .. tostring(bottom) .. " at start, not 62") end
+        if bottom ~= 86 then finish(false, "margins.bottom " .. tostring(bottom) .. " at start, not 86") end
         if file() ~= nil then finish(false, "the size file is there before any choice") end
     end)
-    click_at(430, 440) -- more
-    click_at(430, 391) -- Size
-    click_at(430, 391) -- 150%
+    click_at(494, 440) -- more
+    click_at(494, 367) -- Size
+    click_at(494, 367) -- 150%
     after(0.5, function()
-        if bottom ~= 93 then finish(false, "margins.bottom " .. tostring(bottom) .. " at 150%, not 93") end
+        if bottom ~= 129 then finish(false, "margins.bottom " .. tostring(bottom) .. " at 150%, not 129") end
         if file() ~= "150\n" then finish(false, ("the file holds %q"):format(tostring(file()))) end
         if mp.get_property_native("user-data/suji/menu/type") ~= "suji-more" then
             finish(false, "the menu closed after the choice")
@@ -77,13 +78,13 @@ if PHASE == "1" then
         if SHOT then mp.commandv("screenshot-to-file", SHOT, "window") end
     end)
     after(0.5, function()
-        finish(true, ("margins.bottom 62 at 100%%, 93 at 150%%, %ssuji-size holds 150, the menu open"):format(FOLDER))
+        finish(true, ("margins.bottom 86 at 100%%, 129 at 150%%, %ssuji-size holds 150, the menu open"):format(FOLDER))
     end)
 else
     after(0.5, function()
-        if bottom ~= 93 then finish(false, "margins.bottom " .. tostring(bottom) .. " on the next start, not 93") end
+        if bottom ~= 129 then finish(false, "margins.bottom " .. tostring(bottom) .. " on the next start, not 129") end
         if file() ~= "150\n" then finish(false, ("the file holds %q"):format(tostring(file()))) end
-        finish(true, "the next start is at 150% (margins.bottom 93)")
+        finish(true, "the next start is at 150% (margins.bottom 129)")
     end)
 end
 

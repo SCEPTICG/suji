@@ -18,7 +18,7 @@ local function tt(...) local x, y = time.time_text(...); return x .. y end
 
 -- Icons: every one is a valid \p stroke and scales with the size
 for _, name in ipairs({ "play", "pause", "volume0", "volume1", "volume2", "mute",
-                        "fullscreen", "windowed", "subtitles", "audio", "playlist", "more" }) do
+                        "fullscreen", "windowed", "subtitles", "audio", "playlist", "more", "prev", "next" }) do
     local small, big = icons.shape(name, 0, 0, 22), icons.shape(name, 0, 0, 44)
     T.near(big[1][1], small[1][1] * 2, name .. " scales x")
     T.near(big[1][2], small[1][2] * 2, name .. " scales y")
@@ -93,7 +93,6 @@ T.eq(f1.x1, 1260, "fullscreen 20 px from the right")
 T.eq(v1.x1, 1208, "slider 8 px before fullscreen")
 T.eq(v1.x1 - (v1.x0 + 44), 64, "64 px slider")
 T.eq(v1.x0, 1100, "volume icon left of the slider")
-T.eq(l1.right_x0, 1100, "the right part starts at the volume icon")
 local l2 = layout.place(default_row(2, 90), { w = 2560, h = 1440, scale = 2 })
 T.eq(box_of(l2, pause).cy, 1360, "scale 2: row centre")
 T.eq(box_of(l2, pause).x1, 128, "scale 2: pause zone")
@@ -136,7 +135,6 @@ local A, B, C, D = {}, {}, {}, {}
 local g = { w = 1000, h = 600, scale = 1 }
 T.eq(xs(layout.place({ { mod = A, width = 44 }, { mod = B, width = 44 } }, g)), "20-64 72-116",
     "no space: all on the left, 8 px apart")
-T.eq(layout.place({ { mod = A, width = 44 } }, g).right_x0, 980, "no space: the title goes up to the margin")
 T.eq(xs(layout.place({ { mod = A, width = 44 }, { gap = true }, { mod = B, width = 44 } }, g)), "20-64 88-132",
     "a gap is 8 px more, 24 px between its neighbours")
 T.eq(xs(layout.place({ { space = true }, { mod = A, width = 44 }, { mod = B, width = 44 } }, g)), "884-928 936-980",
@@ -148,7 +146,6 @@ T.eq(xs(layout.place({ { mod = A, width = 40 }, { space = true }, { space = true
 local l3 = layout.place({ { mod = A, width = 40 }, { space = true }, { gap = true }, { mod = B, width = 40 },
     { mod = C, width = 44 }, { space = true }, { mod = D, width = 20 } }, g)
 T.eq(xs(l3), "20-60 472-512 520-564 960-980", "gaps and two spaces")
-T.eq(l3.right_x0, 472, "the right part starts after the first space")
 local l4 = layout.place({ { mod = A, width = 88 } }, { w = 1000, h = 600, scale = 2 })
 T.eq(xs(l4), "40-128", "scale 2 margins and widths")
 T.eq(l4.boxes[1].cy, 520, "scale 2 row centre")
@@ -167,7 +164,7 @@ local ctx = modules.ctx
 local function row_ass(v)
     local placed, out = layout.current(), {}
     for _, bx in ipairs(placed.boxes) do out[#out + 1] = modules.call(bx.mod, "render", bx, v) end
-    out[#out + 1] = modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = 0 }, v)
+    out[#out + 1] = modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = state.w, y1 = state.h }, v)
     return table.concat(out, "\n"), placed
 end
 local ass, placed = row_ass(1)
@@ -176,9 +173,9 @@ T.check(tb.x1 - tb.x0 > 0, "time width measured")
 T.eq(tb.x0, 72, "time where it was")
 T.check(ass:find("}00:50{", 1, true) ~= nil and ass:find("} / 01:40", 1, true) ~= nil, "time shown")
 T.check(ass:find("}Title", 1, true) ~= nil, "media title shown")
-T.check(ass:find("\\pos(32.0,652.0)", 1, true) ~= nil, "title 32 px from the left, 68 px up")
+T.check(ass:find("\\an7\\pos(32.0,24.0)", 1, true) ~= nil, "title at the top left, 32 px in and 24 px down")
 local _, n = ass:gsub("\n", "")
-T.eq(n + 1, 11, "icons (two events each), time, slider and title")
+T.eq(n + 1, 8, "icons (two events each), time and title: the slider is folded")
 state.series, state.episode = "Show", "Ep 1"
 ctx.hover_time = function() return 30 end
 ass = row_ass(1)
@@ -193,25 +190,30 @@ local _, strokes = line:gsub("\\1a&HFF&", "")
 T.eq(strokes, 6, "the three icons are strokes with no fill (halo and line each)")
 T.check(row_ass(0.5) ~= row_ass(1), "fades with v")
 
--- A long title stops before the right part of the row
+-- A long title stops 32 px before the right edge
 state.series, state.episode, state.title = nil, nil, ("w"):rep(500)
 local cut = row_ass(1):match("}(w+\226\128\166)$")
 T.check(cut ~= nil, "a long title is cut")
-T.check(cut and #cut - 3 <= math.floor((1100 - 56) / (20 * 0.55)), "and fits before the volume")
+T.check(cut and #cut - 3 <= math.floor((1280 - 64) / (20 * 0.55)), "and fits in the window")
 state.title = "Title"
 
--- Volume: the icon mutes, the slider sets the volume and holds the mouse
+-- Volume: the icon mutes, the slider sets the volume and holds the mouse.
+-- The cursor on the speaker unfolds it: 114 px, from 1094 (the slider from
+-- 1138 to 1202).
+modules.call(volume, "hover", true)
+mp.advance(0.3)
 local vb = layout.find(layout.current(), volume)
+T.eq(vb.x0, 1094, "unfolded, the volume grows leftwards on the right")
 mp.commands = {}
-T.eq(volume.press(ctx, vb, 1120, 680), nil, "the icon does not hold the mouse")
+T.eq(volume.press(ctx, vb, 1110, 680), nil, "the icon does not hold the mouse")
 T.eq(table.concat(mp.commands[#mp.commands], " "), "cycle mute", "the icon mutes")
-T.eq(volume.press(ctx, vb, 1176, 680), true, "the slider holds the mouse")
+T.eq(volume.press(ctx, vb, 1170, 680), true, "the slider holds the mouse")
 T.eq(table.concat(mp.commands[#mp.commands], " "), "set volume 51", "click on the slider")
 volume.move(ctx, vb, 1100, 600)
 T.eq(table.concat(mp.commands[#mp.commands], " "), "set volume 0", "drag on the slider")
 mp.fire("volume", 51)
 local before = #mp.commands
-volume.move(ctx, vb, 1176, 600)
+volume.move(ctx, vb, 1170, 600)
 T.eq(#mp.commands, before, "same volume: no command")
 T.check(pause.press(ctx) == nil and fullscreen.press(ctx) == nil, "buttons do not hold the mouse")
 

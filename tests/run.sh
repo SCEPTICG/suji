@@ -68,7 +68,7 @@ elif [ "$rc" -ne 0 ]; then
 elif ! printf '%s\n' "$out" | grep -q '^\[suji\] start:'; then
     printf 'smoke: FAIL (suji did not start)\n%s\n' "$out"
     status=1
-elif ! printf '%s\n' "$out" | grep -q '^\[suji\] set-title: Show / Episode'; then
+elif ! printf '%s\n' "$out" | grep -q '^\[suji\] set-title: Show / Episode / Name'; then
     printf 'smoke: FAIL (no answer to set-title)\n%s\n' "$out"
     status=1
 elif ! printf '%s\n' "$out" | grep -q '^\[smoke_title\] osc at start: no'; then

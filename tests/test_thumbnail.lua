@@ -35,7 +35,7 @@ end
 local function last() local s = sent(); return s[#s] end
 
 local function hover(x, y)
-    mp.mouse(x, y or 710)
+    mp.mouse(x, y or 645)
     mp.advance(0.5)
 end
 local function painted() return mp.updates[#mp.updates] and mp.updates[#mp.updates].data or "" end
@@ -70,29 +70,30 @@ T.eq(#sent(), 0, "broken or huge JSON: nothing sent")
 
 -- thumbfast ready: centred on the cursor, just above the bar
 -- Scale 1: 6 px around the image, a 20 px line under it, the box 212x144
--- with its bottom on the bar's zone (y 696), 20 px from the window's sides.
+-- with its bottom on the top of the bar's zone (y 634, the bar above the
+-- row), 20 px from the window's sides.
 info(READY)
 mp.advance(0.1)
-T.eq(last(), "thumb 46.875 500 558", "asked at once, for the cursor where it is")
+T.eq(last(), "thumb 46.875 500 496", "asked at once, for the cursor where it is")
 hover(640)
-T.eq(last(), "thumb 50.000 540 558", "centred: x 640 - 212 / 2 + 6, y 696 - 144 + 6")
+T.eq(last(), "thumb 50.000 540 496", "centred: x 640 - 212 / 2 + 6, y 634 - 144 + 6")
 local n = #sent()
 mp.advance(1)
-mp.mouse(640, 712) -- same x, same time
+mp.mouse(640, 646) -- same x, same time
 mp.advance(0.5)
 T.eq(#sent(), n, "same time and place: no new message")
 T.check(row_time("00:50"), "with a thumbnail the row shows the position")
 T.check(not row_dim("00:50"), "not the time under the cursor")
 local ass = painted()
-T.check(ass:find("\\an5\\pos(640.0,680.0)", 1, true) ~= nil, "the time centred under the image")
+T.check(ass:find("\\an5\\pos(640.0,618.0)", 1, true) ~= nil, "the time centred under the image")
 T.check(ass:find("}00:50$") ~= nil or ass:find("}00:50\n", 1, true) ~= nil, "the time in the box")
 T.check(not ass:find("\194\183", 1, true), "no chapters: only the time")
-T.check(ass:find("\\1c&H000000&\\1a&H66&\\p3}m 2168 2208 ", 1, true) ~= nil, "the panel: black at 60%, from (534, 552)")
-T.check(ass:find(" 2984 2752 b 2984 2770 2970 2784 2952 2784 ", 1, true) ~= nil, "to (746, 696), round corners")
+T.check(ass:find("\\1c&H000000&\\1a&H66&\\p3}m 2168 1960 ", 1, true) ~= nil, "the panel: black at 60%, from (534, 490)")
+T.check(ass:find(" 2984 2504 b 2984 2522 2970 2536 2952 2536 ", 1, true) ~= nil, "to (746, 634), round corners")
 hover(5)
-T.eq(last(), "thumb 0.391 26 558", "left edge: inside the row's margin")
+T.eq(last(), "thumb 0.391 26 496", "left edge: inside the row's margin")
 hover(1275)
-T.eq(last(), "thumb 99.609 1054 558", "right edge: inside the row's margin")
+T.eq(last(), "thumb 99.609 1054 496", "right edge: inside the row's margin")
 hover(640)
 
 -- Chapters: the one playing at that time, after the time
@@ -117,15 +118,15 @@ mp.fire("chapter-list", nil)
 -- Leaving the bar takes it away, once
 hover(640)
 n = #sent()
-hover(100, 680) -- on the time, in the row
+hover(150, 680) -- on the time, in the row
 T.eq(last(), "clear", "leaving the bar: clear")
 T.eq(#sent(), n + 1, "one message")
 T.check(row_time("00:50"), "the row shows the position")
 hover(640, 300)
 T.eq(#sent(), n + 1, "no more clears")
-mp.mouse(640, 710, false) -- out of the window, on the bar
+mp.mouse(640, 645, false) -- out of the window, on the bar
 hover(640)
-mp.mouse(640, 710, false)
+mp.mouse(640, 645, false)
 mp.advance(0.5)
 T.eq(last(), "clear", "leaving the window: clear")
 mp.advance(5)
@@ -136,10 +137,10 @@ hover(640)
 mp.button("down")
 mp.mouse(800, 600)
 mp.advance(0.1)
-T.eq(last(), "thumb 62.500 700 558", "dragging: follows the cursor")
+T.eq(last(), "thumb 62.500 700 496", "dragging: follows the cursor")
 mp.mouse(1500, 600)
 mp.advance(0.1)
-T.eq(last(), "thumb 99.500 1054 558", "dragging past the edge: the seek target, at the edge")
+T.eq(last(), "thumb 99.500 1054 496", "dragging past the edge: the seek target, at the edge")
 mp.button("up")
 mp.advance(0.5)
 T.eq(last(), "clear", "let go off the bar: clear")
@@ -150,7 +151,7 @@ mp.emit("end-file")
 T.eq(last(), "clear", "end of file: clear")
 mp.emit("file-loaded")
 mp.advance(0.5)
-T.eq(last(), "thumb 50.000 540 558", "the next file: asked again")
+T.eq(last(), "thumb 50.000 540 496", "the next file: asked again")
 
 -- A menu opened over it takes it away
 mp.send("open-menu", T.json({ type = "t", items = { { title = "a" } } }))
@@ -159,7 +160,7 @@ T.eq(last(), "clear", "a menu open: clear")
 T.check(row_dim("00:50"), "and the row shows the time under the cursor")
 mp.send("close-menu")
 hover(641)
-T.eq(last(), "thumb 50.078 541 558", "menu closed: asked again")
+T.eq(last(), "thumb 50.078 541 496", "menu closed: asked again")
 
 -- thumbfast turned off for this file
 info({ width = 200, height = 112, disabled = true, available = true })
@@ -167,7 +168,7 @@ mp.advance(0.5)
 T.eq(last(), "clear", "disabled: clear")
 info(READY)
 mp.advance(0.5)
-T.eq(last(), "thumb 50.078 541 558", "ready again: asked again")
+T.eq(last(), "thumb 50.078 541 496", "ready again: asked again")
 
 -- thumbnails=no at run time, then yes
 mp.set_opts({ thumbnails = false })
@@ -179,7 +180,7 @@ T.eq(#sent(), n, "thumbnails=no: nothing sent")
 T.check(row_dim("00:39"), "the row shows the time under the cursor")
 mp.set_opts({ thumbnails = true })
 mp.advance(0.5)
-T.eq(last(), "thumb 39.141 401 558", "thumbnails=yes: asked again")
+T.eq(last(), "thumb 39.141 401 496", "thumbnails=yes: asked again")
 
 -- Turning suji off takes it away
 mp.set_opts({ enabled = false })
@@ -203,11 +204,11 @@ T.eq(#sent(), 0, "nor while dragging")
 -- HiDPI: thumbfast's size already has it, the box around grows with suji
 start(nil, 2)
 info(READY)
-hover(640)
--- 12 px around, a 40 px line, the box 224x176 on y 672, 40 px margins.
-T.eq(last(), "thumb 50.000 540 508", "HiDPI: the image keeps its size, the box grows")
-hover(0)
-T.eq(last(), "thumb 0.000 52 508", "HiDPI: left margin 40 px")
+hover(640, 570) -- the bar's zone is 548 to 596 at scale 2
+-- 12 px around, a 40 px line, the box 224x176 on y 548, 40 px margins.
+T.eq(last(), "thumb 50.000 540 384", "HiDPI: the image keeps its size, the box grows")
+hover(0, 570)
+T.eq(last(), "thumb 0.000 52 384", "HiDPI: left margin 40 px")
 
 -- A window too small for the box: no thumbnail, the row as before
 start()
@@ -223,21 +224,21 @@ info(READY)
 mp.send("show-action", "skip-op", T.json({ text = "Skip opening \226\128\186", command = { "script-message-to", "fake", "skip-op" } }))
 hover(1275)
 local ass = painted()
-local action, box = ass:find("}Skip opening", 1, true), ass:find("\\an5\\pos(1154.0,680.0)", 1, true)
+local action, box = ass:find("}Skip opening", 1, true), ass:find("\\an5\\pos(1154.0,618.0)", 1, true)
 T.check(action and box and box > action, "the box is painted after the action button")
 
 -- available=false: thumbs are asked for (not disabled), clear is not sent
 start()
 info({ width = 200, height = 112, disabled = false, available = false })
 hover(640)
-T.eq(last(), "thumb 50.000 540 558", "not available: still asked (only disabled stops it)")
+T.eq(last(), "thumb 50.000 540 496", "not available: still asked (only disabled stops it)")
 local before = #sent()
-hover(100, 680)
+hover(150, 680)
 T.eq(#sent(), before, "not available: no clear")
 T.check(row_time("00:50"), "but the box is gone: the row shows the position")
 info(READY)
 hover(640)
-hover(100, 680)
+hover(150, 680)
 T.eq(last(), "clear", "available again: clear")
 
 -- A failure in the thumbnail code leaves the rest of the frame

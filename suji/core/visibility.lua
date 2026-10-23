@@ -7,7 +7,8 @@
 --
 -- input fields:
 --   distance       number|nil  Distance in px from the cursor to the bar's
---                              active zone. 0 when the cursor is inside it.
+--                              active zone, above the row. 0 when the
+--                              cursor is inside it or below it.
 --                              nil when the cursor is outside the window or
 --                              has not moved yet.
 --   proximity      number      options.proximity already multiplied by the

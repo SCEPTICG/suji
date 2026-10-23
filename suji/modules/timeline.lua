@@ -1,10 +1,12 @@
--- The timeline: a thin line along the bottom edge that grows into a seek
--- bar with a knob. Geometry and drawing are pure; seeking uses the global
--- `mp` only when called, so tests can load this file.
+-- The timeline: a thin line along the bottom edge that rises above the row
+-- as it grows into a seek bar with a knob. Geometry and drawing are pure;
+-- seeking uses the global `mp` only when called, so tests can load this
+-- file.
 --
 -- A module of suji that is always there: it is not part of the controls
--- option, its zone is the bottom edge (layout.bar_zone) and it holds the
--- mouse while dragging. See core/modules.lua for the contract.
+-- option, its zone is a band just above the row (layout.bar_zone), where
+-- the grown bar is, and it holds the mouse while dragging. See
+-- core/modules.lua for the contract.
 
 local draw = require "core.draw"
 local valid = require("core.state").valid_duration
@@ -14,9 +16,13 @@ local M = {}
 -- Sizes in px at scale 1.
 M.REST_HEIGHT = 2   -- line at rest
 M.FULL_HEIGHT = 5   -- line fully grown
-M.LIFT = 6          -- distance from the bottom edge when fully grown
+-- Centre of the line fully grown above the bottom edge: the middle of its
+-- zone, which sits on top of the row (layout.ROW_LIFT + layout.HEIGHT / 2
+-- + ZONE_HEIGHT / 2).
+M.LIFT = 74
 M.KNOB_SIZE = 13    -- knob diameter
 M.ZONE_HEIGHT = 24  -- clickable area, taller than the line itself
+M.CACHE_OPACITY = 0.4 -- cached range over the rail: light grey, played is the accent
 M.HALO = 1          -- dark halo around the line and the knob
 M.MARK_WIDTH = 2    -- chapter marks, at least twice as far apart
 M.MAX_MARKS = 500   -- chapter marks drawn at most
@@ -50,21 +56,27 @@ function M.progress_px(t, duration, w)
     return math.floor(M.time_to_x(t, duration, w))
 end
 
--- Top of the clickable zone.
+-- Top and bottom of the clickable zone: around the grown line, whatever
+-- the visibility. The cursor there makes the bar grow (core/visibility.lua).
 function M.zone_top(h, scale)
-    return h - round(M.ZONE_HEIGHT * scale)
+    return h - round((M.LIFT + M.ZONE_HEIGHT / 2) * scale)
+end
+
+function M.zone_bottom(h, scale)
+    return h - round((M.LIFT - M.ZONE_HEIGHT / 2) * scale)
 end
 
 function M.in_zone(x, y, w, h, scale)
-    return x >= 0 and x < w and y >= M.zone_top(h, scale) and y < h
+    return x >= 0 and x < w and y >= M.zone_top(h, scale) and y < M.zone_bottom(h, scale)
 end
 
--- Where the line sits for visibility v (0..1). Heights are whole pixels so
--- the line stays sharp.
+-- Where the line sits for visibility v (0..1): on the bottom edge at rest,
+-- rising to LIFT as it grows. Heights are whole pixels so the line stays
+-- sharp.
 function M.layout(w, h, scale, v)
     v = clamp(v, 0, 1)
     local thickness = math.max(1, round(lerp(M.REST_HEIGHT, M.FULL_HEIGHT, v) * scale))
-    local y1 = h - round(M.LIFT * scale * v)
+    local y1 = h - round((M.LIFT - M.FULL_HEIGHT / 2) * scale * v)
     return {
         x0 = 0, x1 = w,
         y0 = y1 - thickness, y1 = y1,
@@ -136,7 +148,7 @@ function M.ass(st, v, opts, drag_time, cache_ranges, chapters)
     local cached = v > 0 and M.cached_until(cache_ranges, st.time)
     if cached and cached > st.time then
         out[#out + 1] = draw.rect(M.time_to_x(st.time, st.duration, st.w), g.y0,
-            M.time_to_x(cached, st.duration, st.w), g.y1, { color = white, opacity = 0.18 * v })
+            M.time_to_x(cached, st.duration, st.w), g.y1, { color = white, opacity = M.CACHE_OPACITY * v })
     end
     out[#out + 1] = draw.rect(g.x0, g.y0, px, g.y1, { color = accent, opacity = fade * lerp(0.75, 1, v) })
     local marks, hw = {}, M.MARK_WIDTH * st.scale / 2

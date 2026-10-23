@@ -1,7 +1,8 @@
 -- Mouse position, distance to the bar, the zone under the cursor and the
--- bindings. Zones come from the layout: the timeline's along the bottom
--- edge and one per module of the row. A module whose press returns true
--- holds the mouse until the button goes up (dragging).
+-- bindings. Zones come from the layout: the timeline's above the row and
+-- one per module of the row. A module whose press returns true holds the
+-- mouse until the button goes up (dragging); a module hears when the
+-- cursor comes onto its zone and leaves it (hover).
 -- MBTN_LEFT is only bound over a visible zone or while a module holds the
 -- mouse, the wheel only over a module that takes it; elsewhere input goes
 -- through, so double click and window dragging keep working. Forced
@@ -217,12 +218,15 @@ function M.shutdown()
     restore_dragging()
 end
 
+local set_hit -- see below
+
 -- Re-evaluate the bindings and ask for a paint. Bindings are switched on as
 -- soon as the cursor enters the zone, never on the click itself, because
 -- mpv applies them asynchronously and the first click would be lost.
 function M.refresh()
     if not opts.enabled then
-        pos, hit = nil, nil
+        pos = nil
+        set_hit(nil)
         idle_timer:kill()
         drop_held()
     end
@@ -234,8 +238,18 @@ function M.refresh()
     painter.request()
 end
 
+-- The zone under the cursor is now z: the module it leaves and the one
+-- it comes onto hear it.
+function set_hit(z)
+    local before, after = hit and hit.mod, z and z.mod
+    hit = z
+    if before == after then return end
+    if before then modules.call(before, "hover", false) end
+    if after then modules.call(after, "hover", true) end
+end
+
 local function update_zone()
-    hit = pos and layout.hit(layout.current(), pos.x, pos.y) or nil
+    set_hit(pos and layout.hit(layout.current(), pos.x, pos.y) or nil)
 end
 
 -- Observer for the mouse-pos property.

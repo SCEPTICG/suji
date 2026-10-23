@@ -69,7 +69,7 @@ local function click_box(name)
     return click((b.x0 + b.x1) / 2, b.cy)
 end
 -- Centre of row k of the open menu of n items (no title, all on screen).
-local function row_y(k, n) return 646 - n * 30 + (k - 0.5) * 30 end
+local function row_y(k, n) return 622 - n * 30 + (k - 0.5) * 30 end
 
 -- suji-version ---------------------------------------------------------------
 start()
@@ -439,34 +439,33 @@ send("close-menu")
 -- user-data/suji/margins ------------------------------------------------------
 start()
 local MARGINS = "user-data/suji/margins"
-T.eq(mp.props[MARGINS] and mp.props[MARGINS].bottom, 62, "the top of the row: 62 px above the bottom edge")
+T.eq(mp.props[MARGINS] and mp.props[MARGINS].bottom, 86, "the top of the timeline, above the row: 86 px up")
 local writes = #mp.writes
 mp.fire("pause", false)
 mp.mouse(640, 100)
 mp.advance(5)
 T.eq(mods().ctx.visible(), false, "playing, the mouse away: the controls hide")
-T.eq(mp.props[MARGINS].bottom, 62, "the same with the controls hidden")
+T.eq(mp.props[MARGINS].bottom, 86, "the same with the controls hidden")
 mp.mouse(640, 690)
 mp.advance(0.5)
 T.eq(mods().ctx.visible(), true, "shown again")
 T.eq(#mp.writes, writes, "showing and hiding the controls writes nothing")
 mp.set_opts({ scale = 1.5 })
-T.eq(mp.props[MARGINS].bottom, 93, "scale 1.5: 93")
+T.eq(mp.props[MARGINS].bottom, 129, "scale 1.5: 129")
 mp.fire("osd-dimensions", { w = 800, h = 600 })
-T.eq(mp.props[MARGINS].bottom, 93, "a new window size: the same distance")
+T.eq(mp.props[MARGINS].bottom, 129, "a new window size: the same distance")
 writes = #mp.writes
 mp.set_opts({ controls = "pause,space,fullscreen" })
-T.eq(#mp.writes, writes, "another row of the same height: no write")
+T.eq(#mp.writes, writes, "another row: no write")
 mp.set_opts({ controls = "" })
-T.eq(mp.props[MARGINS].bottom, 36, "no row: the top of the timeline's zone")
+T.eq(mp.props[MARGINS].bottom, 129, "no row: the timeline stays where it was")
 mp.set_opts({ controls = "<user-data/fake/on>pause" })
-T.eq(mp.props[MARGINS].bottom, 36, "an element whose condition does not hold: still none")
 mp.fire("user-data/fake/on", true)
-T.eq(mp.props[MARGINS].bottom, 93, "it appears: the row's top")
+T.eq(#mp.writes, writes, "an element that comes and goes: no write")
 mp.set_opts({ enabled = false })
 T.eq(mp.props[MARGINS], nil, "enabled=no: deleted")
 mp.set_opts({ enabled = true })
-T.eq(mp.props[MARGINS] and mp.props[MARGINS].bottom, 93, "back")
+T.eq(mp.props[MARGINS] and mp.props[MARGINS].bottom, 129, "back")
 
 -- user-data/suji/enabled ------------------------------------------------------
 start()
@@ -624,7 +623,8 @@ mp.mouse(200, 370)
 mp.advance(1)
 T.eq(title_alpha(), "00", "a narrow window, no menu: full opacity")
 zones = 0
-open({ type = "narrow", items = items(3) })
+-- Up to the top of the window, where the title is.
+open({ type = "narrow", items = items(10) })
 T.eq(title_alpha(), "B3", "a narrow window: the menu covers it, the title goes down to 30 %")
 for _ = 1, 5 do mp.mouse(200 + _, 370); mp.advance(0.2) end
 T.eq(zones, 1, "worked out once when the menu opened, not on every paint")
@@ -638,7 +638,7 @@ T.eq(title_alpha(), "00", "closed: full opacity")
 local function alpha_of(t) return (painted() .. "\n"):match("\\1a&H(%x%x)&[^}]*}" .. t .. "\n") end
 mp.send("set-title", "", "A")
 mp.advance(1)
-open({ type = "pick", keep_open = true, items = items(3) })
+open({ type = "pick", keep_open = true, items = items(10) })
 T.eq(alpha_of("A"), "00", "a short title beside the menu: full opacity")
 mp.send("set-title", "Mononoke Hime", "The Forest Spirit")
 mp.advance(1)
@@ -647,7 +647,7 @@ zones = 0
 for _ = 1, 5 do mp.mouse(200 + _, 370); mp.advance(0.2) end
 T.eq(zones, 0, "the same title: not worked out again on every paint")
 send("close-menu")
-open({ type = "pick", keep_open = true, items = items(3) })
+open({ type = "pick", keep_open = true, items = items(10) })
 T.eq(alpha_of("The Forest Spirit"), "B3", "a long title under a new menu: down to 30 %")
 mp.send("set-title", "", "A")
 mp.advance(1)

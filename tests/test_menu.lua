@@ -2,8 +2,9 @@
 local T = require "lib"
 
 local W, H = 1280, 720
-local Y1 = 646 -- bottom of a menu at scale 1: 12 px above the row's zones (658)
+local Y1 = 622 -- bottom of a menu at scale 1: 12 px above the timeline's zone (634)
 local BG = 6   -- the panel behind it reaches this much above and below the items
+local FIT = 19 -- items that fit at scale 1: (Y1 - 24 kept free at the top) / 30
 
 -- The playlist list in props as mpv has it: the whole list, and what suji
 -- reads entry by entry to count them.
@@ -105,7 +106,7 @@ end
 -- Centre of visible row k of an open menu of n items (no title) on button
 -- name, and an x inside it.
 local function row(name, k, n)
-    local rows = math.min(n, 20)
+    local rows = math.min(n, FIT)
     return box_of(name).x0 + 40, Y1 - rows * 30 + (k - 0.5) * 30
 end
 
@@ -132,7 +133,7 @@ start({ ["track-list"] = SUBS })
 T.check(box_of("subtitles") ~= nil and box_of("more") ~= nil, "subtitles and more in the default row")
 T.eq(box_of("audio"), nil, "one audio track: no audio button")
 T.eq(box_of("playlist"), nil, "no chapters, one entry: no playlist button")
-T.eq(box_of("volume").x0, 1100, "the volume stays where it was")
+T.eq(box_of("volume").x0, 72, "the volume on the left, after the pause")
 T.eq(open("subtitles"), "", "opening sends no command")
 T.check(menu().is_open(mod("subtitles")), "the subtitles menu is open")
 local p = painted()
@@ -426,11 +427,11 @@ local y = Y1 - 15
 T.check(menu().contains(1259, y), "moved left to fit")
 T.check(not menu().contains(1260, y), "20 px from the right edge")
 T.check(menu().contains(1080, y) and not menu().contains(1079, y), "180 px wide")
-T.check(menu().contains(1100, Y1 + BG - 1) and not menu().contains(1100, Y1 + BG), "bottom 12 px above the row, panel 6 px more")
+T.check(menu().contains(1100, Y1 + BG - 1) and not menu().contains(1100, Y1 + BG), "bottom 12 px above the timeline, panel 6 px more")
 T.check(menu().contains(1100, Y1 - 90 - BG) and not menu().contains(1100, Y1 - 91 - BG), "three rows of 30 px")
 menu().close(true)
 ctx_of("more").open_menu({ type = "x", title = "A title", items = items(3) }, box_of("more"))
-T.check(menu().contains(1050, Y1 - 116 - BG) and not menu().contains(1050, Y1 - 117 - BG), "a title adds 26 px on top")
+T.check(menu().contains(1100, Y1 - 116 - BG) and not menu().contains(1100, Y1 - 117 - BG), "a title adds 26 px on top")
 T.check(painted() ~= "" and true, "drawn")
 mp.advance(1)
 T.check(painted():find("}A title", 1, true) ~= nil, "the title is shown")
@@ -440,22 +441,24 @@ T.check(painted():find("\\1a&H66&\\3a&H94&\\4a&HC2&}A title", 1, true) ~= nil, "
 menu().close(true)
 start(nil, { scale = 2 })
 ctx_of("more").open_menu({ type = "x", items = items(3) }, { x0 = 100, y0 = 600, x1 = 188, y1 = 688 })
-T.check(menu().contains(100, 600 - 24 - 1) and not menu().contains(99, 575), "scale 2: aligned with the button")
-T.check(menu().contains(459, 575) and not menu().contains(460, 575), "scale 2: 360 px wide")
-T.check(menu().contains(100, 576 - 180 - 2 * BG) and not menu().contains(100, 576 - 181 - 2 * BG), "scale 2: rows of 60 px")
+-- The timeline's zone starts at 720 - 2 * 86 = 548: the bottom 24 px above.
+T.check(menu().contains(100, 523) and not menu().contains(99, 523), "scale 2: aligned with the button")
+T.check(menu().contains(459, 523) and not menu().contains(460, 523), "scale 2: 360 px wide")
+T.check(menu().contains(100, 524 + 2 * BG - 1) and not menu().contains(100, 524 + 2 * BG), "scale 2: above the timeline")
+T.check(menu().contains(100, 524 - 180 - 2 * BG) and not menu().contains(100, 524 - 181 - 2 * BG), "scale 2: rows of 60 px")
 
 -- Height, the wheel and only what is on screen -------------------------------------------------
 start()
 ctx_of("more").open_menu({ type = "x", items = items(100) }, box_of("more"))
 mp.advance(1)
-T.check(menu().contains(1050, 646 - 600 - BG) and not menu().contains(1050, 645 - 600 - BG), "20 rows fit above the row")
-T.check(shown(1) and shown(20) and not shown(21), "the first 20 are drawn")
-T.check(painted():find("\\p3}m 4532 2586 l 4552 2606 l 4572 2586", 1, true) ~= nil, "a chevron says there is more below")
+T.check(menu().contains(1100, Y1 - 570 - BG) and not menu().contains(1100, Y1 - 571 - BG), "19 rows fit above the timeline")
+T.check(shown(1) and shown(19) and not shown(20), "the first 19 are drawn")
+T.check(painted():find("\\p3}m 4660 2490 l 4680 2510 l 4700 2490", 1, true) ~= nil, "a chevron says there is more below")
 mp.mouse(row("more", 5, 100))
 T.check(mp.bindings["suji-wheel-down"] ~= nil, "the wheel is bound over the menu")
 mp.bindings["suji-wheel-down"].fn()
 mp.advance(0.1)
-T.check(not shown(2) and shown(3) and shown(22) and not shown(23), "the wheel scrolls two items")
+T.check(not shown(2) and shown(3) and shown(21) and not shown(22), "the wheel scrolls two items")
 T.check(painted():find("\\1a&HE6&", 1, true) ~= nil, "the item now under the cursor is highlighted")
 mp.commands = {}
 mp.button("press")
@@ -463,24 +466,24 @@ T.eq(last_cmd(), "show-text item 7", "and a click takes the item now under the c
 ctx_of("more").open_menu({ type = "x", items = items(100) }, box_of("more"))
 for _ = 1, 100 do mp.bindings["suji-wheel-down"].fn() end
 mp.advance(0.1)
-T.check(shown(81) and shown(100) and not shown(80), "it stops at the end")
-T.check(painted():find("m 4532 2586 l 4552 2606", 1, true) == nil, "no chevron below at the end")
-T.check(painted():find("m 4532 178 l 4552 158", 1, true) ~= nil, "one above")
+T.check(shown(82) and shown(100) and not shown(81), "it stops at the end")
+T.check(painted():find("m 4660 2490 l 4680 2510", 1, true) == nil, "no chevron below at the end")
+T.check(painted():find("m 4660 202 l 4680 182", 1, true) ~= nil, "one above")
 for _ = 1, 100 do mp.bindings["suji-wheel-up"].fn() end
 mp.advance(0.1)
-T.check(shown(1) and shown(20), "and at the start")
+T.check(shown(1) and shown(19), "and at the start")
 for _ = 1, 21 do mp.bindings["suji-menu-down"].fn() end -- the first shows the cursor on item 1
 mp.advance(0.1)
-T.check(not shown(1) and shown(2) and shown(21), "the keys scroll one item at a time")
+T.check(not shown(2) and shown(3) and shown(21), "the keys scroll one item at a time")
 mp.mouse(640, 300)
 T.eq(mp.bindings["suji-wheel-down"], nil, "off the menu the wheel is mpv's")
 
 start()
 ctx_of("more").open_menu({ type = "x", items = items(10000) }, box_of("more"))
 mp.advance(1)
-T.eq(count(painted(), "}Item %d+"), 20, "10 000 items: 20 drawn")
+T.eq(count(painted(), "}Item %d+"), 19, "10 000 items: 19 drawn")
 T.check(#painted() < 20000, "a small paint")
-T.check(shown(1) and not shown(21), "the first ones")
+T.check(shown(1) and not shown(20), "the first ones")
 
 -- selected_index and the first active item ---------------------------------------------------------
 start()
@@ -766,7 +769,7 @@ local took = os.clock() - t0
 mp.advance(1)
 T.eq(reads, 1, "opening reads the playlist once, also after mpv sends the first values")
 T.check(painted():find("}Episode 25000.mkv", 1, true) ~= nil, "30 000 entries: opened on the current one")
-T.eq(count(painted(), "}Episode %d+"), 20, "20 drawn")
+T.eq(count(painted(), "}Episode %d+"), 19, "19 drawn")
 T.check(took < 2, ("opened in %.2f s"):format(took))
 mp.mouse(row("playlist", 5, 20))
 mp.bindings["suji-wheel-down"].fn()
@@ -794,14 +797,14 @@ big[25000].current = false
 big[1].current = true
 open("playlist") -- Chapters, three chapters, Playlist, then the entries
 T.eq(reads, 1, "one read to open")
-T.eq(marks()[1], Y1 - 20 * 30 + 45 - 7, "chapter 1 is marked (item 2)")
+T.eq(marks()[1], Y1 - FIT * 30 + 45 - 7, "chapter 1 is marked (item 2)")
 t0 = os.clock()
 mp.props.chapter = 2
 mp.fire("chapter", 2)
 mp.advance(0.1)
 T.eq(reads, 1, "a new chapter does not read the playlist again")
 T.check(os.clock() - t0 < 0.1, ("and costs little (%.3f s)"):format(os.clock() - t0))
-T.eq(marks()[1], Y1 - 20 * 30 + 105 - 7, "the mark moved to chapter 3 (item 4)")
+T.eq(marks()[1], Y1 - FIT * 30 + 105 - 7, "the mark moved to chapter 3 (item 4)")
 T.eq(#marks(), 2, "and the current entry keeps its own")
 mp.props.chapter = -1
 mp.fire("chapter", -1)

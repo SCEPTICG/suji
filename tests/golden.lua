@@ -1,8 +1,10 @@
 -- Golden output: the ASS suji paints and what a click does at every
 -- point of the row, for a fixed set of situations. It only drives main.lua
 -- through the fake mp, so the same script runs on any version of suji.
--- tests/golden/v0.1.0.txt was made with it from v0.1.0 (see make_golden.lua);
--- test_golden.lua checks that the current code gives the same text.
+-- tests/golden/v0.7.0.txt was made with it from v0.7.0 (see make_golden.lua);
+-- test_golden.lua checks that the current code gives the same text. It
+-- held v0.1.0's output until 0.7.0 moved the timeline above the row, put
+-- the title at the top and folded the volume's slider.
 
 local T = require "lib"
 
@@ -20,7 +22,9 @@ local function start(w, h, hidpi, script_opts)
     mp = T.fake_mp({ ["mpv-version"] = "mpv v0.40.0" })
     mp.script_opts = script_opts or { debug = true }
     -- v0.1.0's row, by hand: the default controls have more buttons now
-    -- (v0.1.0 had no such option and ignores it).
+    -- (v0.1.0 had no such option and ignores it). Its volume is on the
+    -- right; the clicks sweep over it with the clock still, so it stays
+    -- folded.
     mp.script_opts.controls = "pause,time,space,volume,fullscreen"
     dofile("suji/main.lua")
     mp.fire("osd-dimensions", { w = w, h = h })
@@ -128,14 +132,16 @@ return function()
         mp.fire("pause", true)
         paint(out, tag .. "no duration")
 
-        -- Clicks along the row and at the edges of the zones.
+        -- Clicks along the timeline and the row, and at the edges of their
+        -- zones: the timeline's from 86 to 62 px up, the row's from 62 to 18.
         start(w, h, hidpi)
         mp.fire("volume", 100)
         mp.fire("pause", true)
         mp.advance(1)
         out[#out + 1] = "== " .. tag .. "clicks"
         local cy, half = h - 40 * s, 22 * s
-        for _, y in ipairs({ cy - half - 1, cy - half, cy, cy + half - 1, h - 24 * s - 1, h - 24 * s }) do
+        for _, y in ipairs({ h - 86 * s - 1, h - 86 * s, h - 74 * s, cy - half - 1, cy - half, cy, cy + half - 1,
+                             cy + half }) do
             hit_line(out, y, w, s)
         end
     end

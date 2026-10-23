@@ -48,17 +48,14 @@ local function debug_sizes(reason)
 end
 
 -- user-data/suji/margins = { bottom = N }: N px from the bottom edge to
--- the top of the row (the timeline's zone when the row is empty), for
--- scripts that draw near it (docs/api.md). The same whether the controls
--- are shown or hidden: it only follows the window, the scale and the row.
--- Written when it changes; deleted while suji is off.
+-- the top of the timeline's zone, above the row, for scripts that draw
+-- near it (docs/api.md). The same whether the controls are shown or
+-- hidden: it only follows the window and the scale. Written when it
+-- changes; deleted while suji is off.
 local margin
 local function publish_margins()
     local m
-    if opts.enabled and state.h > 0 then
-        local placed = layout.current()
-        m = math.ceil(state.h - (placed.boxes[1] or placed.bar).y0)
-    end
+    if opts.enabled and state.h > 0 then m = math.ceil(state.h - layout.bar_zone().y0) end
     if m == margin then return end
     margin = m
     mp.set_property_native("user-data/suji/margins", m and { bottom = m } or nil)
@@ -122,9 +119,8 @@ painter.set_renderer(function()
     if v > 0 then
         local placed = layout.current()
         for _, box in ipairs(placed.boxes) do add(modules.call(box.mod, "render", box, v)) end
-        local row_top = state.h - (layout.ROW_LIFT + layout.HEIGHT / 2) * state.scale
         local measured = modules.title.measured
-        add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = placed.right_x0, y1 = row_top },
+        add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = state.w, y1 = state.h },
             v * menu.title_opacity(now)))
         -- Its opacity came from the old width: once more under an open menu.
         remeasured = modules.title.measured ~= measured and menu.is_open()
@@ -204,11 +200,15 @@ watch("osd-font", "string", function(font)
     return true
 end)
 
--- set-title <series> <episode>: two lines until the file ends, one with
--- only one of them, media-title with neither. See the README.
-mp.register_script_message("set-title", function(series, episode)
-    state.series, state.episode = clean(series), clean(episode)
-    if opts.debug then msg.info(("set-title: %s / %s"):format(draw.printable(state.series), draw.printable(state.episode))) end
+-- set-title <series> <episode> [<name>]: two lines until the file ends,
+-- one with only one of them, media-title with neither. The name of the
+-- episode goes after it, on its line. See the README.
+mp.register_script_message("set-title", function(series, episode, name)
+    state.series, state.episode, state.episode_name = clean(series), clean(episode), clean(name)
+    if opts.debug then
+        msg.info(("set-title: %s / %s%s"):format(draw.printable(state.series), draw.printable(state.episode),
+            state.episode_name and " / " .. draw.printable(state.episode_name) or ""))
+    end
     if grown() then painter.request() end
 end)
 
@@ -228,7 +228,7 @@ local function drop_drag()
     mouse.refresh()
 end
 mp.register_event("end-file", function()
-    state.series, state.episode = nil, nil
+    state.series, state.episode, state.episode_name = nil, nil, nil
     thumbnail.clear()
     drop_drag()
 end)

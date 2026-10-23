@@ -1,6 +1,7 @@
 -- Where the row goes and what is under the cursor. place() and hit() are
 -- pure; current() lays out the row of now (see modules.row) and adds the
--- timeline's zone along the bottom edge.
+-- timeline's zone on top of it. From the bottom edge up: a margin, the row
+-- and the timeline.
 --
 -- Elements go from the left margin to the right, GAP apart. A space takes
 -- the free width: with one, what follows it is aligned to the right edge;
@@ -21,9 +22,7 @@ M.HEIGHT = 44   -- height of every zone of the row
 local function width(it, s) return it.gap and M.GAP_ITEM * s or it.width end
 
 -- items: { mod, width } | { gap = true } | { space = true }, in order.
--- geo: { w, h, scale }. Returns { boxes = { { mod, x0, y0, x1, y1, cy } },
--- right_x0 }: right_x0 is where the first element after the first space
--- starts, or the right margin when there is none.
+-- geo: { w, h, scale }. Returns { boxes = { { mod, x0, y0, x1, y1, cy } } }.
 function M.place(items, geo)
     local s = geo.scale
     local cy = geo.h - M.ROW_LIFT * s
@@ -43,7 +42,7 @@ function M.place(items, geo)
     -- Can be negative in a small window: then the groups overlap.
     local flex = #groups > 1 and (right - left - used) / (#groups - 1) or 0
 
-    local out, found = { boxes = {}, right_x0 = right }, false
+    local out = { boxes = {} }
     local x = left
     for g, list in ipairs(groups) do
         if g > 1 then x = x + flex end
@@ -54,7 +53,6 @@ function M.place(items, geo)
             local x1 = x + width(it, s)
             if it.mod then
                 out.boxes[#out.boxes + 1] = { mod = it.mod, x0 = x, y0 = y0, x1 = x1, y1 = y1, cy = cy }
-                if g > 1 and not found then out.right_x0, found = x, true end
             end
             x = x1
         end
@@ -89,10 +87,12 @@ function M.named(placed, name)
     end
 end
 
--- The timeline's zone: the whole width, along the bottom edge.
+-- The timeline's zone: the whole width, just above the row (with the row
+-- empty too), where the grown bar is.
 function M.bar_zone()
     local tl = modules.timeline
-    return { mod = tl, bar = true, x0 = 0, y0 = tl.zone_top(state.h, state.scale), x1 = state.w, y1 = state.h }
+    return { mod = tl, bar = true, x0 = 0, y0 = tl.zone_top(state.h, state.scale),
+             x1 = state.w, y1 = tl.zone_bottom(state.h, state.scale) }
 end
 
 -- The row and the timeline's zone as they are now.

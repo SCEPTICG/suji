@@ -11,6 +11,7 @@ local M = {
     title = nil,      -- media-title (see text.file_title), cut; nil when empty
     series = nil,     -- two-line title sent with set-title, nil when unset
     episode = nil,
+    episode_name = nil, -- its optional third field, after the episode
     font = "sans-serif", -- osd-font
     remaining = false,   -- show the remaining time instead of the duration
 }

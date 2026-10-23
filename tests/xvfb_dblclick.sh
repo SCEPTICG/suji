@@ -2,8 +2,8 @@
 # Double clicks with real X events, run inside xvfb-run by tests/run.sh:
 #   tests/xvfb_dblclick.sh <file> <log> <controls>
 # The file is the one of the menu test and the row the one run.sh gives it
-# (640x480 window; the speed button is at x 408-452, y 440; its "2x"
-# entry, the eighth under the title, at y 331). First a double click on
+# (640x480 window; the speed button is at x 472-516, y 440; its "2x"
+# entry, the eighth under the title, at y 307). First a double click on
 # that entry: it sets the speed and must not toggle fullscreen. Then,
 # without moving, a double click on the video, once the menu is gone and
 # mpv's double-click time is over: that one is mpv's and toggles
@@ -29,11 +29,11 @@ if [ -z "$wid" ]; then
     exit 1
 fi
 sleep 0.5
-xdotool mousemove --window "$wid" 430 440
+xdotool mousemove --window "$wid" 494 440
 sleep 0.5
 xdotool click 1 # opens the menu
 sleep 0.6
-xdotool mousemove --window "$wid" 448 331
+xdotool mousemove --window "$wid" 512 307
 sleep 0.5
 xdotool click --repeat 2 --delay 250 1
 sleep 2

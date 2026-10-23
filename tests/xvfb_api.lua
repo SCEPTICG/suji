@@ -9,9 +9,9 @@
 --
 -- Window: 640x480. The row is centred on y 440: pause (20-64), the command
 -- button (72-116), button:fake (124-168). A menu of three items from the
--- command button has x 72 onwards and rows at y 316, 346 and 376 (30 px
--- each, ending 12 px above the row's zones); from anywhere else (more is
--- not in the row: the middle) it would not reach x 100.
+-- command button has x 72 onwards and rows at y 292, 322 and 352 (30 px
+-- each, ending 12 px above the timeline's zone); from anywhere else (more
+-- is not in the row: the middle) it would not reach x 100.
 
 local msg = require "mp.msg"
 local utils = require "mp.utils"
@@ -77,7 +77,7 @@ click_at(94, 440) -- the command button: hikari opens its menu
 after(0.3, function()
     if types[#types] ~= "xvfb-api" then finish(false, "the menu type is not published: " .. table.concat(types, ",")) end
 end)
-click_at(100, 361) -- second row, only there if the menu came out of the button
+click_at(100, 337) -- second row, only there if the menu came out of the button
 after(0.4, function()
     if picked ~= "2" then finish(false, "the choice did not come back (" .. tostring(picked) .. ")") end
     if types[#types] ~= "nil" then finish(false, "the menu type was not deleted: " .. table.concat(types, ",")) end
@@ -92,7 +92,7 @@ after(0.4, function()
     local probe = mp.commandv("script-message-to", "suji", "hikari-probe")
     local margins = mp.get_property_native("user-data/suji/margins")
     local bottom = type(margins) == "table" and margins.bottom
-    finish(version == "0.6.1" and version_prop == version and missing == nil and probe == true and bottom == 62
+    finish(version == "0.6.1" and version_prop == version and missing == nil and probe == true and bottom == 86
         and at_file == "true",
         ("suji-version %s, user-data/suji/version %s on the first file-loaded, picked %s, types %s, button clicked,"
             .. " a message to no script gives %s, to suji %s, margins.bottom %s, enabled %s at load and %s on the"

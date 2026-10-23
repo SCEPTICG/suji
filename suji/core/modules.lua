@@ -13,6 +13,8 @@
 --   release(ctx, commit)    the button went up; commit is false when the
 --                           drag is dropped (file change, window left...)
 --   wheel(ctx, dir)         wheel over its zone: 1 up, -1 down
+--   hover(ctx, on)          the cursor came onto its zone (true) or left
+--                           it (false)
 --   menu_closed(ctx)        the menu it opened closed (see core/menu.lua)
 --
 -- box: { x0, y0, x1, y1, cy } in window px, cy the centre of the row.
@@ -242,8 +244,11 @@ end
 
 -- The registry -------------------------------------------------------------
 
+local skip = require "modules.skip"
 local ROW = {
     pause = require "modules.pause",
+    prev = skip.new(-1),
+    next = skip.new(1),
     time = require "modules.time",
     volume = require "modules.volume",
     fullscreen = require "modules.fullscreen",
@@ -256,14 +261,15 @@ local ROW = {
 local command = require "modules.command"
 local button = require "modules.button"
 M.timeline = require "modules.timeline" -- always there, not part of the row
-M.title = require "modules.title"       -- background layer above the row
+M.title = require "modules.title"       -- background layer at the top left
 
 -- Called once by main, after the core's own observers.
 function M.init()
     names[M.timeline], names[M.title] = "timeline", "title"
     M.call(M.timeline, "init")
     M.call(M.title, "init")
-    for _, name in ipairs({ "pause", "time", "volume", "fullscreen", "subtitles", "audio", "playlist", "speed", "more" }) do
+    for _, name in ipairs({ "pause", "prev", "next", "time", "volume", "fullscreen", "subtitles", "audio", "playlist",
+                            "speed", "more" }) do
         names[ROW[name]] = name
         M.call(ROW[name], "init")
     end

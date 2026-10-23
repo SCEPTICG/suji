@@ -1,6 +1,6 @@
 # suji for script authors
 
-Other mpv scripts can open menus in suji, put their own buttons in its row and show action buttons above it, with script messages. This page lists what suji understands.
+Other mpv scripts can open menus in suji, put their own buttons in its row and show action buttons above its timeline, with script messages. This page lists what suji understands.
 
 **The API is at 0.x and may still change.** The message and field names follow the ones uosc uses, so a script written for uosc needs few changes to work with suji too. That is the only link: suji is a separate project, written from scratch, and it understands a small part of what uosc does.
 
@@ -22,7 +22,7 @@ From Lua, `mp.commandv("script-message-to", "suji", ...)`.
 | `set-button` | `<name> <json>` | Creates or changes a button (see [Buttons](#buttons)). |
 | `show-action` | `<id> <json>` | Shows an action button, or changes it (see [Action buttons](#action-buttons)). |
 | `hide-action` | `[id]` | Hides that action button; with no `id`, all of them. |
-| `set-title` | `<series> <episode>` | The title, see the README. |
+| `set-title` | `<series> <episode> [<name>]` | The title, see the README. `<name>`, optional, is the name of the episode: shown in grey after it, on its line. With two arguments, the title is as before. |
 
 `open-menu` and `update-menu` differ in how the change looks: `open-menu` unfolds the menu from its button, `update-menu` swaps the items at once and keeps the scroll, so it suits a menu whose data changes while it is open. An `open-menu` with the type of a menu that a script opened and is still open works like `update-menu`.
 
@@ -33,7 +33,9 @@ Only one menu is open at a time. Opening a menu closes the one that was open, su
 1. From the element of the row named by the `anchor` argument, or by an `anchor` field in the JSON: `subtitles`, `audio`, `playlist`, `speed`, `more`, `command:<icon>`, `button:<name>`. It has to be in the row as it is shown now.
 2. Otherwise, from the `command:` or `button:` button the user clicked, if that was less than a second before. This is the usual case: a button runs `script-binding myscript/open-menu`, and the script answers with `open-menu`, without knowing where its button is.
 3. Otherwise, from the `more` button, if it is in the row.
-4. Otherwise, from the middle of the window, above the row.
+4. Otherwise, from the middle of the window.
+
+Whatever it comes out of, the menu opens upwards from just above the timeline, so it never covers the bar; it is in line with its button.
 
 The menu follows its button when the row changes. If the button leaves the row, the menu stays open and moves to the middle.
 
@@ -130,7 +132,7 @@ The name is made of letters, digits, `_` and `-`, at most 64 of them. suji keeps
 
 ## Action buttons
 
-A button with a text, above the row on the right, for as long as a script needs it: "Skip opening ›", "Next episode ›". suji draws it like its menus, and runs its command when it is clicked.
+A button with a text, above the timeline on the right, for as long as a script needs it: "Skip opening ›", "Next episode ›". suji draws it like its menus, and runs its command when it is clicked.
 
 ```
 script-message-to suji show-action <id> <json>
@@ -173,10 +175,10 @@ end)
 For a script that draws its own things near the bottom of the window, suji publishes `user-data/suji/margins`:
 
 ```lua
-{ bottom = 62 } -- px, at scale 1
+{ bottom = 86 } -- px, at scale 1
 ```
 
-`bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the row of controls (to the top of the timeline's strip, 24 px at scale 1, when the row is empty). It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale (the size chosen in the More menu included) or the row (the `controls` option, a button that appears or goes), and it is deleted while suji is turned off.
+`bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the controls: from the bottom up there is a margin, the row and the timeline's strip (24 px at scale 1), and `bottom` is the top of that strip. It was 62 before 0.7.0, when the timeline was under the row. It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale (the size chosen in the More menu included), not with the row, and it is deleted while suji is turned off.
 
 suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen, and on the [action buttons](#action-buttons). Elsewhere above `bottom`, clicks are left to mpv and to other scripts, with one exception: while a menu of suji is open, any menu, a click anywhere in the window is suji's. On the menu it chooses; anywhere else it only closes the menu, and nothing else gets it. Right after a click on a menu or on an action button, suji also keeps the second click of a double click, for mpv's double-click time or until the mouse moves away; on an action button, that second click runs nothing.
 

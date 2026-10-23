@@ -5,14 +5,14 @@
 -- it was cleared off the bar, with suji turned off, with thumbnails=no and
 -- on a change of file.
 --
--- Window: 640x480 at scale 1, so the bar's zone starts at y 456. The fake
--- says 160x90: the box is 172x122 (6 px around the image, a 20 px line
--- under it), its bottom on y 456, so the image is at y 340; the row's
--- margins are 20 px. File: 60 s (59.9 to mpv), paused.
+-- Window: 640x480 at scale 1, so the bar's zone starts at y 394, above the
+-- row. The fake says 160x90: the box is 172x122 (6 px around the image, a
+-- 20 px line under it), its bottom on y 394, so the image is at y 278; the
+-- row's margins are 20 px. File: 60 s (59.9 to mpv), paused.
 
 local msg = require "mp.msg"
 
-local Y = 470 -- inside the bar zone
+local Y = 406 -- inside the bar zone
 local started, done = false, false
 local clears -- before the change of file
 
@@ -43,7 +43,7 @@ end
 -- The message for the cursor at x, the image's left edge at ix.
 local function thumb(x, ix)
     local t = mp.get_property_number("duration", 0) * x / 640
-    return ("thumb %.3f %d 340"):format(t, ix)
+    return ("thumb %.3f %d 278"):format(t, ix)
 end
 local function mouse(x, y) mp.commandv("mouse", tostring(x), tostring(y)) end
 

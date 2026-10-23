@@ -1,6 +1,6 @@
--- Action buttons: a text button above the row, on the right, that another
--- script shows for as long as it needs it ("Skip opening ›"), with the
--- show-action and hide-action messages (core/messages.lua, docs/api.md).
+-- Action buttons: a text button above the timeline, on the right, that
+-- another script shows for as long as it needs it ("Skip opening ›"), with
+-- the show-action and hide-action messages (core/messages.lua, docs/api.md).
 -- A click runs its command; the button stays until the script hides it.
 --
 -- They are not modules of the row: they are on screen while the row is
@@ -33,7 +33,7 @@ M.MAX_TEXT = 64  -- bytes of a text
 -- Sizes in px at scale 1. The look is the menus' (core/menu.lua).
 local H = 36         -- a button's height
 local PAD = 14       -- text inside its left and right edges
-local GAP = 12       -- between the buttons and the row
+local GAP = 12       -- between the buttons and the timeline's zone
 local SPACE = 8      -- between two buttons
 local SIZE = 15
 local BG_OPACITY = 0.6
@@ -69,11 +69,10 @@ end
 
 -- The boxes of the buttons on screen, { a, x0, y0, x1, y1, cy, text },
 -- from the right margin leftwards, their bottom GAP above the top of the
--- row (the timeline's zone when the row is empty): the same place whether
--- the controls are shown or hidden. A button that would leave the window
--- on the left waits like the ones over MAX_SHOWN; the first one is cut.
--- Worked out again only when the buttons, the row, the window, the scale
--- or the font changed.
+-- timeline's zone: the same place whether the controls are shown or
+-- hidden. A button that would leave the window on the left waits like the
+-- ones over MAX_SHOWN; the first one is cut. Worked out again only when
+-- the buttons, the window, the scale or the font changed.
 local function place()
     local k = ("%s %s %s %s"):format(state.w, state.h, state.scale, state.font)
     if placed and key == k then return placed end
@@ -81,8 +80,7 @@ local function place()
     placed, key = boxes, k
     if #list == 0 or state.w <= 0 or state.h <= 0 then return boxes end
     local s, now = state.scale, mp.get_time()
-    local row = layout.current()
-    local y1 = (row.boxes[1] or row.bar).y0 - GAP * s
+    local y1 = layout.bar_zone().y0 - GAP * s
     local y0 = y1 - H * s
     local left, x1 = layout.SIDE * s, state.w - layout.SIDE * s
     local function width(t) return modules.ctx.text_width(t, SIZE) end
@@ -184,7 +182,7 @@ end
 -- The cursor moved (x nil: it left the window): the button under it is lit.
 function M.pointer(x, y) px, py = x, y end
 
--- The row, the window or the scale changed.
+-- The zones moved: the window or the scale changed.
 function M.on_layout() placed = nil end
 
 -- ASS for the buttons at time now and whether they are still animating.
