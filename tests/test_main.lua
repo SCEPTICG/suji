@@ -224,6 +224,80 @@ T.eq(o.hide_delay, 3600, "hide_delay capped")
 T.eq(o.proximity, 10000, "proximity capped")
 T.eq(o.scale, 1, "NaN scale falls back")
 
+-- The default row of 0.2.0 to 0.6.1 counts as not set -------------------
+local OLD = "pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen"
+local NEW = "pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen"
+local function old_logs()
+    local n = 0
+    for _, l in ipairs(mp.logs) do if tostring(l[2]):find("^controls: the default row of suji 0%.2%.0") then n = n + 1 end end
+    return n
+end
+start({ controls = OLD, debug = true })
+o = package.loaded["core.options"]
+T.eq(o.controls, NEW, "the old row exactly: today's default")
+T.eq(old_logs(), 1, "logged with debug")
+local function x0_of(name)
+    for _, b in ipairs(package.loaded["core.layout"].current().boxes) do
+        if package.loaded["core.modules"].name_of(b.mod) == name then return b.x0 end
+    end
+end
+T.eq(x0_of("volume"), 72, "and the row is today's: the volume on the left")
+mp.set_opts({ scale = 1.5 })
+T.eq(old_logs(), 1, "logged once, not on every change of options")
+start({ controls = OLD })
+T.eq(package.loaded["core.options"].controls, NEW, "without debug too")
+T.eq(old_logs(), 0, "and then nothing is logged")
+for _, s in ipairs({ "  " .. OLD .. " ", OLD .. "\r", "\t" .. OLD .. "\n" }) do
+    start({ controls = s })
+    T.eq(package.loaded["core.options"].controls, NEW, ("only spaces around it: %q"):format(s))
+end
+for _, s in ipairs({
+    "pause,time,space,subtitles,audio,playlist,speed,more,fullscreen,volume", -- another order
+    "pause,time,space,subtitles,audio,playlist,speed,more,volume",            -- one less
+    "pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen,gap",
+    "pause, time,space,subtitles,audio,playlist,speed,more,volume,fullscreen", -- a space inside
+    "PAUSE,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen",
+}) do
+    start({ controls = s, debug = true })
+    T.eq(package.loaded["core.options"].controls, s, "a row with a change is kept: " .. s)
+    T.eq(old_logs(), 0, "and nothing is logged")
+end
+-- At run time
+start({ debug = true })
+o = package.loaded["core.options"]
+mp.set_opts({ controls = "pause,space,fullscreen" })
+T.eq(o.controls, "pause,space,fullscreen", "at run time: a row of one's own")
+mp.set_opts({ controls = OLD })
+T.eq(o.controls, NEW, "at run time: the old row is today's default")
+T.eq(x0_of("volume"), 72, "and laid out at once")
+T.eq(old_logs(), 1, "logged")
+mp.set_opts({ controls = OLD:gsub(",fullscreen$", "") })
+T.eq(o.controls, (OLD:gsub(",fullscreen$", "")), "at run time: a changed one is kept")
+mp.set_opts({ controls = OLD })
+T.eq(old_logs(), 2, "back to the old row: logged again")
+
+-- docs/suji.conf sets nothing, and shows every default ----------------------
+start()
+o = package.loaded["core.options"]
+local f = assert(io.open("docs/suji.conf", "rb"))
+local conf = f:read("*a")
+f:close()
+local shown = {}
+for line in (conf .. "\n"):gmatch("([^\n]*)\n") do
+    T.check(line == "" or line:sub(1, 1) == "#", "docs/suji.conf: no active line: " .. line)
+    local k, v = line:match("^#([a-z_]+)=(.*)$")
+    if k then shown[k] = v end
+end
+local nopts = 0
+for k, v in pairs(o) do
+    if type(v) ~= "function" and type(v) ~= "table" then
+        nopts = nopts + 1
+        local want = type(v) == "boolean" and (v and "yes" or "no") or tostring(v)
+        T.eq(shown[k], want, "docs/suji.conf: #" .. k .. "= shows the default")
+    end
+end
+T.eq(nopts, 11, "every option")
+
 -- Controls ----------------------------------------------------------------
 local function last_cmd() local c = mp.commands[#mp.commands]; return c and table.concat(c, " ") end
 local function painted() return mp.updates[#mp.updates].data end

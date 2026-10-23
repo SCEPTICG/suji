@@ -86,7 +86,7 @@ suji is a folder of Lua scripts. It goes in the `scripts` folder inside mpv's co
 If `$MPV_HOME` is set, that folder is used instead on every system. Create the folders that do not exist yet.
 
 1. Copy the `suji` folder of this repository into `scripts/`, so that you have `scripts/suji/main.lua`.
-2. Optional: copy `docs/suji.conf` to `script-opts/suji.conf` and change the options you want.
+2. Optional: copy `docs/suji.conf` to `script-opts/suji.conf` and remove the `#` from the options you want to change. Every option in it is commented out and shows its default, so a copy changes nothing by itself.
 
 There is no need to touch `mpv.conf`: suji turns off mpv's built-in controller (the OSC) by itself.
 
@@ -179,7 +179,7 @@ The `controls` option chooses which elements the row shows and in which order. T
 controls=pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen
 ```
 
-If you already have your own `controls=` in `suji.conf`, it stays as it is: only the default changed in 0.7.0.
+If you already have your own `controls=` in `suji.conf`, it stays as it is: only the default changed in 0.7.0. There is one exception: the default row of 0.2.0 to 0.6.1, `pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen`, exactly as it was. Until 0.7.1 `docs/suji.conf` set every option, so a copy of it kept that row without anyone choosing it; suji takes it as not set and uses today's default. To keep that row on purpose, change anything in it (the order, or one element).
 
 - The elements are `pause`, `prev`, `next`, `time`, `volume`, `fullscreen` and the menus `subtitles`, `audio`, `playlist`, `speed` and `more`.
 - `space` pushes what follows it to the right; `gap` leaves a small hole.

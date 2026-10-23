@@ -38,7 +38,18 @@ local DEFAULTS = {
     -- has_chapter, has_playlist, idle, or any mpv property or user-data/...
     -- (true when it exists and is not false, no, 0 or empty). "," is OR,
     -- "+" is AND, "!" negates: <video,audio>, <has_playlist+!stream>.
+    -- A row of OLD_ROWS (below) counts as not set: this one is used.
     controls = "pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen",
+}
+
+-- Default rows of older versions. docs/suji.conf used to set every option,
+-- so whoever copied it kept that version's row without ever choosing it:
+-- such a row, exactly (only spaces around it may differ: a line ending in
+-- \r from Windows, say), counts as not set and the current default is
+-- used. Any other change, in the order or an element, keeps it.
+local OLD_ROWS = {
+    -- 0.2.0 to 0.6.1 (0.1.0 had no controls option)
+    "pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen",
 }
 
 -- Numbers are kept in these ranges; NaN falls back to the default.
@@ -49,6 +60,17 @@ local M = {}
 M.LIMITS = LIMITS -- for the size of the more menu, which multiplies scale
 
 local warned -- last invalid accent warned about, not to repeat it
+local old_row -- an old row was recognised the last time, not to log it again
+
+-- True when s is one of OLD_ROWS. Long strings are not even trimmed.
+local function is_old_row(s)
+    if #s > 256 then return false end
+    s = s:match("^%s*(.-)%s*$")
+    for _, row in ipairs(OLD_ROWS) do
+        if s == row then return true end
+    end
+    return false
+end
 
 -- The usable value of every option in raw (left untouched), with warnings.
 function M.validate(raw)
@@ -64,6 +86,15 @@ function M.validate(raw)
         warned, out.accent = out.accent, DEFAULTS.accent
     else
         warned = nil -- a bad value set again later is warned about again
+    end
+    if is_old_row(out.controls) then
+        if out.debug and not old_row then
+            msg.info("controls: the default row of suji 0.2.0 to 0.6.1, the current default is used"
+                .. " (change anything in it to keep it)")
+        end
+        old_row, out.controls = true, DEFAULTS.controls
+    else
+        old_row = nil
     end
     for k, r in pairs(LIMITS) do
         local v = out[k]
