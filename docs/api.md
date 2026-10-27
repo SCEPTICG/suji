@@ -230,7 +230,7 @@ end)
 
 Names for `icon` in menus, in `set-button` and in `command:icon:...` in the `controls` option:
 
-`audio`, `auto_awesome`, `check`, `close`, `fullscreen`, `history`, `info`, `language`, `more`, `mute`, `next`, `palette`, `pause`, `play`, `playlist`, `prev`, `screenshot`, `settings`, `speed`, `star`, `subtitles`, `system_update_alt`, `text_fields`, `volume0`, `volume1`, `volume2`, `windowed`.
+`audio`, `auto_awesome`, `check`, `close`, `fast_forward`, `fast_rewind`, `fullscreen`, `history`, `info`, `language`, `more`, `mute`, `next`, `palette`, `pause`, `play`, `playlist`, `prev`, `screenshot`, `settings`, `speed`, `star`, `subtitles`, `system_update_alt`, `text_fields`, `volume0`, `volume1`, `volume2`, `windowed`.
 
 They are suji's own drawings, thin lines on a 24 px grid; some names are the ones scripts for uosc already use, the drawings are not.
 

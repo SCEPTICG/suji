@@ -658,9 +658,10 @@ title.zone = zone
 -- Icons ------------------------------------------------------------------------
 local icons = require "core.icons"
 local names = icons.names()
-T.check(#names >= 27, "the icons with names: " .. #names)
+T.check(#names >= 29, "the icons with names: " .. #names)
 for _, name in ipairs({ "text_fields", "auto_awesome", "speed", "history", "palette", "system_update_alt", "star",
-                        "language", "settings", "info", "screenshot", "next", "prev", "close", "check" }) do
+                        "language", "settings", "info", "screenshot", "next", "prev", "close", "check",
+                        "fast_forward", "fast_rewind" }) do
     local shape, width = icons.shape(name, 50, 50, 22)
     local ok = shape ~= nil and #shape > 0 and width > 0
     for _, line in ipairs(shape or {}) do
