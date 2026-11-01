@@ -88,6 +88,10 @@ mp.mouse(RIGHT - 10, CY)
 mp.advance(0.1)
 T.check(mp.bindings["suji-bar"] ~= nil, "on the button: the mouse is bound")
 T.check(painted():find("\\1c&HFFFFFF&\\1a&HE6&", 1, true) ~= nil, "and it is lit")
+local function target() return package.loaded["core.mouse"].target(mp.get_time()) end
+T.eq(target(), 1, "the controls show in full over it")
+mp.advance(5)
+T.eq(target(), 1, "and stay with the mouse still on it, as over the row")
 mp.commands = {}
 mp.button("press")
 T.eq(table.concat(mp.commands[1] or {}, " "), "script-message-to fake next", "a click runs its command")

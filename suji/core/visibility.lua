@@ -20,7 +20,8 @@
 --                              like "idle_time >= hide_delay" just works.
 --   on_bar         boolean     The cursor is inside the bar's active zone.
 --   on_controls    boolean     The cursor is on the zone of any element of
---                              the row (a button, the time, the volume...).
+--                              the row (a button, the time, the volume...),
+--                              or on an action button ("Skip opening").
 --                              Also true while a menu is open, wherever
 --                              the cursor is.
 --   paused         boolean     Playback is paused.

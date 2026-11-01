@@ -67,7 +67,8 @@ function M.input(now)
         idle_time = now - last_move,
         hide_delay = opts.hide_delay,
         on_bar = hit ~= nil and hit.bar == true,
-        on_controls = (hit ~= nil and not hit.bar) or menu.is_open(),
+        on_controls = (hit ~= nil and not hit.bar) or menu.is_open()
+            or (pos ~= nil and actions.at(pos.x, pos.y) ~= nil),
         paused = state.paused,
         dragging = captured ~= nil,
     }
