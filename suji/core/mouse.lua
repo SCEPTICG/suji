@@ -14,6 +14,8 @@
 -- Action buttons (modules/actions.lua) bind MBTN_LEFT too, only while the
 -- cursor is on one that is on screen: a click there runs its command. A
 -- double click on one, or on a module with once (prev, next), runs it once.
+-- With the cursor moved onto one, the controls stay on screen, as over
+-- the row.
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -31,6 +33,10 @@ local pos           -- { x, y } in OSD pixels, nil when unknown or outside
 local seen_real = false
 local last_move = 0
 local hit           -- zone under the cursor (see layout.hit) or nil
+-- The action button under the cursor when it last moved, or nil. Only
+-- that one keeps the controls on screen: a button that comes up under a
+-- cursor resting there does not bring them up by itself.
+local moved_onto
 local captured      -- module holding the mouse, or nil
 -- A click on a menu or an action button may close it (an action button is
 -- hidden by its script), and with it the reason to bind the mouse;
@@ -68,7 +74,7 @@ function M.input(now)
         hide_delay = opts.hide_delay,
         on_bar = hit ~= nil and hit.bar == true,
         on_controls = (hit ~= nil and not hit.bar) or menu.is_open()
-            or (pos ~= nil and actions.at(pos.x, pos.y) ~= nil),
+            or (pos ~= nil and moved_onto ~= nil and actions.at(pos.x, pos.y) == moved_onto),
         paused = state.paused,
         dragging = captured ~= nil,
     }
@@ -274,6 +280,7 @@ function M.on_mouse_pos(p)
         if not pos or pos.x ~= p.x or pos.y ~= p.y then
             pos = { x = p.x, y = p.y }
             last_move = mp.get_time()
+            moved_onto = actions.at(p.x, p.y)
             if captured then drag(p.x, p.y) end
             M.rearm()
             -- Gone far from the click on a menu.
