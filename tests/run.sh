@@ -7,7 +7,8 @@
 # test (which also needs ffmpeg and mkvmerge), a test of the size the more
 # menu remembers, a thumbnail test with a fake thumbfast, a double click test,
 # a double click on prev and an action button test (which also need
-# xdotool) in a virtual display.
+# xdotool) and a picture in picture test (which needs xwininfo) in a
+# virtual display.
 # Usage: tests/run.sh   (from anywhere; needs lua5.1, mpv is optional)
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -346,6 +347,36 @@ else
         status=1
     else
         echo "xvfb-actions: ok the click ran the command once, hide-action removed the button, a double click ran it once"
+    fi
+fi
+
+# Picture in picture: the real window, measured with xwininfo, in a
+# 1280x1024 display with a 1280x720 video (a lavfi source: its duration
+# grows, which this test does not mind).
+if ! command -v xvfb-run >/dev/null 2>&1; then
+    echo "xvfb-pip: skipped (no xvfb-run)"
+elif ! command -v xwininfo >/dev/null 2>&1; then
+    echo "xvfb-pip: skipped (no xwininfo)"
+else
+    out=$(timeout 60 xvfb-run -a -s "-screen 0 1280x1024x24" mpv --no-config --vo=x11 --ao=null \
+        --pause --keep-open=yes --script=./suji --script=tests/xvfb_pip.lua \
+        --msg-level=all=no,suji=info,xvfb_pip=info \
+        'av://lavfi:testsrc=duration=60:size=1280x720:rate=10' 2>&1)
+    rc=$?
+    if printf '%s\n' "$out" | grep '^\[suji\]' | grep -qiE 'error|warn|traceback'; then
+        printf 'xvfb-pip: FAIL\n%s\n' "$out"
+        status=1
+    elif [ "$rc" -ne 0 ]; then
+        printf 'xvfb-pip: FAIL (exit code %s)\n%s\n' "$rc" "$out"
+        status=1
+    elif printf '%s\n' "$out" | grep -q 'xvfb-pip: FAIL'; then
+        printf 'xvfb-pip: FAIL\n%s\n' "$out"
+        status=1
+    elif printf '%s\n' "$out" | grep -q 'xvfb-pip: ok'; then
+        printf '%s\n' "$out" | grep 'xvfb-pip:'
+    else
+        printf 'xvfb-pip: FAIL\n%s\n' "$out"
+        status=1
     fi
 fi
 
