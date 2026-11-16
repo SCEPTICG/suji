@@ -43,10 +43,6 @@ T.eq(bar.zone_top(720, 1), 634, "24 px zone")
 T.eq(bar.zone_bottom(720, 1), 658, "its bottom on the row's top")
 T.eq(bar.zone_top(1440, 2), 1268, "zone scales")
 T.eq(bar.zone_bottom(1440, 2), 1316, "its bottom too")
-T.check(bar.in_zone(10, 640, 1280, 720, 1), "inside zone")
-T.check(not bar.in_zone(10, 630, 1280, 720, 1), "above zone")
-T.check(not bar.in_zone(10, 700, 1280, 720, 1), "under it: the row, not the zone")
-T.check(not bar.in_zone(-1, 700, 1280, 720, 1), "left of window")
 
 -- Rendering
 local st = { w = 1280, h = 720, scale = 1, time = 50, duration = 100 }

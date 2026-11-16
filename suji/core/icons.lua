@@ -71,7 +71,7 @@ local LINES = {
     -- Picture in picture: a screen with a small window, filled (a frame
     -- with a line through it), at its bottom right; and the way back, an
     -- arrow out of that corner.
-    pip = { SCREEN, { 12, 11.5, 17, 11.5, 17, 14.5, 12, 14.5, 12, 11.5 }, { 12, 13, 17, 13 } },
+    pip = { SCREEN, { 12, 12.5, 18, 12.5, 18, 16.5, 12, 16.5, 12, 12.5 }, { 12, 14.5, 18, 14.5 } },
     pip_exit = { SCREEN, { 15.5, 15.5, 8.5, 8.5 }, { 8.5, 13, 8.5, 8.5, 13, 8.5 } },
     -- The buttons with menus.
     subtitles = { { 3, 5, 21, 5, 21, 19, 3, 19, 3, 5 }, { 7, 11.5, 10, 11.5 }, { 13, 11.5, 17, 11.5 },

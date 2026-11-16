@@ -74,10 +74,6 @@ function M.zone_bottom(h, scale, lift)
     return h - round(((lift or M.LIFT) - M.ZONE_HEIGHT / 2) * scale)
 end
 
-function M.in_zone(x, y, w, h, scale)
-    return x >= 0 and x < w and y >= M.zone_top(h, scale) and y < M.zone_bottom(h, scale)
-end
-
 -- Where the line sits for visibility v (0..1): on the bottom edge at rest,
 -- rising to lift (LIFT when not given) as it grows. Heights are whole
 -- pixels so the line stays sharp.
