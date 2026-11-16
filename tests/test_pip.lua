@@ -214,6 +214,73 @@ T.eq(writes(), "", "no geometry for mpv.net")
 key()
 T.eq(writes(), "border=true, ontop=false, fullscreen=true", "no resize, fullscreen back on last")
 
+-- mpv.net from a maximized window: the same, no size to give back
+start({ ["display-width"] = 1920, ["video-params/dw"] = 1280, ["window-maximized"] = true })
+mp.props["osd-dimensions"] = { w = 1920, h = 1080 }
+mp.on_command = mpvnet
+key()
+T.eq(writes(), "window-maximized=false, ontop=true, border=false, mpvnet window-scale 0.375, mpvnet move-window right, mpvnet move-window bottom",
+    "mpv.net: unmaximized first")
+key()
+T.eq(writes(), "border=true, ontop=false, window-maximized=true", "no resize, maximized again")
+
+-- The window settling (macOS animates leaving fullscreen): the geometry
+-- waits for the last change of size, and is written once ---------------------------
+local function size(w, h) mp.fire("osd-dimensions", { w = w, h = h }) end
+start({ ["current-window-scale"] = 1, fullscreen = true })
+key()
+writes()
+for i = 1, 8 do -- a change every 0.2 s for 1.6 s
+    mp.advance(0.2)
+    size(1920 - i * 100, 1080 - i * 50)
+end
+T.eq(writes(), "", "nothing while the window keeps changing")
+mp.advance(DELAY - 0.01)
+T.eq(writes(), "", "nor right after the last change")
+mp.advance(0.02)
+T.eq(writes(), "geometry=25%-24-72", "then the corner, once, " .. DELAY .. " s after the last change")
+size(320, 180) -- the change the geometry itself causes
+mp.advance(1)
+T.eq(writes(), "", "the change it causes writes nothing more")
+T.eq(mp.active_timers(), 0, "no timers")
+-- A window that never stops changing: placed at PLACE_MAX all the same
+start({ ["current-window-scale"] = 1, fullscreen = true })
+T.eq(pip().PLACE_MAX, 3, "at most 3 s")
+local t0 = mp.now
+key()
+writes()
+local at
+for i = 1, 50 do
+    mp.advance(0.1)
+    if not at and #mp.window > 0 then at = mp.now - t0 end
+    size(1000 + i, 600 + i)
+end
+T.check(at and at > 2.9 and at < 3.15, "written at 3 s: " .. tostring(at))
+T.eq(writes(), "geometry=25%-24-72", "once, though it kept changing")
+mp.advance(1) -- the last paint
+T.eq(writes(), "", "and nothing after")
+T.eq(mp.active_timers(), 0, "no timers")
+-- From a window: no change, 0.3 s as before; a change before it waits
+start({ ["current-window-scale"] = 1 })
+key()
+writes()
+mp.advance(0.2)
+size(1279, 719)
+mp.advance(0.2)
+T.eq(writes(), "", "a change of size: it waits")
+mp.advance(0.11)
+T.eq(writes(), "geometry=25%-24-72", "0.3 s after that change")
+-- Leaving while it waits cancels it
+start({ ["current-window-scale"] = 1, fullscreen = true })
+key()
+size(1500, 900)
+key()
+writes()
+size(1400, 800)
+mp.advance(5)
+T.eq(writes(), "", "left while waiting: never placed")
+T.eq(mp.active_timers(), 0, "no timers")
+
 -- Any other: on top and no border only --------------------------------------------
 start({ ["display-width"] = 1920, ["video-params/dw"] = 1280 })
 key()
@@ -225,10 +292,27 @@ T.eq(writes(), "border=true, ontop=false", "and only those two back")
 -- Fullscreen turned on in picture in picture ends it, in place -----------------------
 start({ ["current-window-scale"] = 1 })
 key()
+mp.advance(1)
 writes()
 mp.set_property_bool("fullscreen", true) -- a double click, or a key
 T.eq(pip().active(), false, "fullscreen on: picture in picture ends")
-T.eq(writes(), "fullscreen=true, border=true, ontop=false", "border and on top back, no resize")
+T.eq(writes(), "fullscreen=true, geometry=, border=true, ontop=false",
+    "the user's geometry, border and on top back, no resize")
+mp.advance(1)
+T.eq(writes(), "", "and nothing after")
+start({ ["current-window-scale"] = 1, geometry = "50%" })
+key()
+mp.advance(1)
+writes()
+mp.set_property_bool("fullscreen", true)
+T.eq(writes(), "fullscreen=true, geometry=50%, border=true, ontop=false", "a geometry of the user's comes back")
+start({ ["current-window-scale"] = 1 })
+key()
+writes()
+mp.set_property_bool("fullscreen", true) -- before the window was placed
+mp.advance(1)
+T.eq(writes(), "fullscreen=true, geometry=, border=true, ontop=false", "fullscreen before the placing: never placed")
+T.eq(mp.active_timers(), 0, "no timers")
 T.eq(mp.props.fullscreen, true, "and it stays fullscreen")
 T.eq(mp.props["user-data/suji/pip"], false, "property false")
 start({ ["display-width"] = 1920, ["video-params/dw"] = 1280 })

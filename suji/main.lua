@@ -147,6 +147,7 @@ watch("osd-dimensions", "native", function(dim)
     local changed = state.set("w", w)
     changed = state.set("h", h) or changed
     if not changed then return end
+    pip.resized() -- the window settling before its placing in picture in picture
     mouse.release() -- the grid changed under a drag in progress
     debug_sizes("resize")
     on_layout()

@@ -38,6 +38,7 @@ local GEOMETRY, CENTRE = "25%-24-72", "+50%+50%"
 local WIDTH = 0.25 -- of the screen, for mpv.net
 -- Seconds from border=no (or the end of fullscreen) to geometry, see place.
 M.PLACE_DELAY = 0.3
+M.PLACE_MAX = 3 -- seconds: written by then even if the window keeps changing
 
 local saved -- nil outside picture in picture: what entering changed
 local listener
@@ -72,22 +73,42 @@ local function changed(on)
     end
 end
 
--- mpv: geometry goes on its own, a moment after border=no. On macOS a
+-- mpv: geometry goes on its own, once the window has settled. On macOS a
 -- border taken away after the window was placed centres it again, so it
 -- has to come after; on X11, written right after border=no, without
--- giving mpv a turn, it is lost. PLACE_DELAY after the last of them works
--- on both. Leaving fullscreen is the same, and on macOS it is animated:
--- fullscreen(false) places the window again, once fullscreen is off (the
--- same geometry written again does move the window back). One shot, only
--- while entering: no timer at rest.
+-- giving mpv a turn, it is lost. And leaving fullscreen on macOS is
+-- animated: fullscreen turns false at once, the window keeps changing
+-- size for a while and is centred at the end. So while a placing is
+-- pending, every change of the window's size (resized) starts the wait
+-- over: geometry is written PLACE_DELAY after the last change, or at
+-- PLACE_MAX from the start if it never stops. With no change (a window,
+-- not fullscreen) that is PLACE_DELAY after border=no. Writing it ends
+-- the pending placing, so the resize it causes itself starts nothing.
+-- fullscreen(false) inside starts a new one (the same geometry written
+-- again does move the window back). One shot, only while entering or
+-- leaving fullscreen inside: no timer at rest.
+local pending -- mp.get_time() by which geometry is written anyway, nil: none
+
 local place_timer = mp.add_timeout(M.PLACE_DELAY, function()
+    pending = nil
     if saved and saved.backend == "mpv" then mp.set_property("geometry", GEOMETRY) end
 end, true)
 
-local function place()
+-- Wait PLACE_DELAY again, but not past the deadline.
+local function wait()
     place_timer:kill()
-    place_timer.timeout = M.PLACE_DELAY
+    place_timer.timeout = math.max(0, math.min(M.PLACE_DELAY, pending - mp.get_time()))
     place_timer:resume()
+end
+
+local function place()
+    if not pending then pending = mp.get_time() + M.PLACE_MAX end
+    wait()
+end
+
+-- The window's size changed (osd-dimensions): a pending placing waits more.
+function M.resized()
+    if pending then wait() end
 end
 
 function M.enter()
@@ -108,8 +129,9 @@ function M.enter()
     else
         local dim = mp.get_property_native("osd-dimensions")
         local dw = mp.get_property_number("video-params/dw")
-        -- Fullscreen, the window's width is the screen's: not the one to give back.
-        if not s.fullscreen then s.width = type(dim) == "table" and tonumber(dim.w) or nil end
+        -- Fullscreen or maximized, the width read here is still the big
+        -- one (the window has not come down yet): not the one to give back.
+        if not s.fullscreen and not s.maximized then s.width = type(dim) == "table" and tonumber(dim.w) or nil end
         s.dw = dw
         local f = factor((mp.get_property_number("display-width") or 0) * WIDTH / (dw or 0)) or factor(WIDTH)
         if mpvnet("window-scale", f) then
@@ -128,7 +150,13 @@ function M.leave(resize)
     if not s then return end
     saved = nil -- before the writes: fullscreen=yes below must not end it twice
     place_timer:kill()
-    if resize ~= false then
+    pending = nil
+    if resize == false then
+        -- The window stays as it is, but the user's geometry comes back:
+        -- mpv applies it to every new file, and ours would send the window
+        -- to the corner each time.
+        if s.backend == "mpv" and type(s.geometry) == "string" then mp.set_property("geometry", s.geometry) end
+    else
         if s.backend == "mpv" then
             -- Centred and at its old scale first: the user's geometry
             -- alone (none, by default) would leave the window in the
