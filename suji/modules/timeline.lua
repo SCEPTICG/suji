@@ -20,6 +20,9 @@ M.FULL_HEIGHT = 5   -- line fully grown
 -- zone, which sits on top of the row (layout.ROW_LIFT + layout.HEIGHT / 2
 -- + ZONE_HEIGHT / 2).
 M.LIFT = 74
+-- In picture in picture (core/pip.lua) there is no row under it: the
+-- grown line stays near the bottom edge.
+M.PIP_LIFT = 16
 M.KNOB_SIZE = 13    -- knob diameter
 M.ZONE_HEIGHT = 24  -- clickable area, taller than the line itself
 M.CACHE_OPACITY = 0.4 -- cached range over the rail: light grey, played is the accent
@@ -56,14 +59,19 @@ function M.progress_px(t, duration, w)
     return math.floor(M.time_to_x(t, duration, w))
 end
 
+-- How high the grown line goes in a window st: LIFT, or PIP_LIFT in
+-- picture in picture.
+function M.lift(st) return st.pip and M.PIP_LIFT or M.LIFT end
+
 -- Top and bottom of the clickable zone: around the grown line, whatever
 -- the visibility. The cursor there makes the bar grow (core/visibility.lua).
-function M.zone_top(h, scale)
-    return h - round((M.LIFT + M.ZONE_HEIGHT / 2) * scale)
+-- lift: LIFT when not given.
+function M.zone_top(h, scale, lift)
+    return h - round(((lift or M.LIFT) + M.ZONE_HEIGHT / 2) * scale)
 end
 
-function M.zone_bottom(h, scale)
-    return h - round((M.LIFT - M.ZONE_HEIGHT / 2) * scale)
+function M.zone_bottom(h, scale, lift)
+    return h - round(((lift or M.LIFT) - M.ZONE_HEIGHT / 2) * scale)
 end
 
 function M.in_zone(x, y, w, h, scale)
@@ -71,12 +79,12 @@ function M.in_zone(x, y, w, h, scale)
 end
 
 -- Where the line sits for visibility v (0..1): on the bottom edge at rest,
--- rising to LIFT as it grows. Heights are whole pixels so the line stays
--- sharp.
-function M.layout(w, h, scale, v)
+-- rising to lift (LIFT when not given) as it grows. Heights are whole
+-- pixels so the line stays sharp.
+function M.layout(w, h, scale, v, lift)
     v = clamp(v, 0, 1)
     local thickness = math.max(1, round(lerp(M.REST_HEIGHT, M.FULL_HEIGHT, v) * scale))
-    local y1 = h - round((M.LIFT - M.FULL_HEIGHT / 2) * scale * v)
+    local y1 = h - round(((lift or M.LIFT) - M.FULL_HEIGHT / 2) * scale * v)
     return {
         x0 = 0, x1 = w,
         y0 = y1 - thickness, y1 = y1,
@@ -134,7 +142,7 @@ function M.ass(st, v, opts, drag_time, cache_ranges, chapters)
     local fade = opts.idle_line and 1 or v
     if fade <= 0 then return "" end
 
-    local g = M.layout(st.w, st.h, st.scale, v)
+    local g = M.layout(st.w, st.h, st.scale, v, M.lift(st))
     local px = M.time_to_x(drag_time or st.time, st.duration, st.w)
     local accent = draw.color(opts.accent) or "&HFFFFFF&"
     local white = "&HFFFFFF&"

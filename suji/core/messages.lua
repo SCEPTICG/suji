@@ -13,6 +13,7 @@
 local msg = require "mp.msg"
 local utils = require "mp.utils"
 local opts = require "core.options"
+local state = require "core.state"
 local draw = require "core.draw"
 local text = require "core.text"
 local painter = require "core.painter"
@@ -120,9 +121,10 @@ local function on(name, fn)
     end)
 end
 
--- open-menu <json> [anchor]; nothing while suji is turned off.
+-- open-menu <json> [anchor]; nothing while suji is turned off or in
+-- picture in picture (core/pip.lua), which has no menus.
 on("open-menu", function(json, name)
-    if not opts.enabled then return end
+    if not opts.enabled or state.pip then return end
     local def = decode("open-menu", json)
     if not def then return end
     if name == nil or name == "" then name = def.anchor end

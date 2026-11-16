@@ -226,7 +226,7 @@ T.eq(o.scale, 1, "NaN scale falls back")
 
 -- The default row of 0.2.0 to 0.6.1 counts as not set -------------------
 local OLD = "pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen"
-local NEW = "pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen"
+local NEW = "pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,pip,fullscreen"
 local function old_logs()
     local n = 0
     for _, l in ipairs(mp.logs) do if tostring(l[2]):find("^controls: the default row of suji 0%.2%.0") then n = n + 1 end end
@@ -262,6 +262,27 @@ for _, s in ipairs({
     T.eq(package.loaded["core.options"].controls, s, "a row with a change is kept: " .. s)
     T.eq(old_logs(), 0, "and nothing is logged")
 end
+-- The default row of 0.7.0 to 0.7.3 too
+local OLD7 = "pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen"
+local function old7_logs()
+    local n = 0
+    for _, l in ipairs(mp.logs) do if tostring(l[2]):find("^controls: the default row of suji 0%.7%.0 to 0%.7%.3") then n = n + 1 end end
+    return n
+end
+start({ controls = OLD7, debug = true })
+T.eq(package.loaded["core.options"].controls, NEW, "the row of 0.7.0 to 0.7.3 exactly: today's default")
+T.eq(old7_logs(), 1, "logged with its versions")
+T.check(x0_of("pip") ~= nil, "and the row has picture in picture")
+start({ controls = OLD7 .. "\r" })
+T.eq(package.loaded["core.options"].controls, NEW, "only spaces around it")
+start({ controls = OLD7:gsub(",fullscreen$", ",gap,fullscreen"), debug = true })
+T.eq(package.loaded["core.options"].controls, (OLD7:gsub(",fullscreen$", ",gap,fullscreen")), "with a change: kept")
+T.eq(old7_logs(), 0, "and nothing is logged")
+start({ debug = true })
+mp.set_opts({ controls = OLD })
+mp.set_opts({ controls = OLD7 })
+T.eq(old_logs(), 1, "one old row and then the other: each one logged")
+T.eq(old7_logs(), 1, "the second too")
 -- At run time
 start({ debug = true })
 o = package.loaded["core.options"]

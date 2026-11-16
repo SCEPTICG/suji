@@ -5,7 +5,8 @@
 -- of the core (core/menu.lua) that modules use, and other scripts through
 -- messages (core/messages.lua), which also show action buttons
 -- (modules/actions.lua). Thumbnails on the timeline come from thumbfast
--- (core/thumbnail.lua).
+-- (core/thumbnail.lua). Picture in picture shrinks the window and the
+-- controls (core/pip.lua).
 
 local msg = require "mp.msg"
 local opts = require "core.options"
@@ -20,6 +21,7 @@ local mouse = require "core.mouse"
 local menu = require "core.menu"
 local size = require "core.size"
 local thumbnail = require "core.thumbnail"
+local pip = require "core.pip"
 local actions = require "modules.actions"
 require "core.messages"
 
@@ -114,16 +116,18 @@ painter.set_renderer(function()
     local function add(ass) if ass and ass ~= "" then out[#out + 1] = ass end end
     -- Before the row: it decides which time the row shows.
     local p = mouse.pos()
-    thumbnail_call("update", v > 0 and cursor_time() or nil, p and p.x)
+    thumbnail_call("update", v > 0 and not state.pip and cursor_time() or nil, p and p.x)
     add(modules.call(timeline, "render", layout.bar_zone(), v))
     if v > 0 then
         local placed = layout.current()
         for _, box in ipairs(placed.boxes) do add(modules.call(box.mod, "render", box, v)) end
-        local measured = modules.title.measured
-        add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = state.w, y1 = state.h },
-            v * menu.title_opacity(now)))
-        -- Its opacity came from the old width: once more under an open menu.
-        remeasured = modules.title.measured ~= measured and menu.is_open()
+        if not state.pip then -- no title in picture in picture
+            local measured = modules.title.measured
+            add(modules.call(modules.title, "render", { x0 = 0, y0 = 0, x1 = state.w, y1 = state.h },
+                v * menu.title_opacity(now)))
+            -- Its opacity came from the old width: once more under an open menu.
+            remeasured = modules.title.measured ~= measured and menu.is_open()
+        end
     end
     -- Also with the controls hidden: a skip should need no mouse move.
     local actions_ass, actions_running = actions.render(now)
@@ -241,6 +245,25 @@ mp.register_event("shutdown", function()
     mouse.shutdown()
     mp.set_property_native(ENABLED, nil) -- nil: observers hear it too
     mp.set_property_native(VERSION_PROP, nil)
+    mp.set_property_native(pip.PROP, nil)
+end)
+
+-- Picture in picture came or went: the row gives way to its two buttons,
+-- or comes back. The menu, a drag and the thumbnail belonged to the old
+-- controls; the action buttons hide by themselves (modules/actions.lua).
+pip.on_change(function()
+    menu.close()
+    thumbnail.clear()
+    mouse.release(false)
+    on_layout()
+end)
+-- Fullscreen turned on (a double click, a key) ends it, in place.
+watch("fullscreen", "bool", function(on)
+    if on then pip.leave(false) end
+end)
+-- script-binding suji/pip, with no key of its own: input.conf gives one.
+mp.add_key_binding(nil, "pip", function()
+    if opts.enabled then pip.toggle() end
 end)
 
 -- One interface at a time: osc=no at run time unloads mpv's OSC. It is
@@ -257,6 +280,7 @@ local function set_enabled(on)
         mp.set_property_bool("osc", false)
         took_osc = true
     elseif not on then
+        pip.leave()
         menu.close(true)
         actions.hide(nil, true)
         thumbnail.clear()
@@ -295,6 +319,7 @@ rescale("start")
 -- with enabled=no: suji is still there and still listens.
 mp.set_property_native(VERSION_PROP, VERSION)
 mp.set_property_native(ENABLED, opts.enabled)
+mp.set_property_native(pip.PROP, false)
 
 -- Tell the scripts already running that suji is here (see docs/api.md).
 mp.commandv("script-message", "suji-version", VERSION)

@@ -260,11 +260,16 @@ local ROW = {
     playlist = require "modules.playlist",
     speed = require "modules.speed",
     more = require "modules.more",
+    pip = require "modules.pip",
 }
 local command = require "modules.command"
 local button = require "modules.button"
 M.timeline = require "modules.timeline" -- always there, not part of the row
 M.title = require "modules.title"       -- background layer at the top left
+
+-- The module of the row called name ("pause", "pip"...), or nil. Picture
+-- in picture places two of them itself (core/layout.lua).
+function M.get(name) return ROW[name] end
 
 -- Called once by main, after the core's own observers.
 function M.init()
@@ -272,7 +277,7 @@ function M.init()
     M.call(M.timeline, "init")
     M.call(M.title, "init")
     for _, name in ipairs({ "pause", "prev", "next", "time", "volume", "fullscreen", "subtitles", "audio", "playlist",
-                            "speed", "more" }) do
+                            "speed", "more", "pip" }) do
         names[ROW[name]] = name
         M.call(ROW[name], "init")
     end

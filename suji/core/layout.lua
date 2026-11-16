@@ -6,6 +6,10 @@
 -- Elements go from the left margin to the right, GAP apart. A space takes
 -- the free width: with one, what follows it is aligned to the right edge;
 -- with several, they share the free width. A gap is a small fixed hole.
+--
+-- In picture in picture (core/pip.lua) the row gives way to two buttons
+-- of it, whatever the controls option: play/pause in the middle of the
+-- window and the way back at the top right; the timeline stays, lower.
 
 local state = require "core.state"
 local modules = require "core.modules"
@@ -18,6 +22,7 @@ M.SIDE = 20     -- row margin on both sides
 M.GAP = 8       -- between two elements
 M.GAP_ITEM = 8  -- width of a gap element (so 24 px between its neighbours)
 M.HEIGHT = 44   -- height of every zone of the row
+M.PIP_EDGE = 4  -- picture in picture: the way back's zone from the edges
 
 local function width(it, s) return it.gap and M.GAP_ITEM * s or it.width end
 
@@ -60,6 +65,23 @@ function M.place(items, geo)
     return out
 end
 
+-- The boxes of picture in picture for a window geo: the way back (back)
+-- at the top right and play/pause (pause) in the middle, square, as tall
+-- as the row. A nil module is left out.
+function M.place_pip(geo, pause, back)
+    local s = geo.scale
+    local half = M.HEIGHT * s / 2
+    local out = { boxes = {} }
+    local function add(mod, cx, cy)
+        if mod then
+            out.boxes[#out.boxes + 1] = { mod = mod, x0 = cx - half, y0 = cy - half, x1 = cx + half, y1 = cy + half, cy = cy }
+        end
+    end
+    add(back, geo.w - M.PIP_EDGE * s - half, M.PIP_EDGE * s + half)
+    add(pause, geo.w / 2, geo.h / 2)
+    return out
+end
+
 -- The first zone for which test(zone) holds: the timeline's (placed.bar)
 -- first, then the boxes of the row in order.
 local function first(placed, test)
@@ -91,13 +113,21 @@ end
 -- empty too), where the grown bar is.
 function M.bar_zone()
     local tl = modules.timeline
-    return { mod = tl, bar = true, x0 = 0, y0 = tl.zone_top(state.h, state.scale),
-             x1 = state.w, y1 = tl.zone_bottom(state.h, state.scale) }
+    local lift = tl.lift(state)
+    return { mod = tl, bar = true, x0 = 0, y0 = tl.zone_top(state.h, state.scale, lift),
+             x1 = state.w, y1 = tl.zone_bottom(state.h, state.scale, lift) }
 end
 
--- The row and the timeline's zone as they are now.
+-- The row (or the buttons of picture in picture) and the timeline's zone
+-- as they are now.
 function M.current()
-    local placed = M.place(modules.row(), state)
+    local placed
+    if state.pip then
+        local pause, back = modules.get("pause"), modules.get("pip")
+        placed = M.place_pip(state, modules.alive(pause) and pause or nil, modules.alive(back) and back or nil)
+    else
+        placed = M.place(modules.row(), state)
+    end
     placed.bar = M.bar_zone()
     return placed
 end

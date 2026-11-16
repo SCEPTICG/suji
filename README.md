@@ -102,11 +102,26 @@ To uninstall by hand, delete the `scripts/suji` folder (and `script-opts/suji.co
 - **Volume:** on the left, only the speaker at first. With the cursor on it, the slider unfolds and pushes the time to the right; it folds again a moment after the cursor leaves both. Click the speaker to mute, click or drag the slider to set the volume, and use the wheel over either to change it by 5.
 - **Time:** click it to switch between the duration and the remaining time.
 - **Fullscreen:** the button on the right.
-- **Menus:** the five buttons before fullscreen, described below.
+- **Picture in picture:** the button before fullscreen, described below.
+- **Menus:** the five buttons before it, described below.
 
 The controls appear as the mouse gets close to the bottom of the window and hide when it moves away or stays still for a moment. They stay up while paused, while the cursor is on them and while dragging. Double clicks on the controls do not toggle fullscreen; everywhere else, mpv's mouse bindings work as usual.
 
 At the top left suji shows the title, with the controls: mpv's `media-title`, or the file name without its extension when the file has no title. Another script can replace it, see below.
+
+## Picture in picture
+
+The picture in picture button makes the window small, a quarter of the screen's width, without borders and always on top of the other windows, in the bottom right corner of the screen. Drag it with the mouse anywhere on the video to move it. The controls there are only three, and come and go as usual: play/pause in the middle, the way back at the top right and the timeline along the bottom edge. No title, menus, thumbnails or action buttons.
+
+The way back puts everything as it was: the border, on top, the size and fullscreen, if the window was fullscreen. In mpv the window comes back centred on the screen, since mpv cannot tell where it was; in mpv.net it comes back in the bottom right corner of its monitor. Turning fullscreen on (a double click on the video, say) also ends picture in picture, as does turning suji off. Another file keeps it.
+
+For a key, add a line like this one to `input.conf`:
+
+```
+Alt+p script-binding suji/pip
+```
+
+In mpv.net, suji moves and resizes the window with mpv.net's own commands. With any other frontend, it only puts the window on top and without borders.
 
 ## Menus
 
@@ -176,12 +191,12 @@ That works from the console, from a key in `input.conf` (`F9 change-list script-
 The `controls` option chooses which elements the row shows and in which order. The default is the row described above:
 
 ```
-controls=pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen
+controls=pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,pip,fullscreen
 ```
 
-If you already have your own `controls=` in `suji.conf`, it stays as it is: only the default changed in 0.7.0. There is one exception: the default row of 0.2.0 to 0.6.1, `pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen`, exactly as it was. Until 0.7.1 `docs/suji.conf` set every option, so a copy of it kept that row without anyone choosing it; suji takes it as not set and uses today's default. To keep that row on purpose, change anything in it (the order, or one element).
+If you already have your own `controls=` in `suji.conf`, it stays as it is: only the default changed, in 0.7.0 and again in 0.8.0. There are two exceptions: the default rows of 0.2.0 to 0.6.1, `pause,time,space,subtitles,audio,playlist,speed,more,volume,fullscreen`, and of 0.7.0 to 0.7.3, `pause,prev,next,volume,time,space,subtitles,audio,playlist,speed,more,fullscreen`, exactly as they were. Until 0.7.1 `docs/suji.conf` set every option, so a copy of it kept that row without anyone choosing it; suji takes it as not set and uses today's default. To keep one of those rows on purpose, change anything in it (the order, or one element).
 
-- The elements are `pause`, `prev`, `next`, `time`, `volume`, `fullscreen` and the menus `subtitles`, `audio`, `playlist`, `speed` and `more`.
+- The elements are `pause`, `prev`, `next`, `time`, `volume`, `pip`, `fullscreen` and the menus `subtitles`, `audio`, `playlist`, `speed` and `more`.
 - `space` pushes what follows it to the right; `gap` leaves a small hole.
 - `command:icon:command` adds a button that runs an mpv command, for example `command:x:playlist-next`.
 - `button:name` places a button that another script defines (see [For script authors](#for-script-authors)).

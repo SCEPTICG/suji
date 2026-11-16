@@ -14,6 +14,7 @@ local M = {
     episode_name = nil, -- its optional third field, after the episode
     font = "sans-serif", -- osd-font
     remaining = false,   -- show the remaining time instead of the duration
+    pip = false,         -- in picture in picture (core/pip.lua)
 }
 
 -- Set a field. Returns true when the value changed.

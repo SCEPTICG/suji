@@ -26,7 +26,7 @@ From Lua, `mp.commandv("script-message-to", "suji", ...)`.
 
 `open-menu` and `update-menu` differ in how the change looks: `open-menu` unfolds the menu from its button, `update-menu` swaps the items at once and keeps the scroll, so it suits a menu whose data changes while it is open. An `open-menu` with the type of a menu that a script opened and is still open works like `update-menu`.
 
-Only one menu is open at a time. Opening a menu closes the one that was open, suji's own too. While suji is turned off (`enabled=no`), `open-menu` does nothing.
+Only one menu is open at a time. Opening a menu closes the one that was open, suji's own too. While suji is turned off (`enabled=no`) or in [picture in picture](#picture-in-picture), `open-menu` does nothing; entering picture in picture closes the open menu.
 
 ### Where the menu comes out
 
@@ -178,9 +178,21 @@ For a script that draws its own things near the bottom of the window, suji publi
 { bottom = 86 } -- px, at scale 1
 ```
 
-`bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the controls: from the bottom up there is a margin, the row and the timeline's strip (24 px at scale 1), and `bottom` is the top of that strip. It was 62 before 0.7.0, when the timeline was under the row. It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale (the size chosen in the More menu included), not with the row, and it is deleted while suji is turned off.
+`bottom` is the distance in OSD pixels, scale included, from the bottom edge of the window to the top of the controls: from the bottom up there is a margin, the row and the timeline's strip (24 px at scale 1), and `bottom` is the top of that strip. It was 62 before 0.7.0, when the timeline was under the row. It has the same value whether the controls are shown or hidden, so whatever is placed above it does not move with them. It changes only with the scale (the size chosen in the More menu included), not with the row, and it is deleted while suji is turned off. In [picture in picture](#picture-in-picture) there is no row and the timeline's strip is lower: `bottom` is 28 at scale 1 then.
 
 suji only takes clicks where it draws: on the row and on the timeline's strip, while they are on screen, and on the [action buttons](#action-buttons). Elsewhere above `bottom`, clicks are left to mpv and to other scripts, with one exception: while a menu of suji is open, any menu, a click anywhere in the window is suji's. On the menu it chooses; anywhere else it only closes the menu, and nothing else gets it. Right after a click on a menu or on an action button, suji also keeps the second click of a double click, for mpv's double-click time or until the mouse moves away; on an action button, that second click runs nothing.
+
+## Picture in picture
+
+`user-data/suji/pip` is `true` while the window is in picture in picture and `false` otherwise; suji sets it to `false` as it loads and deletes it when mpv quits. In picture in picture the window is small, without borders and on top of the others, and suji shows only play/pause in the middle, a button back at the top right and the timeline: no title, no row, no menus and no action buttons. `show-action` still works then; the button waits, hidden, and shows when the window comes back.
+
+```lua
+mp.observe_property("user-data/suji/pip", "native", function(_, on)
+    -- on: true in picture in picture
+end)
+```
+
+Users enter and leave it with the button in the row or with `script-binding suji/pip`, which a script can send too.
 
 ## Knowing that suji is there
 

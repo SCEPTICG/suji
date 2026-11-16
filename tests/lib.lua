@@ -44,6 +44,14 @@ function T.fake_mp(props)
         return v
     end
     function mp.set_property_bool(name, v) mp.props[name] = v; mp.fire(name, v) end
+    -- Every set_property (a string), in order: { name, value }.
+    mp.strings = {}
+    function mp.set_property(name, v)
+        mp.strings[#mp.strings + 1] = { name, v }
+        mp.props[name] = v
+        mp.fire(name, v)
+        return true
+    end
     -- Writes of set_property_native and del_property, in order: { name, value }.
     mp.writes = {}
     function mp.set_property_native(name, v)
@@ -88,7 +96,12 @@ function T.fake_mp(props)
         local b = mp.bindings["suji-bar"]
         if b then b.fn({ event = event, canceled = canceled }) end
     end
-    function mp.commandv(...) mp.commands[#mp.commands + 1] = { ... } end
+    -- mp.on_command(...), when set, gives what commandv returns (nil, as
+    -- for a command that failed, when it is not set).
+    function mp.commandv(...)
+        mp.commands[#mp.commands + 1] = { ... }
+        if mp.on_command then return mp.on_command(...) end
+    end
     function mp.command(s) mp.commands[#mp.commands + 1] = { s } end
     -- expand-path of ~~state/ and ~~home/ gives mp.state_dir and
     -- mp.home_dir, else "" (mpv with --no-config): no test touches the
@@ -133,6 +146,9 @@ function T.fake_mp(props)
     end
 
     function mp.add_forced_key_binding(key, name, fn, flags)
+        mp.bindings[name] = { key = key, fn = fn, flags = flags }
+    end
+    function mp.add_key_binding(key, name, fn, flags)
         mp.bindings[name] = { key = key, fn = fn, flags = flags }
     end
     function mp.remove_key_binding(name) mp.bindings[name] = nil end

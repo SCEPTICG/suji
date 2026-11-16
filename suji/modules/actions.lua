@@ -5,9 +5,10 @@
 --
 -- They are not modules of the row: they are on screen while the row is
 -- hidden, so a skip needs no mouse move, and they go while a menu is open
--- and come back when it closes. At most MAX_SHOWN at a time, right to left
--- in the order they came; the others wait for a free place. A new file or
--- turning suji off removes them all: they were about the old file.
+-- or the window is in picture in picture, and come back after. At most
+-- MAX_SHOWN at a time, right to left in the order they came; the others
+-- wait for a free place. A new file or turning suji off removes them all:
+-- they were about the old file.
 --
 -- No timers: they fade in and out with the clock-based animation of
 -- core/animation.lua, like the menus, and only repaint on input or new data.
@@ -99,9 +100,9 @@ end
 
 local function inside(b, x, y) return x >= b.x0 and x < b.x1 and y >= b.y0 and y < b.y1 end
 
--- True while the buttons can be seen and clicked: suji is on and no menu
--- is open.
-local function usable() return opts.enabled and not menu.is_open() end
+-- True while the buttons can be seen and clicked: suji is on, no menu is
+-- open and the window is not in picture in picture (core/pip.lua).
+local function usable() return opts.enabled and not menu.is_open() and not state.pip end
 
 -- Show button id with the clean fields f: { text, command } (see
 -- core/messages.lua), or change it. Returns true when something changed,
@@ -187,7 +188,7 @@ function M.on_layout() placed = nil end
 
 -- ASS for the buttons at time now and whether they are still animating.
 function M.render(now)
-    animation.set_target(group, menu.is_open() and 0 or 1, now)
+    animation.set_target(group, (menu.is_open() or state.pip) and 0 or 1, now)
     if #list == 0 and #ghosts == 0 then return nil, false end
     local g, running = animation.value(group, now), animation.running(group, now)
     local s, out = state.scale, {}
