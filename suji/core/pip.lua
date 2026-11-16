@@ -61,6 +61,18 @@ local function mpvnet(...)
     return mp.commandv("script-message-to", "mpvnet", ...) == true
 end
 
+-- mpv.net: the window-scale property set to f (a factor, see factor).
+-- Kept in what mpv takes, so an odd video still resizes the window. The
+-- value it already has (1 at start, whatever the size) would tell nobody:
+-- 0.001 more then (less at the top of the range).
+local SCALE_MIN, SCALE_MAX = 0.01, 100
+local function set_scale(f)
+    local n = math.max(SCALE_MIN, math.min(SCALE_MAX, tonumber(f)))
+    local now = mp.get_property_number("window-scale")
+    if now and math.abs(now - n) < 0.0005 then n = n + (n + 0.001 <= SCALE_MAX and 0.001 or -0.001) end
+    mp.set_property_number("window-scale", n)
+end
+
 local function set_bool(name, v)
     if type(v) == "boolean" then mp.set_property_bool(name, v) end
 end
@@ -168,7 +180,7 @@ function M.enter()
         local f = factor((mp.get_property_number("display-width") or 0) * WIDTH / (dw or 0)) or factor(WIDTH)
         if mpvnet("move-window", "right") then
             s.backend = "mpvnet"
-            mp.set_property_number("window-scale", tonumber(f))
+            set_scale(f)
             -- Again, now that it is small: docked in the corner.
             mpvnet("move-window", "right")
             mpvnet("move-window", "bottom")
@@ -202,7 +214,7 @@ function M.leave(resize)
             if type(s.geometry) == "string" then mp.set_property("geometry", s.geometry) end
         elseif s.backend == "mpvnet" then
             local f = factor(s.width and s.dw and s.width / s.dw)
-            if f then mp.set_property_number("window-scale", tonumber(f)) end
+            if f then set_scale(f) end
         end
     end
     if s.backend == "mpv" and type(s.force) == "string" then

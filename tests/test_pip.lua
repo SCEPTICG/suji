@@ -296,6 +296,39 @@ T.eq(writes(), "ontop=true, border=false, mpvnet move-window right, window-scale
 key()
 T.eq(writes(), "window-scale=0.667, border=true, ontop=false", "1280 of 1920: 0.667")
 
+-- The value window-scale already has would resize nothing: 0.001 more
+start({ ["display-width"] = 2560, ["video-params/dw"] = 640, ["window-scale"] = 1 })
+mp.on_command = mpvnet
+key()
+T.eq(writes(), "ontop=true, border=false, mpvnet move-window right, window-scale=1.001, mpvnet move-window right, mpvnet move-window bottom",
+    "mpv.net: a factor of 1 with window-scale at 1: 1.001")
+key()
+T.eq(writes(), "window-scale=2, border=true, ontop=false", "leaving: another value than now, written as it is")
+start({ ["display-width"] = 1920, ["video-params/dw"] = 1280, ["window-scale"] = 1 })
+mp.on_command = mpvnet
+key()
+writes()
+mp.props["window-scale"] = 1.0004 -- within 0.0005 of the factor to give back
+key()
+T.eq(writes(), "window-scale=1.001, border=true, ontop=false", "leaving: the same value as now gets 0.001 more")
+
+-- Kept in 0.01 to 100
+for _, c in ipairs({ { 1e9, 1, "100" }, { 1, 1e9, "0.01" } }) do
+    start({ ["display-width"] = c[1], ["video-params/dw"] = c[2], ["window-scale"] = 1 })
+    mp.on_command = mpvnet
+    key()
+    T.eq(writes(), "ontop=true, border=false, mpvnet move-window right, window-scale=" .. c[3] ..
+        ", mpvnet move-window right, mpvnet move-window bottom", "mpv.net: a factor out of range: " .. c[3])
+end
+start({ ["display-width"] = 1920, ["video-params/dw"] = 1, ["window-scale"] = 1 })
+mp.on_command = mpvnet
+resize(5000000, 3000000)
+key()
+mp.props["window-scale"] = 100
+writes()
+key()
+T.eq(writes(), "window-scale=99.999, border=true, ontop=false", "leaving: kept at 100, and 0.001 less when it is that already")
+
 -- No display-width or no video width: 0.25
 for i, p in ipairs({ { ["video-params/dw"] = 1280 }, { ["display-width"] = 1920 }, { ["display-width"] = 1920, ["video-params/dw"] = 0 } }) do
     start(p)
