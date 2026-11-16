@@ -113,7 +113,7 @@ At the top left suji shows the title, with the controls: mpv's `media-title`, or
 
 The picture in picture button makes the window small, a quarter of the screen's width, without borders and always on top of the other windows, in the bottom right corner of the screen. Drag it with the mouse anywhere on the video to move it. The controls there are only three: play/pause in the middle, the way back at the top right and the timeline along the bottom edge. They come up when the mouse moves anywhere over the window, not only near the bottom, and hide as usual: when it leaves the window or stays still for a moment. No title, menus, thumbnails or action buttons.
 
-The way back puts everything as it was: the border, on top, the size, and maximized or fullscreen, if the window was. In mpv the window comes back with its size where mpv would open it, since mpv cannot tell where it was; in mpv.net it comes back with its size on its monitor, in the bottom right corner. Turning fullscreen on (a double click on the video, say) also ends picture in picture, as does turning suji off. Another file keeps it.
+The way back puts everything as it was: the border, on top, the size, and maximized or fullscreen, if the window was. In mpv the window comes back with its size where mpv would open it, since mpv cannot tell where it was; in mpv.net it comes back with its size on its monitor, in the bottom right corner. In mpv, suji sets `force-window-position=yes` while in picture in picture (since mpv 0.42 the window does not move without it) and puts your value back on the way out. Turning fullscreen on (a double click on the video, say) also ends picture in picture, as does turning suji off. Another file keeps it.
 
 For a key, add a line like this one to `input.conf`:
 

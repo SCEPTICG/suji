@@ -352,8 +352,9 @@ fi
 
 # Picture in picture: the real window, measured with xwininfo, in a
 # 1280x1024 display with a 1280x720 video (a lavfi source: its duration
-# grows, which this test does not mind). Twice: centred by mpv, and at a
-# place of the user's (--geometry), which must come back.
+# grows, which this test does not mind). Three times: centred by mpv, at a
+# place of the user's (--geometry), which must come back, and with the
+# user's force-window-position=yes, which suji sets inside and must leave.
 if ! command -v xvfb-run >/dev/null 2>&1; then
     echo "xvfb-pip: skipped (no xvfb-run)"
 elif ! command -v xwininfo >/dev/null 2>&1; then
@@ -361,8 +362,8 @@ elif ! command -v xwininfo >/dev/null 2>&1; then
 else
     out=
     rc=0
-    for geometry in --geometry= --geometry=+100+100; do
-        o=$(timeout 60 xvfb-run -a -s "-screen 0 1280x1024x24" mpv --no-config "$geometry" --vo=x11 \
+    for option in --geometry= --geometry=+100+100 --force-window-position=yes; do
+        o=$(timeout 60 xvfb-run -a -s "-screen 0 1280x1024x24" mpv --no-config "$option" --vo=x11 \
             --ao=null --pause --keep-open=yes --script=./suji --script=tests/xvfb_pip.lua \
             --msg-level=all=no,suji=info,xvfb_pip=info \
             'av://lavfi:testsrc=duration=60:size=1280x720:rate=10' 2>&1)
@@ -379,7 +380,7 @@ else
     elif printf '%s\n' "$out" | grep -q 'xvfb-pip: FAIL'; then
         printf 'xvfb-pip: FAIL\n%s\n' "$out"
         status=1
-    elif [ "$(printf '%s\n' "$out" | grep -c 'xvfb-pip: ok')" -eq 2 ]; then
+    elif [ "$(printf '%s\n' "$out" | grep -c 'xvfb-pip: ok')" -eq 3 ]; then
         printf '%s\n' "$out" | grep 'xvfb-pip:'
     else
         printf 'xvfb-pip: FAIL\n%s\n' "$out"

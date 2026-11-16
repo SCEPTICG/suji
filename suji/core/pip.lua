@@ -125,6 +125,12 @@ function M.enter()
     if scale then
         -- The user's own geometry (from mpv.conf, say), to put back.
         s.backend, s.scale, s.geometry = "mpv", scale, mp.get_property("geometry")
+        -- Since mpv 0.42 geometry only moves a window that exists with
+        -- force-window-position=yes (before, it always did). Kept while
+        -- inside, for the placing again after fullscreen and new files,
+        -- and put back after the last geometry on leaving.
+        s.force = mp.get_property("force-window-position")
+        mp.set_property("force-window-position", "yes")
         place()
     else
         local dim = mp.get_property_native("osd-dimensions")
@@ -172,6 +178,7 @@ function M.leave(resize)
             if f then mpvnet("window-scale", f) end
         end
     end
+    if s.backend == "mpv" and type(s.force) == "string" then mp.set_property("force-window-position", s.force) end
     set_bool("border", s.border)
     set_bool("ontop", s.ontop)
     if resize ~= false then

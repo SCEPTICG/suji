@@ -17,6 +17,7 @@ local function start(props, script_opts)
     if props.border == nil then props.border = true end
     if props.fullscreen == nil then props.fullscreen = false end
     if props.geometry == nil then props.geometry = "" end -- mpv's default
+    if props["force-window-position"] == nil then props["force-window-position"] = "no" end
     mp = T.fake_mp(props)
     mp.script_opts = script_opts
     dofile("suji/main.lua")
@@ -83,7 +84,7 @@ start({ ["current-window-scale"] = 1.5 })
 key()
 T.eq(pip().active(), true, "the key enters")
 T.eq(mp.props["user-data/suji/pip"], true, "the property turns true")
-T.eq(writes(), "ontop=true, border=false", "mpv: on top and no border first")
+T.eq(writes(), "ontop=true, border=false, force-window-position=yes", "mpv: on top and no border first")
 T.eq(pip().PLACE_DELAY, DELAY, "the geometry after " .. DELAY .. " s")
 mp.advance(DELAY - 0.01)
 T.eq(writes(), "", "not yet")
@@ -93,10 +94,48 @@ T.eq(mp.active_timers(), 0, "and no timer left")
 key()
 T.eq(pip().active(), false, "the key again leaves")
 T.eq(mp.props["user-data/suji/pip"], false, "the property turns false")
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.500, geometry=, border=true, ontop=false",
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.500, geometry=, force-window-position=no, border=true, ontop=false",
     "mpv: centred first, then the old scale, the user's geometry (none), the border and on top")
 mp.advance(1)
 T.eq(mp.active_timers(), 0, "no timers")
+
+-- force-window-position (mpv 0.42: geometry only moves a window with it):
+-- yes before the first geometry and all the way in, the user's value back
+-- after the last geometry, whatever it was
+for _, user in ipairs({ "no", "yes" }) do
+    start({ ["current-window-scale"] = 1, ["force-window-position"] = user })
+    key()
+    mp.advance(1)
+    T.eq(writes(), "ontop=true, border=false, force-window-position=yes, geometry=25%-24-72",
+        "yes before the geometry (the user's " .. user .. ")")
+    mp.fire("osd-dimensions", { w = 320, h = 180 })
+    mp.fire("fullscreen", false)
+    mp.advance(1)
+    T.eq(writes(), "geometry=25%-24-72", "still yes when placed again")
+    T.eq(mp.props["force-window-position"], "yes", "yes inside")
+    key()
+    T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=, force-window-position=" .. user ..
+        ", border=true, ontop=false", "leaving: the user's " .. user .. " back after the geometry")
+    key()
+    mp.advance(1)
+    writes()
+    mp.set_property_bool("fullscreen", true)
+    T.eq(writes(), "fullscreen=true, geometry=, force-window-position=" .. user .. ", border=true, ontop=false",
+        "fullscreen on: the user's " .. user .. " back after the geometry")
+    key() -- from fullscreen this time
+    mp.advance(1)
+    writes()
+    mp.emit("shutdown")
+    T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=, force-window-position=" .. user ..
+        ", border=true, ontop=false, fullscreen=true", "quitting: the user's " .. user .. " back")
+end
+-- mpv.net and others leave it alone
+start({ ["display-width"] = 1920, ["video-params/dw"] = 1280 })
+mp.on_command = mpvnet
+key()
+mp.advance(1)
+key()
+T.check(not table.concat(mp.window, ","):find("force", 1, true), "mpv.net: not touched")
 
 -- The user's own geometry comes back: mpv applies it to every new file
 start({ ["current-window-scale"] = 1, geometry = "50%" })
@@ -104,7 +143,7 @@ key()
 mp.advance(1)
 writes()
 key()
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=50%, border=true, ontop=false",
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=50%, force-window-position=no, border=true, ontop=false",
     "the user's geometry back, after centring and the scale")
 T.eq(mp.props.geometry, "50%", "and it stays")
 
@@ -121,7 +160,7 @@ T.eq(mp.active_timers(), 0, "no timers")
 -- Fullscreen before: off first, back on last; the geometry once it is off
 start({ ["current-window-scale"] = 0.75, fullscreen = true, ontop = true })
 key()
-T.eq(writes(), "fullscreen=false, ontop=true, border=false", "fullscreen: turned off first")
+T.eq(writes(), "fullscreen=false, ontop=true, border=false, force-window-position=yes", "fullscreen: turned off first")
 T.eq(pip().active(), true, "and turning it off does not end picture in picture")
 mp.advance(1)
 T.eq(writes(), "geometry=25%-24-72", "then the corner")
@@ -135,7 +174,7 @@ mp.advance(0.02)
 T.eq(writes(), "geometry=25%-24-72", "and the corner again, once")
 T.eq(mp.active_timers(), 0, "no timer left")
 key()
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=0.750, geometry=, border=true, ontop=true, fullscreen=true",
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=0.750, geometry=, force-window-position=no, border=true, ontop=true, fullscreen=true",
     "fullscreen again, last")
 T.eq(pip().active(), false, "and that does not end it twice")
 T.eq(mp.props["user-data/suji/pip"], false, "property false")
@@ -146,11 +185,11 @@ T.eq(writes(), "", "outside, fullscreen off places nothing")
 -- Maximized: unmaximized first, maximized again after
 start({ ["current-window-scale"] = 1, ["window-maximized"] = true })
 key()
-T.eq(writes(), "window-maximized=false, ontop=true, border=false", "maximized: unmaximized first")
+T.eq(writes(), "window-maximized=false, ontop=true, border=false, force-window-position=yes", "maximized: unmaximized first")
 mp.advance(1)
 writes()
 key()
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=, border=true, ontop=false, window-maximized=true",
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=, force-window-position=no, border=true, ontop=false, window-maximized=true",
     "and maximized again")
 start({ ["current-window-scale"] = 1, ["window-maximized"] = false })
 key()
@@ -165,7 +204,7 @@ for _, bad in ipairs({ 0, -1, 0 / 0, 1 / 0 }) do
     mp.advance(1)
     writes()
     key()
-    T.eq(writes(), "geometry=+50%+50%, geometry=, border=true, ontop=false", "no scale written for " .. tostring(bad))
+    T.eq(writes(), "geometry=+50%+50%, geometry=, force-window-position=no, border=true, ontop=false", "no scale written for " .. tostring(bad))
 end
 
 -- mpv.net: its own commands ---------------------------------------------------------
@@ -296,7 +335,7 @@ mp.advance(1)
 writes()
 mp.set_property_bool("fullscreen", true) -- a double click, or a key
 T.eq(pip().active(), false, "fullscreen on: picture in picture ends")
-T.eq(writes(), "fullscreen=true, geometry=, border=true, ontop=false",
+T.eq(writes(), "fullscreen=true, geometry=, force-window-position=no, border=true, ontop=false",
     "the user's geometry, border and on top back, no resize")
 mp.advance(1)
 T.eq(writes(), "", "and nothing after")
@@ -305,13 +344,13 @@ key()
 mp.advance(1)
 writes()
 mp.set_property_bool("fullscreen", true)
-T.eq(writes(), "fullscreen=true, geometry=50%, border=true, ontop=false", "a geometry of the user's comes back")
+T.eq(writes(), "fullscreen=true, geometry=50%, force-window-position=no, border=true, ontop=false", "a geometry of the user's comes back")
 start({ ["current-window-scale"] = 1 })
 key()
 writes()
 mp.set_property_bool("fullscreen", true) -- before the window was placed
 mp.advance(1)
-T.eq(writes(), "fullscreen=true, geometry=, border=true, ontop=false", "fullscreen before the placing: never placed")
+T.eq(writes(), "fullscreen=true, geometry=, force-window-position=no, border=true, ontop=false", "fullscreen before the placing: never placed")
 T.eq(mp.active_timers(), 0, "no timers")
 T.eq(mp.props.fullscreen, true, "and it stays fullscreen")
 T.eq(mp.props["user-data/suji/pip"], false, "property false")
@@ -328,7 +367,7 @@ key()
 writes()
 mp.set_opts({ enabled = false })
 T.eq(pip().active(), false, "enabled=no leaves picture in picture")
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=2.000, geometry=, border=true, ontop=false, fullscreen=true",
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=2.000, geometry=, force-window-position=no, border=true, ontop=false, fullscreen=true",
     "with everything back")
 key()
 T.eq(pip().active(), false, "the key does nothing while suji is off")
@@ -350,7 +389,7 @@ T.eq(writes(), "", "and the window is left alone")
 -- deletes the property
 mp.emit("shutdown")
 T.eq(pip().active(), false, "quitting leaves picture in picture")
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=, border=true, ontop=false",
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=, force-window-position=no, border=true, ontop=false",
     "with everything back")
 T.eq(mp.props["user-data/suji/pip"], nil, "deleted when mpv quits")
 mp.advance(1)

@@ -4,8 +4,9 @@
 -- place and size with xwininfo each time. Inside, the window must be a
 -- quarter of the screen's width, 320x180, 24 px from the right edge and 72
 -- px from the bottom (936, 772); after, as it was before, with the
--- geometry option as it was (run.sh runs it without one and with
--- --geometry=+100+100). Then the same from fullscreen: it comes back
+-- geometry and force-window-position options as they were (run.sh runs
+-- it without either, with --geometry=+100+100 and with
+-- --force-window-position=yes). Then the same from fullscreen: it comes back
 -- fullscreen, and leaving fullscreen gives the window of the start. Then
 -- maximized (xvfb has no window manager: only the property changes). It
 -- logs each step and "xvfb-pip: ok" at the end; run.sh reads the log.
@@ -63,11 +64,11 @@ local function steps(list)
     go()
 end
 
-local before, option -- the window and the geometry option at the start
+local before, option, force -- the window, geometry and force-window-position at the start
 local function key() mp.commandv("script-binding", "suji/pip") end
 
 local function run()
-    before, option = geometry(), mp.get_property("geometry")
+    before, option, force = geometry(), mp.get_property("geometry"), mp.get_property("force-window-position")
     check(before and before:match("^1280x720%+"), "the window does not start at 1280x720: " .. tostring(before))
     steps({
         function() expect("before", before, false, false, true, false); key() end,
@@ -76,6 +77,8 @@ local function run()
             expect("after", before, false, false, true, false)
             check(mp.get_property("geometry") == option, ("after: geometry is %s, want %s")
                 :format(tostring(mp.get_property("geometry")), tostring(option)))
+            check(mp.get_property("force-window-position") == force, ("after: force-window-position is %s, want %s")
+                :format(tostring(mp.get_property("force-window-position")), tostring(force)))
             mp.set_property_bool("fullscreen", true)
         end,
         function() expect("fullscreen", FULL, false, false, true, true); key() end,
