@@ -242,6 +242,8 @@ mp.register_event("file-loaded", function()
     drop_drag()
 end)
 mp.register_event("shutdown", function()
+    -- The window as it was: mpv.net would remember the small one.
+    pip.leave()
     mouse.shutdown()
     mp.set_property_native(ENABLED, nil) -- nil: observers hear it too
     mp.set_property_native(VERSION_PROP, nil)
@@ -257,10 +259,9 @@ pip.on_change(function()
     mouse.release(false)
     on_layout()
 end)
--- Fullscreen turned on (a double click, a key) ends it, in place.
-watch("fullscreen", "bool", function(on)
-    if on then pip.leave(false) end
-end)
+-- Fullscreen turned on (a double click, a key) ends it, in place; off,
+-- inside it, the window is placed again.
+watch("fullscreen", "bool", function(on) pip.fullscreen(on == true) end)
 -- script-binding suji/pip, with no key of its own: input.conf gives one.
 mp.add_key_binding(nil, "pip", function()
     if opts.enabled then pip.toggle() end

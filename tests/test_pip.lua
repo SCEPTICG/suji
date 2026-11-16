@@ -16,6 +16,7 @@ local function start(props, script_opts)
     if props.ontop == nil then props.ontop = false end
     if props.border == nil then props.border = true end
     if props.fullscreen == nil then props.fullscreen = false end
+    if props.geometry == nil then props.geometry = "" end -- mpv's default
     mp = T.fake_mp(props)
     mp.script_opts = script_opts
     dofile("suji/main.lua")
@@ -76,38 +77,95 @@ T.eq(mp.bindings.pip.key, nil, "with no key of its own")
 T.eq(mp.props[pip().PROP], false, "user-data/suji/pip is false at start")
 T.eq(pip().PROP, "user-data/suji/pip", "under that name")
 
--- mpv: geometry in, centred and the old scale out -------------------------------------
+-- mpv: geometry in, centred, the user's geometry and the old scale out -----------------
+local DELAY = 0.3
 start({ ["current-window-scale"] = 1.5 })
 key()
 T.eq(pip().active(), true, "the key enters")
 T.eq(mp.props["user-data/suji/pip"], true, "the property turns true")
-T.eq(writes(), "geometry=25%-24-72, ontop=true, border=false", "mpv: in the corner first, then on top, no border")
+T.eq(writes(), "ontop=true, border=false", "mpv: on top and no border first")
+T.eq(pip().PLACE_DELAY, DELAY, "the geometry after " .. DELAY .. " s")
+mp.advance(DELAY - 0.01)
+T.eq(writes(), "", "not yet")
+mp.advance(0.02)
+T.eq(writes(), "geometry=25%-24-72", "then the corner, on its own")
+T.eq(mp.active_timers(), 0, "and no timer left")
 key()
 T.eq(pip().active(), false, "the key again leaves")
 T.eq(mp.props["user-data/suji/pip"], false, "the property turns false")
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.500, border=true, ontop=false",
-    "mpv: centred first, then the old scale, the border and on top")
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.500, geometry=, border=true, ontop=false",
+    "mpv: centred first, then the old scale, the user's geometry (none), the border and on top")
 mp.advance(1)
 T.eq(mp.active_timers(), 0, "no timers")
 
--- Fullscreen before: off first, back on last
+-- The user's own geometry comes back: mpv applies it to every new file
+start({ ["current-window-scale"] = 1, geometry = "50%" })
+key()
+mp.advance(1)
+writes()
+key()
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=50%, border=true, ontop=false",
+    "the user's geometry back, after centring and the scale")
+T.eq(mp.props.geometry, "50%", "and it stays")
+
+-- Left before the geometry came: it never comes
+start({ ["current-window-scale"] = 1 })
+key()
+mp.advance(0.1)
+key()
+writes()
+mp.advance(1)
+T.eq(writes(), "", "left within the delay: no geometry after")
+T.eq(mp.active_timers(), 0, "no timers")
+
+-- Fullscreen before: off first, back on last; the geometry once it is off
 start({ ["current-window-scale"] = 0.75, fullscreen = true, ontop = true })
 key()
-T.eq(writes(), "geometry=25%-24-72, fullscreen=false, ontop=true, border=false", "fullscreen: turned off after the geometry")
+T.eq(writes(), "fullscreen=false, ontop=true, border=false", "fullscreen: turned off first")
 T.eq(pip().active(), true, "and turning it off does not end picture in picture")
+mp.advance(1)
+T.eq(writes(), "geometry=25%-24-72", "then the corner")
+-- mpv tells late that fullscreen is off (macOS animates it): placed again.
+mp.fire("fullscreen", false)
+mp.advance(DELAY / 2)
+mp.fire("fullscreen", false)
+mp.advance(DELAY - 0.01)
+T.eq(writes(), "", "fullscreen off seen again: the delay starts over")
+mp.advance(0.02)
+T.eq(writes(), "geometry=25%-24-72", "and the corner again, once")
+T.eq(mp.active_timers(), 0, "no timer left")
 key()
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=0.750, border=true, ontop=true, fullscreen=true",
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=0.750, geometry=, border=true, ontop=true, fullscreen=true",
     "fullscreen again, last")
 T.eq(pip().active(), false, "and that does not end it twice")
 T.eq(mp.props["user-data/suji/pip"], false, "property false")
+mp.fire("fullscreen", false)
+mp.advance(1)
+T.eq(writes(), "", "outside, fullscreen off places nothing")
+
+-- Maximized: unmaximized first, maximized again after
+start({ ["current-window-scale"] = 1, ["window-maximized"] = true })
+key()
+T.eq(writes(), "window-maximized=false, ontop=true, border=false", "maximized: unmaximized first")
+mp.advance(1)
+writes()
+key()
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=, border=true, ontop=false, window-maximized=true",
+    "and maximized again")
+start({ ["current-window-scale"] = 1, ["window-maximized"] = false })
+key()
+mp.advance(1)
+key()
+T.check(not writes():find("maximized", 1, true), "not maximized: left alone")
 
 -- A scale that is no number is not written back
 for _, bad in ipairs({ 0, -1, 0 / 0, 1 / 0 }) do
     start({ ["current-window-scale"] = bad })
     key()
+    mp.advance(1)
     writes()
     key()
-    T.eq(writes(), "geometry=+50%+50%, border=true, ontop=false", "no scale written for " .. tostring(bad))
+    T.eq(writes(), "geometry=+50%+50%, geometry=, border=true, ontop=false", "no scale written for " .. tostring(bad))
 end
 
 -- mpv.net: its own commands ---------------------------------------------------------
@@ -144,14 +202,17 @@ for i, p in ipairs({ { ["video-params/dw"] = 1280 }, { ["display-width"] = 1920 
     end
 end
 
--- mpv.net from fullscreen
+-- mpv.net from fullscreen: the width then is the screen's, no size to give back
 start({ ["display-width"] = 1920, ["video-params/dw"] = 1280, fullscreen = true })
+mp.props["osd-dimensions"] = { w = 1920, h = 1080 }
 mp.on_command = mpvnet
 key()
 T.eq(writes(), "fullscreen=false, ontop=true, border=false, mpvnet window-scale 0.375, mpvnet move-window right, mpvnet move-window bottom",
     "mpv.net: fullscreen off first")
+mp.advance(1)
+T.eq(writes(), "", "no geometry for mpv.net")
 key()
-T.eq(writes(), "mpvnet window-scale 1.000, border=true, ontop=false, fullscreen=true", "and back on last")
+T.eq(writes(), "border=true, ontop=false, fullscreen=true", "no resize, fullscreen back on last")
 
 -- Any other: on top and no border only --------------------------------------------
 start({ ["display-width"] = 1920, ["video-params/dw"] = 1280 })
@@ -183,7 +244,7 @@ key()
 writes()
 mp.set_opts({ enabled = false })
 T.eq(pip().active(), false, "enabled=no leaves picture in picture")
-T.eq(writes(), "geometry=+50%+50%, current-window-scale=2.000, border=true, ontop=false, fullscreen=true",
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=2.000, geometry=, border=true, ontop=false, fullscreen=true",
     "with everything back")
 key()
 T.eq(pip().active(), false, "the key does nothing while suji is off")
@@ -201,9 +262,32 @@ mp.emit("file-loaded")
 T.eq(pip().active(), true, "a new file keeps picture in picture")
 T.eq(writes(), "", "and the window is left alone")
 
--- Shutdown deletes the property
+-- Quitting leaves it first (mpv.net would remember the small window), then
+-- deletes the property
 mp.emit("shutdown")
+T.eq(pip().active(), false, "quitting leaves picture in picture")
+T.eq(writes(), "geometry=+50%+50%, current-window-scale=1.000, geometry=, border=true, ontop=false",
+    "with everything back")
 T.eq(mp.props["user-data/suji/pip"], nil, "deleted when mpv quits")
+mp.advance(1)
+T.eq(mp.active_timers(), 0, "no timers")
+start({ ["display-width"] = 1920, ["video-params/dw"] = 1280 })
+mp.on_command = mpvnet
+key()
+writes()
+mp.emit("shutdown")
+T.eq(writes(), "mpvnet window-scale 1.000, border=true, ontop=false", "mpv.net: its size back before quitting")
+
+-- A listener that fails does not stop the way back
+start({ ["current-window-scale"] = 1 })
+pip().on_change(function() error("boom") end)
+key()
+T.eq(pip().active(), true, "entered all the same")
+key()
+T.eq(pip().active(), false, "and left")
+local errors = 0
+for _, l in ipairs(mp.logs) do if l[1] == "error" and tostring(l[2]):find("picture in picture: ", 1, true) then errors = errors + 1 end end
+T.eq(errors, 2, "each failure logged")
 
 -- The controls inside -------------------------------------------------------------------
 local function boxes()
@@ -273,6 +357,25 @@ mp.advance(1)
 T.check(painted():find("}Movie", 1, true) ~= nil, "and the title")
 mp.advance(5)
 T.eq(mp.active_timers(), 0, "no timers at rest after")
+
+-- Not paused: the mouse anywhere in the window brings the controls up,
+-- the way back at the top too; still, they hide
+start({ ["current-window-scale"] = 1 })
+key()
+resize(480, 270)
+mp.mouse(240, 20) -- the top, far from the timeline: not on a button
+mp.advance(0.5)
+T.check(painted():find(icon("pip_exit", 454, 26, 1), 1, true) ~= nil, "the way back shown in full at the top")
+T.eq(mp.bindings["suji-bar"], nil, "nothing bound there: mpv drags the window")
+mp.advance(5)
+T.check(not painted():find(icon("pip_exit", 454, 26, 1), 1, true), "still: hidden again")
+T.eq(mp.active_timers(), 0, "no timers at rest")
+mp.mouse(241, 20)
+mp.advance(0.5)
+T.check(painted():find(icon("pip_exit", 454, 26, 1), 1, true) ~= nil, "moved again: shown")
+mp.mouse(240, 20, false) -- out of the window
+mp.advance(1)
+T.check(not painted():find(icon("pip_exit", 454, 26, 1), 1, true), "out of the window: hidden")
 
 -- A double click on the row's button enters once
 start({ ["current-window-scale"] = 1 })

@@ -13,7 +13,8 @@
 -- it, and the controls stay on screen.
 -- Action buttons (modules/actions.lua) bind MBTN_LEFT too, only while the
 -- cursor is on one that is on screen: a click there runs its command. A
--- double click on one, or on a module with once (prev, next), runs it once.
+-- double click on one, or on a module with once (prev, next, pip), runs it
+-- once.
 -- With the cursor moved onto one, the controls stay on screen, as over
 -- the row.
 
@@ -66,7 +67,9 @@ local idle_timer = mp.add_timeout(1, function() M.refresh() end, true)
 
 function M.input(now)
     local distance
-    if pos then distance = math.max(0, layout.bar_zone().y0 - pos.y) end
+    -- In picture in picture the whole window is close: the way back is at
+    -- the top, far from the timeline.
+    if pos then distance = state.pip and 0 or math.max(0, layout.bar_zone().y0 - pos.y) end
     return {
         distance = distance,
         proximity = opts.proximity * state.scale,

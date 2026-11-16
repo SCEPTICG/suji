@@ -8,7 +8,9 @@
 -- input fields:
 --   distance       number|nil  Distance in px from the cursor to the bar's
 --                              active zone, above the row. 0 when the
---                              cursor is inside it or below it.
+--                              cursor is inside it or below it, and
+--                              anywhere in the window in picture in
+--                              picture (core/pip.lua).
 --                              nil when the cursor is outside the window or
 --                              has not moved yet.
 --   proximity      number      options.proximity already multiplied by the

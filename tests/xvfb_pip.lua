@@ -3,10 +3,12 @@
 -- It enters and leaves with script-binding suji/pip and reads the window's
 -- place and size with xwininfo each time. Inside, the window must be a
 -- quarter of the screen's width, 320x180, 24 px from the right edge and 72
--- px from the bottom (936, 772); after, as it was before. Then the same
--- from fullscreen: it comes back fullscreen, and leaving fullscreen gives
--- the window of the start. It logs each step and "xvfb-pip: ok" at the
--- end; run.sh reads the log.
+-- px from the bottom (936, 772); after, as it was before, with the
+-- geometry option as it was (run.sh runs it without one and with
+-- --geometry=+100+100). Then the same from fullscreen: it comes back
+-- fullscreen, and leaving fullscreen gives the window of the start. Then
+-- maximized (xvfb has no window manager: only the property changes). It
+-- logs each step and "xvfb-pip: ok" at the end; run.sh reads the log.
 local msg = require "mp.msg"
 
 local INSIDE, FULL = "320x180+936+772", "1280x1024+0+0"
@@ -61,23 +63,39 @@ local function steps(list)
     go()
 end
 
-local before
+local before, option -- the window and the geometry option at the start
 local function key() mp.commandv("script-binding", "suji/pip") end
 
 local function run()
-    before = geometry()
+    before, option = geometry(), mp.get_property("geometry")
     check(before and before:match("^1280x720%+"), "the window does not start at 1280x720: " .. tostring(before))
     steps({
         function() expect("before", before, false, false, true, false); key() end,
         function() expect("inside", INSIDE, true, true, false, false); key() end,
-        function() expect("after", before, false, false, true, false); mp.set_property_bool("fullscreen", true) end,
+        function()
+            expect("after", before, false, false, true, false)
+            check(mp.get_property("geometry") == option, ("after: geometry is %s, want %s")
+                :format(tostring(mp.get_property("geometry")), tostring(option)))
+            mp.set_property_bool("fullscreen", true)
+        end,
         function() expect("fullscreen", FULL, false, false, true, true); key() end,
         function() expect("inside from fullscreen", INSIDE, true, true, false, false); key() end,
         function() expect("fullscreen again", FULL, false, false, true, true); mp.set_property_bool("fullscreen", false) end,
         function()
             expect("windowed", before, false, false, true, false)
+            mp.set_property_bool("window-maximized", true)
+        end,
+        function() key() end,
+        function()
+            expect("inside from maximized", INSIDE, true, true, false, false)
+            check(prop("window-maximized") == false, "inside: still maximized")
+            key()
+        end,
+        function()
+            check(prop("window-maximized") == true, "after: not maximized again")
+            mp.set_property_bool("window-maximized", false)
             if not failed then
-                msg.info(("xvfb-pip: ok %s, then %s inside and back; from fullscreen too"):format(before, INSIDE))
+                msg.info(("xvfb-pip: ok %s, then %s inside and back; from fullscreen and maximized too"):format(before, INSIDE))
             end
             mp.commandv("quit")
         end,

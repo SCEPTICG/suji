@@ -7,21 +7,25 @@
 -- How the window is moved and resized depends on who embeds mpv, chosen
 -- when entering:
 --   mpv      current-window-scale is there: geometry puts the window in
---            the corner, and on leaving it is centred (mpv cannot tell
---            where it was) and given its old scale back.
+--            the corner (see place below). On leaving the window goes
+--            where mpv would open it, with its old scale: mpv cannot
+--            tell where it was.
 --   mpvnet   mpv.net ignores geometry at run time and has no
 --            current-window-scale, but takes its own commands,
 --            script-message-to mpvnet window-scale and move-window. On
 --            leaving the window gets its size back, docked in the corner
 --            of its monitor (move-window center would jump to the primary
---            one).
+--            one). Entered from fullscreen, there is no size to give back:
+--            the window is fullscreen again anyway.
 --   other    anything else: only on top and without borders, the size
 --            is left alone.
+-- A maximized window is unmaximized first, and maximized again after.
 -- Turning fullscreen on while in picture in picture ends it, with no
 -- resize: border and on top come back, the window stays fullscreen
--- (main.lua calls leave(false)).
+-- (main.lua calls fullscreen()).
 
 local msg = require "mp.msg"
+local draw = require "core.draw"
 local state = require "core.state"
 
 local M = {}
@@ -32,6 +36,8 @@ M.PROP = "user-data/suji/pip" -- true while in picture in picture (docs/api.md)
 -- 72 px from the bottom, room for a taskbar or a dock. Back: centred.
 local GEOMETRY, CENTRE = "25%-24-72", "+50%+50%"
 local WIDTH = 0.25 -- of the screen, for mpv.net
+-- Seconds from border=no (or the end of fullscreen) to geometry, see place.
+M.PLACE_DELAY = 0.3
 
 local saved -- nil outside picture in picture: what entering changed
 local listener
@@ -59,29 +65,51 @@ end
 local function changed(on)
     state.pip = on
     mp.set_property_native(M.PROP, on)
-    if listener then listener() end
+    -- The way back must keep working whatever the listener does.
+    if listener then
+        local ok, err = pcall(listener)
+        if not ok then msg.error("picture in picture: " .. draw.printable(err, 300)) end
+    end
+end
+
+-- mpv: geometry goes on its own, a moment after border=no. On macOS a
+-- border taken away after the window was placed centres it again, so it
+-- has to come after; on X11, written right after border=no, without
+-- giving mpv a turn, it is lost. PLACE_DELAY after the last of them works
+-- on both. Leaving fullscreen is the same, and on macOS it is animated:
+-- fullscreen(false) places the window again, once fullscreen is off (the
+-- same geometry written again does move the window back). One shot, only
+-- while entering: no timer at rest.
+local place_timer = mp.add_timeout(M.PLACE_DELAY, function()
+    if saved and saved.backend == "mpv" then mp.set_property("geometry", GEOMETRY) end
+end, true)
+
+local function place()
+    place_timer:kill()
+    place_timer.timeout = M.PLACE_DELAY
+    place_timer:resume()
 end
 
 function M.enter()
     if saved then return end
     local s = { ontop = mp.get_property_bool("ontop"), border = mp.get_property_bool("border"),
-                fullscreen = mp.get_property_bool("fullscreen"), backend = "other" }
+                fullscreen = mp.get_property_bool("fullscreen"),
+                maximized = mp.get_property_bool("window-maximized"), backend = "other" }
     local scale = mp.get_property_number("current-window-scale")
     saved = s -- before the writes: fullscreen=no below must not end it
-    -- mpv: geometry goes first. On X11 it is lost when it comes after
-    -- border=no, or after fullscreen=no (leaving fullscreen puts the old
-    -- size back); before them, the window keeps it.
-    if scale then
-        s.backend, s.scale = "mpv", scale
-        mp.set_property("geometry", GEOMETRY)
-    end
     if s.fullscreen then mp.set_property_bool("fullscreen", false) end
+    if s.maximized then mp.set_property_bool("window-maximized", false) end
     mp.set_property_bool("ontop", true)
     mp.set_property_bool("border", false)
-    if not scale then
+    if scale then
+        -- The user's own geometry (from mpv.conf, say), to put back.
+        s.backend, s.scale, s.geometry = "mpv", scale, mp.get_property("geometry")
+        place()
+    else
         local dim = mp.get_property_native("osd-dimensions")
         local dw = mp.get_property_number("video-params/dw")
-        s.width = type(dim) == "table" and tonumber(dim.w) or nil
+        -- Fullscreen, the window's width is the screen's: not the one to give back.
+        if not s.fullscreen then s.width = type(dim) == "table" and tonumber(dim.w) or nil end
         s.dw = dw
         local f = factor((mp.get_property_number("display-width") or 0) * WIDTH / (dw or 0)) or factor(WIDTH)
         if mpvnet("window-scale", f) then
@@ -99,11 +127,18 @@ function M.leave(resize)
     local s = saved
     if not s then return end
     saved = nil -- before the writes: fullscreen=yes below must not end it twice
+    place_timer:kill()
     if resize ~= false then
         if s.backend == "mpv" then
+            -- Centred and at its old scale first: the user's geometry
+            -- alone (none, by default) would leave the window in the
+            -- corner. Then the user's, which mpv applies again to every
+            -- new file; on X11 a place in it (+100+100) only holds when
+            -- it comes after the scale.
             mp.set_property("geometry", CENTRE)
             local f = factor(s.scale)
             if f then mp.set_property("current-window-scale", f) end
+            if type(s.geometry) == "string" then mp.set_property("geometry", s.geometry) end
         elseif s.backend == "mpvnet" then
             local f = factor(s.width and s.dw and s.width / s.dw)
             if f then mpvnet("window-scale", f) end
@@ -111,12 +146,22 @@ function M.leave(resize)
     end
     set_bool("border", s.border)
     set_bool("ontop", s.ontop)
-    if resize ~= false and s.fullscreen then mp.set_property_bool("fullscreen", true) end
+    if resize ~= false then
+        if s.maximized then mp.set_property_bool("window-maximized", true) end
+        if s.fullscreen then mp.set_property_bool("fullscreen", true) end
+    end
     changed(false)
 end
 
 function M.toggle()
     if saved then M.leave() else M.enter() end
+end
+
+-- The fullscreen property changed: on ends picture in picture where the
+-- window is; off, while in it, places the window again (see place).
+function M.fullscreen(on)
+    if on then M.leave(false)
+    elseif saved and saved.backend == "mpv" then place() end
 end
 
 return M
