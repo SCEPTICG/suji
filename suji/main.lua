@@ -244,7 +244,7 @@ mp.register_event("file-loaded", function()
 end)
 mp.register_event("shutdown", function()
     -- The window as it was: mpv.net would remember the small one.
-    pip.leave()
+    pip.quit()
     mouse.shutdown()
     mp.set_property_native(ENABLED, nil) -- nil: observers hear it too
     mp.set_property_native(VERSION_PROP, nil)

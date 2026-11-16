@@ -97,6 +97,15 @@ local function run()
         function()
             check(prop("window-maximized") == true, "after: not maximized again")
             mp.set_property_bool("window-maximized", false)
+        end,
+        function()
+            -- force-window-position comes back once the window has
+            -- settled, 0.3 s after its last change: this is 3 s after
+            -- leaving, the most it can wait.
+            check(mp.get_property("force-window-position") == force, ("at the end: force-window-position is %s, want %s")
+                :format(tostring(mp.get_property("force-window-position")), tostring(force)))
+        end,
+        function()
             if not failed then
                 msg.info(("xvfb-pip: ok %s, then %s inside and back; from fullscreen and maximized too"):format(before, INSIDE))
             end

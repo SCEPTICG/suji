@@ -85,13 +85,25 @@ end
 -- not fullscreen) that is PLACE_DELAY after border=no. Writing it ends
 -- the pending placing, so the resize it causes itself starts nothing.
 -- fullscreen(false) inside starts a new one (the same geometry written
--- again does move the window back). One shot, only while entering or
--- leaving fullscreen inside: no timer at rest.
-local pending -- mp.get_time() by which geometry is written anyway, nil: none
+-- again does move the window back).
+-- Leaving waits the same way to put the user's force-window-position back
+-- (see enter): mpv takes the geometries written on leaving once the
+-- window moves, and with the user's "no" already there mpv 0.42 would not
+-- move it. Entering again before that keeps the user's value, still to
+-- put back. One shot, only while entering, leaving or leaving fullscreen
+-- inside: no timer at rest.
+local pending -- mp.get_time() by which the timer fires anyway, nil: none
+local restore_force -- the user's force-window-position, to put back after leaving
 
 local place_timer = mp.add_timeout(M.PLACE_DELAY, function()
     pending = nil
-    if saved and saved.backend == "mpv" then mp.set_property("geometry", GEOMETRY) end
+    if saved then
+        if saved.backend == "mpv" then mp.set_property("geometry", GEOMETRY) end
+    elseif restore_force then
+        local v = restore_force
+        restore_force = nil
+        mp.set_property("force-window-position", v)
+    end
 end, true)
 
 -- Wait PLACE_DELAY again, but not past the deadline.
@@ -106,6 +118,12 @@ local function place()
     wait()
 end
 
+-- Stop waiting: whatever was pending is dropped.
+local function cancel()
+    place_timer:kill()
+    pending = nil
+end
+
 -- The window's size changed (osd-dimensions): a pending placing waits more.
 function M.resized()
     if pending then wait() end
@@ -117,6 +135,11 @@ function M.enter()
                 fullscreen = mp.get_property_bool("fullscreen"),
                 maximized = mp.get_property_bool("window-maximized"), backend = "other" }
     local scale = mp.get_property_number("current-window-scale")
+    -- Back in before the user's force-window-position was put back: that
+    -- one is still theirs, what is there now is ours.
+    local force = restore_force
+    restore_force = nil
+    cancel()
     saved = s -- before the writes: fullscreen=no below must not end it
     if s.fullscreen then mp.set_property_bool("fullscreen", false) end
     if s.maximized then mp.set_property_bool("window-maximized", false) end
@@ -128,11 +151,12 @@ function M.enter()
         -- Since mpv 0.42 geometry only moves a window that exists with
         -- force-window-position=yes (before, it always did). Kept while
         -- inside, for the placing again after fullscreen and new files,
-        -- and put back after the last geometry on leaving.
-        s.force = mp.get_property("force-window-position")
+        -- and put back once the window has settled after leaving.
+        s.force = force or mp.get_property("force-window-position")
         mp.set_property("force-window-position", "yes")
         place()
     else
+        if force then mp.set_property("force-window-position", force) end
         local dim = mp.get_property_native("osd-dimensions")
         local dw = mp.get_property_number("video-params/dw")
         -- Fullscreen or maximized, the width read here is still the big
@@ -155,8 +179,7 @@ function M.leave(resize)
     local s = saved
     if not s then return end
     saved = nil -- before the writes: fullscreen=yes below must not end it twice
-    place_timer:kill()
-    pending = nil
+    cancel()
     if resize == false then
         -- The window stays as it is, but the user's geometry comes back:
         -- mpv applies it to every new file, and ours would send the window
@@ -178,7 +201,10 @@ function M.leave(resize)
             if f then mpvnet("window-scale", f) end
         end
     end
-    if s.backend == "mpv" and type(s.force) == "string" then mp.set_property("force-window-position", s.force) end
+    if s.backend == "mpv" and type(s.force) == "string" then
+        restore_force = s.force -- once the window has settled (see place_timer)
+        place()
+    end
     set_bool("border", s.border)
     set_bool("ontop", s.ontop)
     if resize ~= false then
@@ -186,6 +212,17 @@ function M.leave(resize)
         if s.fullscreen then mp.set_property_bool("fullscreen", true) end
     end
     changed(false)
+end
+
+-- mpv quits: leave, and the user's force-window-position at once.
+function M.quit()
+    M.leave()
+    if restore_force then
+        cancel()
+        local v = restore_force
+        restore_force = nil
+        mp.set_property("force-window-position", v)
+    end
 end
 
 function M.toggle()
