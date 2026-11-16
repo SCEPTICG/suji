@@ -19,7 +19,7 @@ local function tt(...) local x, y = time.time_text(...); return x .. y end
 -- Icons: every one is a valid \p stroke and scales with the size
 for _, name in ipairs({ "play", "pause", "volume0", "volume1", "volume2", "mute",
                         "fullscreen", "windowed", "subtitles", "audio", "playlist", "more", "prev", "next",
-                        "fast_forward", "fast_rewind" }) do
+                        "fast_forward", "fast_rewind", "pip", "pip_exit" }) do
     local small, big = icons.shape(name, 0, 0, 22), icons.shape(name, 0, 0, 44)
     T.near(big[1][1], small[1][1] * 2, name .. " scales x")
     T.near(big[1][2], small[1][2] * 2, name .. " scales y")

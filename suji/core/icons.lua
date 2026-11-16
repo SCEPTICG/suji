@@ -53,6 +53,7 @@ end
 
 local OUTLINE = { 4, 9, 4, 15, 8, 15, 13, 19, 13, 5, 8, 9, 4, 9 }
 local WAVE1, WAVE2 = arc(12.93, 12, 5, 44.4), arc(12.93, 12, 9, 50)
+local SCREEN = { 3, 5, 21, 5, 21, 19, 3, 19, 3, 5 }
 -- A round palette with a notch for the thumb at the bottom right.
 local PALETTE = arc_from(12, 12, 9, 75, 390, 14)
 for _, v in ipairs({ 16, 15.5, 14.5, 17.5, PALETTE[1], PALETTE[2] }) do PALETTE[#PALETTE + 1] = v end
@@ -67,6 +68,11 @@ local LINES = {
     mute = { OUTLINE, { 16, 9.5, 21, 14.5 }, { 21, 9.5, 16, 14.5 } },
     fullscreen = { { 4, 9, 4, 4, 9, 4 }, { 20, 9, 20, 4, 15, 4 }, { 4, 15, 4, 20, 9, 20 }, { 20, 15, 20, 20, 15, 20 } },
     windowed = { { 9, 4, 9, 9, 4, 9 }, { 15, 4, 15, 9, 20, 9 }, { 9, 20, 9, 15, 4, 15 }, { 15, 20, 15, 15, 20, 15 } },
+    -- Picture in picture: a screen with a small window, filled (a frame
+    -- with a line through it), at its bottom right; and the way back, an
+    -- arrow out of that corner.
+    pip = { SCREEN, { 12, 11.5, 17, 11.5, 17, 14.5, 12, 14.5, 12, 11.5 }, { 12, 13, 17, 13 } },
+    pip_exit = { SCREEN, { 15.5, 15.5, 8.5, 8.5 }, { 8.5, 13, 8.5, 8.5, 13, 8.5 } },
     -- The buttons with menus.
     subtitles = { { 3, 5, 21, 5, 21, 19, 3, 19, 3, 5 }, { 7, 11.5, 10, 11.5 }, { 13, 11.5, 17, 11.5 },
                   { 7, 15, 14, 15 }, { 16.6, 15, 17.4, 15 } },
