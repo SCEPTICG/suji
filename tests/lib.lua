@@ -44,6 +44,11 @@ function T.fake_mp(props)
         return v
     end
     function mp.set_property_bool(name, v) mp.props[name] = v; mp.fire(name, v) end
+    function mp.set_property_number(name, v)
+        mp.props[name] = v
+        mp.fire(name, v)
+        return true
+    end
     -- Every set_property (a string), in order: { name, value }.
     mp.strings = {}
     function mp.set_property(name, v)

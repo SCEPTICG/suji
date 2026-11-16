@@ -43,6 +43,11 @@ local function start(props, script_opts)
         mp.window[#mp.window + 1] = name .. "=" .. tostring(v)
         return set(name, v)
     end
+    local set_number = mp.set_property_number
+    mp.set_property_number = function(name, v)
+        mp.window[#mp.window + 1] = name .. "=" .. tostring(v)
+        return set_number(name, v)
+    end
     local commandv = mp.commandv
     mp.commandv = function(...)
         local c = { ... }
@@ -188,7 +193,7 @@ key()
 mp.props["current-window-scale"] = nil
 writes()
 key()
-T.eq(writes(), "ontop=true, border=false, force-window-position=no, mpvnet window-scale 0.250",
+T.eq(writes(), "ontop=true, border=false, force-window-position=no, mpvnet move-window right",
     "another backend: the user's value back at once")
 mp.advance(1)
 T.eq(writes(), "", "and nothing after")
@@ -275,31 +280,31 @@ end
 start({ ["display-width"] = 1920, ["video-params/dw"] = 1280 })
 mp.on_command = mpvnet
 key()
-T.eq(writes(), "ontop=true, border=false, mpvnet window-scale 0.375, mpvnet move-window right, mpvnet move-window bottom",
+T.eq(writes(), "ontop=true, border=false, mpvnet move-window right, window-scale=0.375, mpvnet move-window right, mpvnet move-window bottom",
     "mpv.net: a quarter of the screen, docked bottom right")
 resize(480, 270)
 key()
-T.eq(writes(), "mpvnet window-scale 1.000, border=true, ontop=false", "back to the width it had: not centred")
+T.eq(writes(), "window-scale=1, border=true, ontop=false", "back to the width it had: not centred")
 T.eq(mp.props["user-data/suji/pip"], false, "property false")
 
 -- The width it had, not the window-scale property (mpv.net says 1)
 start({ ["display-width"] = 1920, ["video-params/dw"] = 1920, ["window-scale"] = 1 })
 mp.on_command = mpvnet
 key()
-T.eq(writes(), "ontop=true, border=false, mpvnet window-scale 0.250, mpvnet move-window right, mpvnet move-window bottom",
+T.eq(writes(), "ontop=true, border=false, mpvnet move-window right, window-scale=0.25, mpvnet move-window right, mpvnet move-window bottom",
     "mpv.net: the factor from the screen and the video")
 key()
-T.eq(writes(), "mpvnet window-scale 0.667, border=true, ontop=false", "1280 of 1920: 0.667")
+T.eq(writes(), "window-scale=0.667, border=true, ontop=false", "1280 of 1920: 0.667")
 
 -- No display-width or no video width: 0.25
 for i, p in ipairs({ { ["video-params/dw"] = 1280 }, { ["display-width"] = 1920 }, { ["display-width"] = 1920, ["video-params/dw"] = 0 } }) do
     start(p)
     mp.on_command = mpvnet
     key()
-    T.check(writes():find("mpvnet window-scale 0.250", 1, true) ~= nil, "mpv.net: 0.25 when the sizes are unknown " .. i)
+    T.check(writes():find("window-scale=0.25,", 1, true) ~= nil, "mpv.net: 0.25 when the sizes are unknown " .. i)
     key()
     if i == 1 then
-        T.check(writes():find("mpvnet window-scale 1.000", 1, true) ~= nil, "with the video width, its size back")
+        T.check(writes():find("window-scale=1,", 1, true) ~= nil, "with the video width, its size back")
     else
         T.check(not writes():find("window-scale", 1, true), "no size to give back without the video width " .. i)
     end
@@ -310,7 +315,7 @@ start({ ["display-width"] = 1920, ["video-params/dw"] = 1280, fullscreen = true 
 mp.props["osd-dimensions"] = { w = 1920, h = 1080 }
 mp.on_command = mpvnet
 key()
-T.eq(writes(), "fullscreen=false, ontop=true, border=false, mpvnet window-scale 0.375, mpvnet move-window right, mpvnet move-window bottom",
+T.eq(writes(), "fullscreen=false, ontop=true, border=false, mpvnet move-window right, window-scale=0.375, mpvnet move-window right, mpvnet move-window bottom",
     "mpv.net: fullscreen off first")
 mp.advance(1)
 T.eq(writes(), "", "no geometry for mpv.net")
@@ -322,7 +327,7 @@ start({ ["display-width"] = 1920, ["video-params/dw"] = 1280, ["window-maximized
 mp.props["osd-dimensions"] = { w = 1920, h = 1080 }
 mp.on_command = mpvnet
 key()
-T.eq(writes(), "window-maximized=false, ontop=true, border=false, mpvnet window-scale 0.375, mpvnet move-window right, mpvnet move-window bottom",
+T.eq(writes(), "window-maximized=false, ontop=true, border=false, mpvnet move-window right, window-scale=0.375, mpvnet move-window right, mpvnet move-window bottom",
     "mpv.net: unmaximized first")
 key()
 T.eq(writes(), "border=true, ontop=false, window-maximized=true", "no resize, maximized again")
@@ -387,7 +392,7 @@ T.eq(mp.active_timers(), 0, "no timers")
 -- Any other: on top and no border only --------------------------------------------
 start({ ["display-width"] = 1920, ["video-params/dw"] = 1280 })
 key()
-T.eq(writes(), "ontop=true, border=false, mpvnet window-scale 0.375", "not mpv.net: the first command fails, no more")
+T.eq(writes(), "ontop=true, border=false, mpvnet move-window right", "not mpv.net: the first command fails, no window-scale")
 T.eq(pip().active(), true, "still picture in picture")
 key()
 T.eq(writes(), "border=true, ontop=false", "and only those two back")
@@ -464,7 +469,7 @@ mp.on_command = mpvnet
 key()
 writes()
 mp.emit("shutdown")
-T.eq(writes(), "mpvnet window-scale 1.000, border=true, ontop=false", "mpv.net: its size back before quitting")
+T.eq(writes(), "window-scale=1, border=true, ontop=false", "mpv.net: its size back before quitting")
 
 -- A listener that fails does not stop the way back
 start({ ["current-window-scale"] = 1 })

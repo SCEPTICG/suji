@@ -11,8 +11,10 @@
 --            where mpv would open it, with its old scale: mpv cannot
 --            tell where it was.
 --   mpvnet   mpv.net ignores geometry at run time and has no
---            current-window-scale, but takes its own commands,
---            script-message-to mpvnet window-scale and move-window. On
+--            current-window-scale, but takes the window-scale property
+--            and its own command script-message-to mpvnet move-window,
+--            the first of which tells it is mpv.net (its window-scale
+--            command would also write the factor on screen). On
 --            leaving the window gets its size back, docked in the corner
 --            of its monitor (move-window center would jump to the primary
 --            one). Entered from fullscreen, there is no size to give back:
@@ -164,8 +166,10 @@ function M.enter()
         if not s.fullscreen and not s.maximized then s.width = type(dim) == "table" and tonumber(dim.w) or nil end
         s.dw = dw
         local f = factor((mp.get_property_number("display-width") or 0) * WIDTH / (dw or 0)) or factor(WIDTH)
-        if mpvnet("window-scale", f) then
+        if mpvnet("move-window", "right") then
             s.backend = "mpvnet"
+            mp.set_property_number("window-scale", tonumber(f))
+            -- Again, now that it is small: docked in the corner.
             mpvnet("move-window", "right")
             mpvnet("move-window", "bottom")
         end
@@ -198,7 +202,7 @@ function M.leave(resize)
             if type(s.geometry) == "string" then mp.set_property("geometry", s.geometry) end
         elseif s.backend == "mpvnet" then
             local f = factor(s.width and s.dw and s.width / s.dw)
-            if f then mpvnet("window-scale", f) end
+            if f then mp.set_property_number("window-scale", tonumber(f)) end
         end
     end
     if s.backend == "mpv" and type(s.force) == "string" then

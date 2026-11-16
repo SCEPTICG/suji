@@ -121,7 +121,7 @@ For a key, add a line like this one to `input.conf`:
 Alt+p script-binding suji/pip
 ```
 
-In mpv.net, suji moves and resizes the window with mpv.net's own commands. With any other frontend, it only puts the window on top and without borders.
+In mpv.net, suji resizes the window with the `window-scale` property and moves it with mpv.net's own commands. With any other frontend, it only puts the window on top and without borders.
 
 ## Menus
 
